@@ -12,6 +12,8 @@ AD_BUCKET = 'Реклама'
 LOGISTICS_BUCKET = 'Логистика'
 STORAGE_BUCKET = 'Хранение'
 COMPENSATION_BUCKET = 'Компенсации'
+PAID_ACCEPTANCE_BUCKET = 'Плат. приемка'
+PENALTY_BUCKET = 'Штрафы'
 OTHER_BUCKET = 'Прочие удержания'
 
 MACHINE_BUCKETS = {
@@ -24,7 +26,6 @@ MACHINE_BUCKETS = {
     'acquiring': ACQUIRING_BUCKET,
     'promotion': AD_BUCKET,
 }
-
 RUSSIAN_BUCKETS = {
     'выручка': REVENUE_TYPE,
     'возврат выручки': RETURN_REVENUE_TYPE,
@@ -101,6 +102,15 @@ def _bucket(type_name, description=''):
             return RUSSIAN_BUCKETS[normalized]
         if 'компенсац' in normalized or 'compensation' in normalized:
             return COMPENSATION_BUCKET
+        if 'штраф' in normalized or 'penalt' in machine or machine.startswith('fine'):
+            return PENALTY_BUCKET
+        if (
+            ('приемк' in normalized and 'возврат' not in normalized)
+            or 'paidaccept' in machine
+            or 'supplyaccept' in machine
+            or 'warehouseaccept' in machine
+        ):
+            return PAID_ACCEPTANCE_BUCKET
     return OTHER_BUCKET
 
 
@@ -129,7 +139,10 @@ def summarize(snapshot):
 
     by_bucket = defaultdict(float)
     by_type = defaultdict(lambda: {'name': '', 'count': 0, 'amount': 0.0, 'bucket': ''})
-    products = defaultdict(lambda: {'sku': '', 'sales_quantity': 0.0, 'sales_amount': 0.0, 'realization': 0.0})
+    products = defaultdict(lambda: {
+        'sku': '', 'sales_quantity': 0.0, 'sales_amount': 0.0,
+        'realization': 0.0, 'discount_points': 0.0,
+    })
 
     domestic_realization = 0.0
     return_realization = 0.0
@@ -175,11 +188,11 @@ def summarize(snapshot):
 
     revenue = _number(sales_facts.get('revenue'))
     partner_programs = _number(sales_facts.get('partner_programs'))
-    discount_points = _number(sales_facts.get('discount_points'))
+    discount_points = abs(_number(sales_facts.get('discount_points')))
     if not sales_facts:
         revenue = by_bucket.get(REVENUE_TYPE, 0.0)
         partner_programs = by_bucket.get(PARTNER_BUCKET, 0.0)
-        discount_points = by_bucket.get(DISCOUNT_BUCKET, 0.0)
+        discount_points = abs(by_bucket.get(DISCOUNT_BUCKET, 0.0))
 
     for item in sales_facts.get('products') or []:
         sku = item.get('sku')
@@ -187,7 +200,7 @@ def summarize(snapshot):
             continue
         p = products[str(sku)]
         p['sku'] = str(sku)
-        p['sales_amount'] += _number(item.get('revenue')) + _number(item.get('partner_programs'))
+        p['discount_points'] += abs(_number(item.get('discount_points')))
 
     buyout_gross = buyout_sales = buyout_commission = buyout_quantity = 0.0
     for item in buyouts:
@@ -204,11 +217,11 @@ def summarize(snapshot):
             p['sku'] = str(sku)
             p['sales_quantity'] += quantity
             p['realization'] += gross
-            p['sales_amount'] += credited
 
     realization = domestic_realization - return_realization + buyout_gross
-    sales_amount = revenue + partner_programs + buyout_sales
+    sales_amount = realization - discount_points
     sales_quantity = revenue_quantity - return_quantity + buyout_quantity
+
     commission_domestic = abs(by_bucket.get(COMMISSION_BUCKET, 0.0))
     nominal_commission = commission_domestic + buyout_commission
     logistics = abs(by_bucket.get(LOGISTICS_BUCKET, 0.0))
@@ -220,18 +233,30 @@ def summarize(snapshot):
 
     placement_cost = snapshot.get('placement_cost')
     storage = abs(_number(placement_cost)) if placement_cost is not None else abs(by_bucket.get(STORAGE_BUCKET, 0.0))
-
     promotion_spend = snapshot.get('promotion_spend')
     advertising = order_promotion + (abs(_number(promotion_spend)) if promotion_spend is not None else 0.0)
     compensations = by_bucket.get(COMPENSATION_BUCKET, 0.0)
+    paid_acceptance = abs(by_bucket.get(PAID_ACCEPTANCE_BUCKET, 0.0))
+    penalties = abs(by_bucket.get(PENALTY_BUCKET, 0.0))
 
-    known = {REVENUE_TYPE, RETURN_REVENUE_TYPE, PARTNER_BUCKET, COMMISSION_BUCKET,
-             ACQUIRING_BUCKET, DISCOUNT_BUCKET, AD_BUCKET, LOGISTICS_BUCKET,
-             STORAGE_BUCKET, COMPENSATION_BUCKET}
-    other_deductions = sum(-item['amount'] for item in by_type.values()
-                           if item['bucket'] not in known and item['amount'] < 0)
+    known = {
+        REVENUE_TYPE, RETURN_REVENUE_TYPE, PARTNER_BUCKET, COMMISSION_BUCKET,
+        ACQUIRING_BUCKET, DISCOUNT_BUCKET, AD_BUCKET, LOGISTICS_BUCKET,
+        STORAGE_BUCKET, COMPENSATION_BUCKET, PAID_ACCEPTANCE_BUCKET, PENALTY_BUCKET,
+    }
+    other_deductions = sum(
+        -item['amount'] for item in by_type.values()
+        if item['bucket'] not in known and item['amount'] < 0
+    )
 
     orders = snapshot.get('orders') or {}
+    decisions = snapshot.get('returns') or {}
+    refusal_return_quantity = decisions.get('quantity')
+    buyout_percent = None
+    if refusal_return_quantity is not None and sales_quantity >= 0:
+        denominator = sales_quantity + _number(refusal_return_quantity)
+        buyout_percent = _percent(sales_quantity, denominator)
+
     clean_profit = snapshot.get('clean_profit')
     taxes = snapshot.get('taxes')
     cogs = snapshot.get('cogs')
@@ -248,6 +273,10 @@ def summarize(snapshot):
         'margin': _percent(clean_profit, realization) if clean_profit is not None else None,
         'returns_amount': round(return_realization, 2),
         'returns_quantity': int(round(return_quantity)),
+        'refusals_returns_quantity': (
+            int(round(_number(refusal_return_quantity))) if refusal_return_quantity is not None else None
+        ),
+        'buyout_percent': buyout_percent,
         'logistics': round(logistics, 2),
         'logistics_share': _percent(logistics, realization),
         'nominal_commission': round(nominal_commission, 2),
@@ -258,11 +287,17 @@ def summarize(snapshot):
         'taxes_share': _percent(taxes, realization) if taxes is not None else None,
         'realization': round(realization, 2),
         'storage': round(storage, 2),
+        'paid_acceptance': round(paid_acceptance, 2),
+        'penalties': round(penalties, 2),
         'acquiring': round(acquiring, 2),
         'advertising': round(advertising, 2),
-        'discount_points': round(abs(discount_points), 2),
+        'discount_points': round(discount_points, 2),
         'compensations': round(compensations, 2),
         'other_deductions': round(other_deductions, 2),
+        'fbs_stock_quantity': (
+            int(round(_number(snapshot.get('fbs_stock_quantity'))))
+            if snapshot.get('fbs_stock_quantity') is not None else None
+        ),
     }
 
     summary = {
@@ -286,6 +321,7 @@ def summarize(snapshot):
         'order_promotion': round(order_promotion, 2),
         'storage_from_placement_report': placement_cost is not None,
         'storage_accrual_fallback': round(abs(by_bucket.get(STORAGE_BUCKET, 0.0)), 2),
+        'returns_list_quantity': metrics['refusals_returns_quantity'],
     }
 
     warnings = []
@@ -295,12 +331,16 @@ def summarize(snapshot):
         warnings.append('Выкупы маркетплейсом не загружены. Ошибка Ozon: ' + str(snapshot.get('buyout_error')))
     if snapshot.get('placement_error'):
         warnings.append('Отчёт стоимости размещения не загружен: ' + str(snapshot.get('placement_error')))
+    if snapshot.get('returns_error'):
+        warnings.append('Возвраты/отказы для процента выкупа не загружены: ' + str(snapshot.get('returns_error')))
+    if snapshot.get('fbs_stock_error'):
+        warnings.append('FBS-остатки не загружены: ' + str(snapshot.get('fbs_stock_error')))
     if orders.get('errors'):
         warnings.append('Сверка заказов неполная: ' + '; '.join(str(x) for x in orders.get('errors')))
     if promotion_spend is None:
         warnings.append('Реклама включает «Продвижение с оплатой за заказ» из Seller API; прочая реклама потребует Promotion API.')
     if clean_profit is None or taxes is None or cogs is None:
-        warnings.append('Чистая прибыль, ROI, Средняя прибыль и Налоги требуют себестоимости, налоговой настройки и операционных расходов.')
+        warnings.append('Чистая прибыль, ROI, Средняя прибыль и Налоги рассчитываются после заполнения себестоимости и налоговых настроек.')
 
     operation_types = []
     for item in by_type.values():
@@ -309,15 +349,18 @@ def summarize(snapshot):
             category = 'Реклама: Продвижение с оплатой за заказ'
         elif category == OTHER_BUCKET and item['amount'] >= 0:
             category = 'Доход / не является удержанием'
-        operation_types.append({'name': item['name'], 'count': item['count'],
-                                'amount': round(item['amount'], 2), 'truestats_metric': category})
+        operation_types.append({
+            'name': item['name'], 'count': item['count'],
+            'amount': round(item['amount'], 2), 'truestats_metric': category,
+        })
     operation_types.sort(key=lambda item: abs(item['amount']), reverse=True)
 
     product_rows = []
     for row in products.values():
         row['sales_quantity'] = int(round(row['sales_quantity']))
-        row['sales_amount'] = round(row['sales_amount'], 2)
         row['realization'] = round(row['realization'], 2)
+        row['discount_points'] = round(row.get('discount_points', 0.0), 2)
+        row['sales_amount'] = round(row['realization'] - abs(row['discount_points']), 2)
         product_rows.append(dict(row))
     product_rows.sort(key=lambda row: abs(row['realization']), reverse=True)
 
