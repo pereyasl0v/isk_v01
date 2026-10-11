@@ -37,12 +37,12 @@ export default function Digitization({state,digi,act}){
  const m=digi?.metrics;
  const c=digi?.components||{};
  const invalid=dateFrom&&dateTo&&dateFrom>dateTo;
- const closedDay=digi?.effective_to&&digi?.to&&digi.effective_to!==digi.to;
+ const comparisonCutoff=digi?.effective_to&&digi?.to&&digi.effective_to!==digi.to;
  return <>
   <div className="overview-heading"><div><h1>Оцифровка</h1><p className="muted mt-2">Метрики и названия как в TrueStats · снимок: {dateTime(digi?.at)}</p></div><div className="flex gap-2 flex-wrap items-center"><input aria-label="Дата начала" type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/><span className="muted">—</span><input aria-label="Дата окончания" type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/><button className="primary" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={()=>act('/digitization/sync',{date_from:dateFrom,date_to:dateTo})}>Обновить <RefreshCw size={16}/></button></div></div>
   {invalid&&<div className="notice warning mt-4"><AlertTriangle size={18}/>Дата окончания не может быть раньше даты начала.</div>}
-  {digi?.since&&<p className="muted mt-4">Выбранный период: {digi.since} — {digi.to}{digi?.effective_to?` · закрытые данные Ozon по ${digi.effective_to} включительно`:''}</p>}
-  {closedDay&&<div className="notice warning mt-4"><AlertTriangle size={18}/>Текущий день не включён в расчёт: на скриншоте TrueStats за 11.10 последняя колонка также 10.10. Это нужно, чтобы сравнивать одинаково закрытые данные.</div>}
+  {digi?.since&&<p className="muted mt-4">Выбранный период: {digi.since} — {digi.to}{digi?.effective_to?` · в расчёт включены данные Ozon по ${digi.effective_to} включительно`:''}</p>}
+  {comparisonCutoff&&<div className="notice warning mt-4"><AlertTriangle size={18}/>Текущий день исключён только для сравнения с показанным вами отчётом TrueStats: там последняя дневная колонка — 10.10.</div>}
 
   <div className="grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-3 gap-4 my-6">
    <Metric label="Заказы" value={m?.orders_amount} note={count(m?.orders_quantity)}/>
