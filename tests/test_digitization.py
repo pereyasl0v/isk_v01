@@ -1,6 +1,8 @@
 import unittest
+from datetime import date
 
 from backend.digitization import summarize
+from backend.ozon import Ozon
 
 
 TYPES = [
@@ -125,6 +127,36 @@ class DigitizationTests(unittest.TestCase):
         self.assertEqual(m['penalties'], 17.0)
         self.assertEqual(m['paid_acceptance'], 23.0)
         self.assertEqual(m['other_deductions'], 5.0)
+
+    def test_long_period_is_split_into_internal_31_day_chunks(self):
+        chunks = list(Ozon._date_chunks(date(2026, 8, 1), date(2026, 9, 30)))
+        self.assertEqual(chunks, [
+            (date(2026, 8, 1), date(2026, 8, 31)),
+            (date(2026, 9, 1), date(2026, 9, 30)),
+        ])
+
+    def test_redemption_uses_customer_decision_timing(self):
+        api = Ozon.__new__(Ozon)
+        filters = []
+        item_id = 0
+
+        def fake_call(path, payload):
+            nonlocal item_id
+            self.assertEqual(path, '/v1/returns/list')
+            filters.append(next(iter(payload['filter'])))
+            item_id += 1
+            return {
+                'returns': [{'id': item_id, 'type': 'Return', 'product': {'quantity': 1}}],
+                'has_next': False,
+            }
+
+        api.call = fake_call
+        result = api._returns_for_period(
+            date(2026, 8, 1), date(2026, 9, 30), lambda _message: None,
+        )
+        self.assertEqual(result['quantity'], 2)
+        self.assertEqual(result['date_filter'], 'visual_status_change_moment')
+        self.assertEqual(filters, ['visual_status_change_moment', 'visual_status_change_moment'])
 
 
 if __name__ == '__main__':
