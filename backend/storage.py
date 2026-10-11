@@ -2,7 +2,7 @@ import json
 import sqlite3
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 
 class Store:
@@ -30,8 +30,15 @@ class Store:
                 payload TEXT NOT NULL,
                 PRIMARY KEY(client,date_from,date_to))''')
             c.execute('CREATE INDEX IF NOT EXISTS digitization_period_updated ON digitization_periods(client,updated_at)')
-            # The cache is only an acceleration layer. Keep roughly one year so
-            # historical Seller API reads can be reused without growing forever.
+            c.execute('''CREATE TABLE IF NOT EXISTS digitization_days (
+                client TEXT NOT NULL,
+                day TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                PRIMARY KEY(client,day))''')
+            c.execute('CREATE INDEX IF NOT EXISTS digitization_day_updated ON digitization_days(client,updated_at)')
+            # API cache is only an acceleration layer. Daily digitization facts are
+            # the durable local analytical source and are intentionally not purged.
             c.execute('DELETE FROM api_cache WHERE updated_at < ?', (time.time()-370*86400,))
             self._migrate_digitization_periods(c)
 
@@ -44,8 +51,8 @@ class Store:
         return (first,last) if first and last else (None,None)
 
     def _migrate_digitization_periods(self,c):
-        # Existing installations already have full digitization snapshots. Index
-        # them by requested period so the UI can switch periods without Ozon.
+        # Keep legacy exact-period snapshots for backwards compatibility. Single
+        # closed-day snapshots are also promoted into the new daily source.
         rows=c.execute(
             "SELECT client,at,payload FROM snapshots WHERE kind='digitization' ORDER BY id ASC"
         ).fetchall()
@@ -62,6 +69,18 @@ class Store:
                          ON CONFLICT(client,date_from,date_to) DO UPDATE SET
                          updated_at=excluded.updated_at,payload=excluded.payload''',
                       (str(client),first,last,str(at),payload))
+            effective=str(data.get('effective_to') or last)
+            if first == effective:
+                day_payload=dict(data)
+                day_payload['since']=first
+                day_payload['to']=first
+                day_payload['effective_to']=first
+                day_payload['current_day_excluded']=False
+                encoded=json.dumps(day_payload,ensure_ascii=False,allow_nan=False)
+                c.execute('''INSERT INTO digitization_days(client,day,updated_at,payload)
+                             VALUES (?,?,?,?)
+                             ON CONFLICT(client,day) DO NOTHING''',
+                          (str(client),first,str(at),encoded))
 
     @contextmanager
     def db(self):
@@ -106,6 +125,79 @@ class Store:
         with self.db() as c:
             row=c.execute('SELECT COUNT(*) FROM digitization_periods WHERE client=?',(str(client),)).fetchone()
         return int(row[0] or 0)
+
+    def save_digitization_day(self,client,day,data):
+        day=str(day)
+        payload=json.dumps(data,ensure_ascii=False,allow_nan=False)
+        at=datetime.now(timezone.utc).isoformat()
+        with self.db() as c:
+            c.execute('''INSERT INTO digitization_days(client,day,updated_at,payload)
+                         VALUES (?,?,?,?)
+                         ON CONFLICT(client,day) DO UPDATE SET
+                         updated_at=excluded.updated_at,payload=excluded.payload''',
+                      (str(client),day,at,payload))
+        return at
+
+    def digitization_days_between(self,client,date_from,date_to):
+        with self.db() as c:
+            rows=c.execute('''SELECT day,updated_at,payload FROM digitization_days
+                              WHERE client=? AND day>=? AND day<=? ORDER BY day ASC''',
+                           (str(client),str(date_from),str(date_to))).fetchall()
+        result=[]
+        for day,updated_at,payload in rows:
+            try:
+                data=json.loads(payload)
+            except (ValueError,TypeError):
+                continue
+            result.append({'day':day,'at':updated_at,**data})
+        return result
+
+    @staticmethod
+    def _iso_days(date_from,date_to):
+        try:
+            first=date.fromisoformat(str(date_from))
+            last=date.fromisoformat(str(date_to))
+        except ValueError:
+            return []
+        result=[]
+        current=first
+        while current<=last:
+            result.append(current.isoformat())
+            current+=timedelta(days=1)
+        return result
+
+    def digitization_missing_days(self,client,date_from,date_to):
+        wanted=self._iso_days(date_from,date_to)
+        if not wanted:
+            return []
+        with self.db() as c:
+            rows=c.execute('''SELECT day FROM digitization_days
+                              WHERE client=? AND day>=? AND day<=?''',
+                           (str(client),str(date_from),str(date_to))).fetchall()
+        present={str(row[0]) for row in rows}
+        return [day for day in wanted if day not in present]
+
+    def digitization_coverage(self,client,date_from=None,date_to=None):
+        with self.db() as c:
+            stats=c.execute('''SELECT COUNT(*),MIN(day),MAX(day),MAX(updated_at)
+                               FROM digitization_days WHERE client=?''',
+                            (str(client),)).fetchone()
+        result={
+            'days':int(stats[0] or 0),
+            'first_day':stats[1],
+            'last_day':stats[2],
+            'updated_at':stats[3],
+        }
+        if date_from is not None and date_to is not None:
+            wanted=self._iso_days(date_from,date_to)
+            missing=self.digitization_missing_days(client,date_from,date_to)
+            result.update({
+                'requested_days':len(wanted),
+                'available_days':max(0,len(wanted)-len(missing)),
+                'missing_days':missing,
+                'complete':bool(wanted) and not missing,
+            })
+        return result
 
     def between(self,client,kind,at_from,at_to,limit=5000):
         with self.db() as c:
