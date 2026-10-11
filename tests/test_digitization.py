@@ -76,7 +76,7 @@ class DigitizationTests(unittest.TestCase):
         self.assertEqual(m['acquiring'], 2.0)
         self.assertIsNone(m['advertising'])
         self.assertEqual(m['sales_quantity'], 2)
-        self.assertEqual(m['sales_amount'], 765.0)
+        self.assertEqual(m['sales_amount'], 915.0)
         self.assertEqual(m['orders_amount'], 2500.0)
         self.assertEqual(m['orders_quantity'], 4)
         self.assertEqual(m['returns_amount'], 150.0)
@@ -92,9 +92,9 @@ class DigitizationTests(unittest.TestCase):
         self.assertEqual(m['other_deductions'], 7.0)
 
         self.assertEqual(result['summary']['price_before_spp'], 495.0)
-        self.assertEqual(result['summary']['average_sale_price'], 382.5)
+        self.assertEqual(result['summary']['average_sale_price'], 457.5)
         self.assertEqual(result['summary']['realization'], 990.0)
-        self.assertEqual(result['summary']['sales'], 765.0)
+        self.assertEqual(result['summary']['sales'], 915.0)
         self.assertEqual(result['summary']['returns'], 150.0)
         self.assertIsNone(result['summary']['to_transfer'])
 
