@@ -22,9 +22,46 @@ class Store:
                 payload TEXT NOT NULL,
                 PRIMARY KEY(client,namespace,cache_key))''')
             c.execute('CREATE INDEX IF NOT EXISTS api_cache_updated ON api_cache(updated_at)')
+            c.execute('''CREATE TABLE IF NOT EXISTS digitization_periods (
+                client TEXT NOT NULL,
+                date_from TEXT NOT NULL,
+                date_to TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                PRIMARY KEY(client,date_from,date_to))''')
+            c.execute('CREATE INDEX IF NOT EXISTS digitization_period_updated ON digitization_periods(client,updated_at)')
             # The cache is only an acceleration layer. Keep roughly one year so
             # historical Seller API reads can be reused without growing forever.
             c.execute('DELETE FROM api_cache WHERE updated_at < ?', (time.time()-370*86400,))
+            self._migrate_digitization_periods(c)
+
+    @staticmethod
+    def _period_bounds(data):
+        if not isinstance(data,dict):
+            return None,None
+        first=str(data.get('since') or '').strip()
+        last=str(data.get('to') or '').strip()
+        return (first,last) if first and last else (None,None)
+
+    def _migrate_digitization_periods(self,c):
+        # Existing installations already have full digitization snapshots. Index
+        # them by requested period so the UI can switch periods without Ozon.
+        rows=c.execute(
+            "SELECT client,at,payload FROM snapshots WHERE kind='digitization' ORDER BY id ASC"
+        ).fetchall()
+        for client,at,payload in rows:
+            try:
+                data=json.loads(payload)
+            except (ValueError,TypeError):
+                continue
+            first,last=self._period_bounds(data)
+            if not first or not last:
+                continue
+            c.execute('''INSERT INTO digitization_periods(client,date_from,date_to,updated_at,payload)
+                         VALUES (?,?,?,?,?)
+                         ON CONFLICT(client,date_from,date_to) DO UPDATE SET
+                         updated_at=excluded.updated_at,payload=excluded.payload''',
+                      (str(client),first,last,str(at),payload))
 
     @contextmanager
     def db(self):
@@ -37,15 +74,38 @@ class Store:
 
     def save(self,client,kind,data):
         payload=json.dumps(data,ensure_ascii=False,allow_nan=False)
+        at=datetime.now(timezone.utc).isoformat()
         with self.db() as c:
             c.execute('INSERT INTO snapshots(client,kind,at,payload) VALUES (?,?,?,?)',
-                      (client,kind,datetime.now(timezone.utc).isoformat(),payload))
+                      (client,kind,at,payload))
+            if kind=='digitization':
+                first,last=self._period_bounds(data)
+                if first and last:
+                    c.execute('''INSERT INTO digitization_periods(client,date_from,date_to,updated_at,payload)
+                                 VALUES (?,?,?,?,?)
+                                 ON CONFLICT(client,date_from,date_to) DO UPDATE SET
+                                 updated_at=excluded.updated_at,payload=excluded.payload''',
+                              (str(client),first,last,at,payload))
 
     def latest(self,client,kind):
         with self.db() as c:
             row=c.execute('SELECT at,payload FROM snapshots WHERE client=? AND kind=? ORDER BY id DESC LIMIT 1',
                           (client,kind)).fetchone()
         return {'at':row[0],**json.loads(row[1])} if row else None
+
+    def digitization_period(self,client,date_from,date_to):
+        with self.db() as c:
+            row=c.execute('''SELECT updated_at,payload FROM digitization_periods
+                             WHERE client=? AND date_from=? AND date_to=? LIMIT 1''',
+                          (str(client),str(date_from),str(date_to))).fetchone()
+        if not row:
+            return None
+        return {'at':row[0],**json.loads(row[1])}
+
+    def digitization_period_count(self,client):
+        with self.db() as c:
+            row=c.execute('SELECT COUNT(*) FROM digitization_periods WHERE client=?',(str(client),)).fetchone()
+        return int(row[0] or 0)
 
     def between(self,client,kind,at_from,at_to,limit=5000):
         with self.db() as c:
