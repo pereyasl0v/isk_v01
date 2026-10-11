@@ -1,6 +1,7 @@
 """Read-only Ozon Seller API adapter."""
 import csv
 import io
+import re
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, time as dt_time, timedelta, timezone
@@ -10,9 +11,12 @@ from .legacy import Ozon as BaseOzon, ApiError, ALLOWED
 ALLOWED.update({
     '/v1/analytics/stocks', '/v3/posting/fbo/list', '/v4/posting/fbs/list',
     '/v1/finance/accrual/by-day', '/v1/finance/accrual/types',
-    '/v1/finance/products/buyout',
+    '/v1/finance/accrual/postings', '/v1/finance/products/buyout',
     '/v1/report/placement/by-products/create', '/v1/report/info',
 })
+
+MOSCOW_TZ = timezone(timedelta(hours=3))
+POSTING_NUMBER = re.compile(r'^\d+-\d+-\d+$')
 
 
 class Ozon(BaseOzon):
@@ -90,10 +94,23 @@ class Ozon(BaseOzon):
         except ValueError:
             return 0.0
 
+    @staticmethod
+    def _closed_last_day(requested_last):
+        """TrueStats daily dashboard works with closed Ozon days, not intraday data."""
+        today_moscow = datetime.now(MOSCOW_TZ).date()
+        if requested_last >= today_moscow:
+            return today_moscow - timedelta(days=1), True
+        return requested_last, False
+
     def _orders_for_period(self, first, last, progress):
         """Return FBO+FBS order quantity and amount for the selected creation period."""
-        since = datetime.combine(first, dt_time.min, tzinfo=timezone.utc).isoformat()
-        until = datetime.combine(last, dt_time.max, tzinfo=timezone.utc).isoformat()
+        if last < first:
+            return {'amount': 0.0, 'quantity': 0, 'postings': 0, 'fbo': 0, 'fbs': 0, 'errors': []}
+        # Ozon's seller cabinet displays these calendar dates in Moscow time.
+        since_msk = datetime.combine(first, dt_time.min, tzinfo=MOSCOW_TZ)
+        until_msk = datetime.combine(last, dt_time.max, tzinfo=MOSCOW_TZ)
+        since = since_msk.astimezone(timezone.utc).isoformat()
+        until = until_msk.astimezone(timezone.utc).isoformat()
         result = {'amount': 0.0, 'quantity': 0, 'postings': 0, 'fbo': 0, 'fbs': 0, 'errors': []}
 
         for scheme, path in (('fbo', '/v3/posting/fbo/list'), ('fbs', '/v4/posting/fbs/list')):
@@ -160,7 +177,6 @@ class Ozon(BaseOzon):
                 workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
                 for sheet in workbook.worksheets:
                     rows = sheet.iter_rows(values_only=True)
-                    header = None
                     index = None
                     for _ in range(30):
                         row = next(rows, None)
@@ -168,10 +184,9 @@ class Ozon(BaseOzon):
                             break
                         normalized = [' '.join(str(v or '').split()) for v in row]
                         if target in normalized:
-                            header = normalized
                             index = normalized.index(target)
                             break
-                    if header is None:
+                    if index is None:
                         continue
                     total = 0.0
                     for row in rows:
@@ -216,6 +231,8 @@ class Ozon(BaseOzon):
         raise ApiError('В отчёте Ozon нет столбца «Начисленная стоимость размещения».')
 
     def _placement_cost_report(self, first, last, progress):
+        if last < first:
+            return 0.0
         created = self.call('/v1/report/placement/by-products/create', {
             'date_from': first.isoformat(), 'date_to': last.isoformat(),
         })
@@ -237,74 +254,159 @@ class Ozon(BaseOzon):
             self.sleep(1)
         raise ApiError('Ozon слишком долго формирует отчёт стоимости размещения.')
 
+    def _posting_accrual_rows(self, posting_numbers, first, last, progress):
+        rows = []
+        for offset in range(0, len(posting_numbers), 200):
+            chunk = posting_numbers[offset:offset + 200]
+            data = self.call('/v1/finance/accrual/postings', {'posting_numbers': chunk})
+            groups = data.get('posting_accruals') or []
+            if not isinstance(groups, list):
+                raise ApiError('Ozon вернул некорректные начисления по отправлениям.')
+            for group in groups:
+                posting_number = str(group.get('posting_number') or '')
+                for accrual in group.get('accruals') or []:
+                    accrual_date = str(accrual.get('accrual_date') or '')[:10]
+                    try:
+                        row_date = date.fromisoformat(accrual_date)
+                    except ValueError:
+                        continue
+                    if row_date < first or row_date > last:
+                        continue
+                    rows.append({
+                        'posting_number': posting_number,
+                        'accrual_date': accrual_date,
+                        'type_id': accrual.get('type_id'),
+                        'amount': self._price(accrual.get('accrued')),
+                        'quantity': self._price(accrual.get('quantity')),
+                        'seller_price': self._price(accrual.get('seller_price')),
+                        'sku': accrual.get('sku'),
+                    })
+            progress(f'Детализация начислений: {min(offset + 200, len(posting_numbers))} / {len(posting_numbers)} отправлений')
+        return rows
+
+    def _non_posting_rows(self, accruals):
+        """Flatten finance rows not tied to a posting (ads, packaging, etc.)."""
+        result = []
+        for accrual in accruals:
+            unit = str(accrual.get('unit_number') or '').strip()
+            if POSTING_NUMBER.match(unit):
+                continue
+            accrual_date = str(accrual.get('date') or '')[:10]
+
+            def append_fee(fee, sku=None):
+                if not isinstance(fee, dict) or fee.get('type_id') is None:
+                    return
+                result.append({
+                    'posting_number': unit,
+                    'accrual_date': accrual_date,
+                    'type_id': fee.get('type_id'),
+                    'amount': self._price(fee.get('accrued')),
+                    'quantity': 0,
+                    'seller_price': 0,
+                    'sku': sku,
+                })
+
+            append_fee(accrual.get('non_item_fee'))
+            for fee in (accrual.get('container_fees') or {}).get('fees') or []:
+                append_fee(fee)
+            for item in (accrual.get('item_fees') or {}).get('fees') or []:
+                sku = item.get('sku')
+                for fee in item.get('fees') or []:
+                    append_fee(fee, sku)
+            for product in (accrual.get('posting') or {}).get('products') or []:
+                sku = product.get('sku')
+                for fee in (product.get('delivery') or {}).get('services') or []:
+                    append_fee(fee, sku)
+        return result
+
     def finance_transactions(self, date_from, date_to, progress):
-        """Download Seller API sources required by the public TrueStats reconciliation."""
+        """Download the same Seller API facts used by the TrueStats reconciliation."""
         first = self._as_date(date_from)
-        last = self._as_date(date_to)
-        if last < first:
+        requested_last = self._as_date(date_to)
+        if requested_last < first:
             raise ApiError('Дата окончания не может быть раньше даты начала.')
-        if (last - first).days > 30:
+        if (requested_last - first).days > 30:
             raise ApiError('Финансовый период в одном запросе должен быть не больше 31 дня.')
+
+        effective_last, current_day_excluded = self._closed_last_day(requested_last)
 
         type_data = self.call('/v1/finance/accrual/types', {})
         accrual_types = type_data.get('accrual_types') or []
         if not isinstance(accrual_types, list):
             raise ApiError('Ozon вернул некорректный справочник начислений.')
 
-        all_accruals = []
-        current_day = first
-        while current_day <= last:
-            last_id = ''
-            seen = set()
-            for _ in range(1000):
-                data = self.call('/v1/finance/accrual/by-day', {
-                    'date': current_day.isoformat(), 'last_id': last_id,
-                })
-                batch = data.get('accruals') or []
-                if not isinstance(batch, list):
-                    raise ApiError('Ozon вернул некорректный список начислений.')
-                all_accruals.extend(batch)
-                nxt = data.get('last_id') or ''
-                if not nxt or not batch:
-                    break
-                if nxt in seen:
-                    raise ApiError('Ozon повторил курсор финансовых начислений.')
-                seen.add(nxt)
-                last_id = nxt
-            else:
-                raise ApiError('Слишком много страниц финансовых начислений за один день.')
-            progress(f'Начисления Ozon: {current_day.isoformat()} · всего {len(all_accruals)}')
-            current_day += timedelta(days=1)
+        raw_accruals = []
+        posting_numbers = set()
+        if effective_last >= first:
+            current_day = first
+            while current_day <= effective_last:
+                last_id = ''
+                seen = set()
+                for _ in range(1000):
+                    data = self.call('/v1/finance/accrual/by-day', {
+                        'date': current_day.isoformat(), 'last_id': last_id,
+                    })
+                    batch = data.get('accruals') or []
+                    if not isinstance(batch, list):
+                        raise ApiError('Ozon вернул некорректный список начислений.')
+                    raw_accruals.extend(batch)
+                    for item in batch:
+                        unit = str(item.get('unit_number') or '').strip()
+                        if POSTING_NUMBER.match(unit):
+                            posting_numbers.add(unit)
+                    nxt = data.get('last_id') or ''
+                    if not nxt or not batch:
+                        break
+                    if nxt in seen:
+                        raise ApiError('Ozon повторил курсор финансовых начислений.')
+                    seen.add(nxt)
+                    last_id = nxt
+                else:
+                    raise ApiError('Слишком много страниц финансовых начислений за один день.')
+                progress(f'Начисления Ozon: {current_day.isoformat()} · {len(raw_accruals)} блоков')
+                current_day += timedelta(days=1)
+
+        accrual_rows = self._posting_accrual_rows(
+            sorted(posting_numbers), first, effective_last, progress
+        ) if posting_numbers and effective_last >= first else []
+        accrual_rows.extend(self._non_posting_rows(raw_accruals))
+        progress(f'Строк начислений для сверки: {len(accrual_rows)}')
 
         buyout_products = []
         buyout_error = None
-        try:
-            data = self.call('/v1/finance/products/buyout', {
-                'date_from': first.isoformat(), 'date_to': last.isoformat(),
-            })
-            buyout_products = data.get('products') or []
-            if not isinstance(buyout_products, list):
-                raise ApiError('Ozon вернул некорректный отчёт по выкупленным товарам.')
-            progress(f'Выкупы маркетплейсом: {len(buyout_products)} строк')
-        except ApiError as exc:
-            buyout_error = str(exc)
-            progress(f'Выкупы маркетплейсом недоступны: {exc}')
+        if effective_last >= first:
+            try:
+                data = self.call('/v1/finance/products/buyout', {
+                    'date_from': first.isoformat(), 'date_to': effective_last.isoformat(),
+                })
+                buyout_products = data.get('products') or []
+                if not isinstance(buyout_products, list):
+                    raise ApiError('Ozon вернул некорректный отчёт по выкупленным товарам.')
+                progress(f'Выкупы маркетплейсом: {len(buyout_products)} строк')
+            except ApiError as exc:
+                buyout_error = str(exc)
+                progress(f'Выкупы маркетплейсом недоступны: {exc}')
 
         placement_cost = None
         placement_error = None
-        try:
-            placement_cost = self._placement_cost_report(first, last, progress)
-        except ApiError as exc:
-            placement_error = str(exc)
-            progress(f'Стоимость размещения недоступна: {exc}')
+        if effective_last >= first:
+            try:
+                placement_cost = self._placement_cost_report(first, effective_last, progress)
+            except ApiError as exc:
+                placement_error = str(exc)
+                progress(f'Стоимость размещения недоступна: {exc}')
+        else:
+            placement_cost = 0.0
 
-        orders = self._orders_for_period(first, last, progress)
+        orders = self._orders_for_period(first, effective_last, progress)
 
         return {
             'since': first.isoformat(),
-            'to': last.isoformat(),
+            'to': requested_last.isoformat(),
+            'effective_to': effective_last.isoformat() if effective_last >= first else None,
+            'current_day_excluded': current_day_excluded,
             'accrual_types': accrual_types,
-            'accruals': all_accruals,
+            'accrual_rows': accrual_rows,
             'buyout_products': buyout_products,
             'buyout_error': buyout_error,
             'placement_cost': placement_cost,
