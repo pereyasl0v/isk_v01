@@ -1,48 +1,24 @@
-"""TrueStats-style Ozon reconciliation built from current Seller API data.
-
-The metric names and grouping rules follow the public TrueStats instruction
-"Инструкция по сверке данных в оцифровке для Ozon (для нового API)".
-We intentionally do not guess broad service categories: known report types are
-matched explicitly, and every unmatched deduction remains visible in
-"Прочие удержания" and in the diagnostic table.
-"""
+"""TrueStats-style Ozon reconciliation built from current Seller API data."""
 from collections import defaultdict
 import math
 
-
 LOGISTICS_TYPES = {
-    'Логистика',
-    'Обратная логистика',
-    'Логистика - отмена начисления',
-    'Доставка до места выдачи',
-    'Доставка до места выдачи силами Ozon',
+    'Логистика', 'Обратная логистика', 'Логистика - отмена начисления',
+    'Доставка до места выдачи', 'Доставка до места выдачи силами Ozon',
     'Обработка возвратов, отмен и невыкупов партнёрами',
     'Обработка отправления Drop-off (СЦ)',
     'Обработка отправления Drop-off (СЦ) - отмена начисления',
 }
-
-# Fallback only. The primary source for "Сумма хранения" is the exact Ozon
-# "Стоимость размещения -> По товарам" report and its column
-# "Начисленная стоимость размещения".
 STORAGE_TYPES = {
-    'Размещение товаров на складе Ozon',
-    'Размещение товаров на складе',
-    'Стоимость размещения',
-    'Хранение',
+    'Размещение товаров на складе Ozon', 'Размещение товаров на складе',
+    'Стоимость размещения', 'Хранение',
 }
-
 REVENUE_TYPE = 'Выручка'
 RETURN_REVENUE_TYPE = 'Возврат выручки'
 PARTNER_TYPES = {'Программы партнеров', 'Программы партнёров'}
 ACQUIRING_TYPE = 'Эквайринг'
 DISCOUNT_POINTS_TYPE = 'Баллы за скидки'
-
-# Advertising is deliberately NOT calculated from Seller API accruals. TrueStats
-# reconciles it against Promotion analytics + "Оплата за заказ". That is a
-# separate Performance/Promotion API and requires separate credentials.
-ADVERTISING_LIKE_TYPES = {
-    'Реклама', 'Продвижение', 'Продвижение товара', 'Продвижение товаров',
-}
+ADVERTISING_LIKE_TYPES = {'Реклама', 'Продвижение', 'Продвижение товара', 'Продвижение товаров'}
 
 
 def _number(value):
@@ -56,33 +32,58 @@ def _number(value):
 
 
 def _money(value):
-    if isinstance(value, dict):
-        return _number(value.get('amount'))
-    return _number(value)
+    return _number(value.get('amount')) if isinstance(value, dict) else _number(value)
 
 
-def _expense(signed_amount):
-    """Display a net deduction as a positive expense, preserving cancellations."""
-    return max(0.0, -_number(signed_amount))
+def _expense(value):
+    return max(0.0, -_number(value))
 
 
-def _type_name(row):
-    # /v1/finance/accrual/types calls this field `name`; `description` explains it.
-    # TrueStats groups by the report column "Тип начисления", so name is primary.
-    return str(row.get('name') or row.get('description') or row.get('id') or '')
+def _norm(value):
+    text = str(value or '').strip().casefold().replace('ё', 'е')
+    text = text.replace('–', '-').replace('—', '-')
+    return ' '.join(text.split())
 
 
-def _is_compensation(name):
-    lowered = name.casefold()
-    return 'компенсац' in lowered or 'декомпенсац' in lowered
+def _aliases(row):
+    values = []
+    for key in ('description', 'name'):
+        value = str(row.get(key) or '').strip()
+        if value and value not in values:
+            values.append(value)
+    return values
 
 
-def _sale_sign(name):
-    if name == REVENUE_TYPE:
-        return 1
-    if name == RETURN_REVENUE_TYPE:
-        return -1
-    return 0
+def _matches(aliases, targets):
+    normalized = {_norm(v) for v in aliases}
+    return any(_norm(target) in normalized for target in targets)
+
+
+def _contains_compensation(aliases):
+    return any('компенсац' in _norm(v) for v in aliases)
+
+
+def _classify(aliases):
+    """Map Ozon type aliases to the exact TrueStats bucket without fuzzy substring grouping."""
+    if _matches(aliases, {REVENUE_TYPE}):
+        return REVENUE_TYPE
+    if _matches(aliases, {RETURN_REVENUE_TYPE}):
+        return RETURN_REVENUE_TYPE
+    if _matches(aliases, PARTNER_TYPES):
+        return 'Программы партнеров'
+    if _matches(aliases, {ACQUIRING_TYPE}):
+        return ACQUIRING_TYPE
+    if _matches(aliases, {DISCOUNT_POINTS_TYPE}):
+        return DISCOUNT_POINTS_TYPE
+    if _matches(aliases, LOGISTICS_TYPES):
+        return 'Сумма логистики'
+    if _matches(aliases, STORAGE_TYPES):
+        return 'Сумма хранения'
+    if _matches(aliases, ADVERTISING_LIKE_TYPES):
+        return 'Реклама'
+    if _contains_compensation(aliases):
+        return 'Компенсации'
+    return 'Прочие удержания'
 
 
 def summarize(snapshot):
@@ -90,54 +91,57 @@ def summarize(snapshot):
     type_rows = snapshot.get('accrual_types') or []
     buyouts = snapshot.get('buyout_products') or []
 
-    names = {}
+    type_info = {}
     for row in type_rows:
         key = row.get('id')
-        if key is not None:
-            names[str(key)] = _type_name(row)
+        if key is None:
+            continue
+        aliases = _aliases(row)
+        type_info[str(key)] = {
+            'aliases': aliases,
+            'display': (row.get('description') or row.get('name') or str(key)),
+            'bucket': _classify(aliases),
+        }
 
-    amount_by_type = defaultdict(float)
-    rows_by_type = defaultdict(int)
-    units_by_type = defaultdict(set)
-    operation_rows = defaultdict(lambda: {'name': '', 'count': 0, 'amount': 0.0})
+    amount_by_bucket = defaultdict(float)
+    units_by_bucket = defaultdict(set)
+    operation_rows = defaultdict(lambda: {'name': '', 'count': 0, 'amount': 0.0, 'bucket': ''})
 
     realization_domestic = 0.0
     nominal_commission_domestic = 0.0
     discount_points_from_products = 0.0
-    products = defaultdict(lambda: {
-        'sku': '', 'sales_quantity': 0, 'sales_amount': 0.0, 'realization': 0.0,
-    })
+    products = defaultdict(lambda: {'sku': '', 'sales_quantity': 0, 'sales_amount': 0.0, 'realization': 0.0})
 
     for index, accrual in enumerate(accruals):
         type_id = str(accrual.get('accrual_id', accrual.get('type_id', 'unknown')))
-        name = names.get(type_id, type_id)
+        info = type_info.get(type_id, {'aliases': [type_id], 'display': type_id, 'bucket': 'Прочие удержания'})
+        bucket = info['bucket']
+        display = str(info['display'])
         amount = _money(accrual.get('total_amount'))
-        amount_by_type[name] += amount
-        rows_by_type[name] += 1
+        amount_by_bucket[bucket] += amount
 
         unit_number = str(accrual.get('unit_number') or '').strip()
-        units_by_type[name].add(unit_number or f'row:{index}')
+        units_by_bucket[bucket].add(unit_number or f'row:{index}')
 
-        diagnostic = operation_rows[name]
-        diagnostic['name'] = name
+        diag_key = f'{type_id}:{display}'
+        diagnostic = operation_rows[diag_key]
+        diagnostic['name'] = display
+        diagnostic['bucket'] = bucket
         diagnostic['count'] += 1
         diagnostic['amount'] += amount
 
-        sign = _sale_sign(name)
+        sign = 1 if bucket == REVENUE_TYPE else -1 if bucket == RETURN_REVENUE_TYPE else 0
         if not sign:
             continue
-
         posting = accrual.get('posting') or {}
         for product in posting.get('products') or []:
             commission = product.get('commission') or {}
             seller_price = abs(_money(commission.get('seller_price')))
             nominal_commission = abs(_money(commission.get('commission')))
             bonus = abs(_money(commission.get('bonus')))
-
             realization_domestic += sign * seller_price
             nominal_commission_domestic += sign * nominal_commission
             discount_points_from_products += sign * bonus
-
             sku = product.get('sku')
             if sku is not None:
                 row = products[str(sku)]
@@ -146,12 +150,11 @@ def summarize(snapshot):
                 row['realization'] += sign * seller_price
                 row['sales_amount'] += sign * abs(amount)
 
-    revenue = amount_by_type.get(REVENUE_TYPE, 0.0)
-    return_revenue = amount_by_type.get(RETURN_REVENUE_TYPE, 0.0)
-    partner_programs = sum(amount_by_type.get(name, 0.0) for name in PARTNER_TYPES)
-
-    revenue_qty = len(units_by_type.get(REVENUE_TYPE, set()))
-    return_qty = len(units_by_type.get(RETURN_REVENUE_TYPE, set()))
+    revenue = amount_by_bucket.get(REVENUE_TYPE, 0.0)
+    return_revenue = amount_by_bucket.get(RETURN_REVENUE_TYPE, 0.0)
+    partner_programs = amount_by_bucket.get('Программы партнеров', 0.0)
+    revenue_qty = len(units_by_bucket.get(REVENUE_TYPE, set()))
+    return_qty = len(units_by_bucket.get(RETURN_REVENUE_TYPE, set()))
 
     buyout_realization = 0.0
     buyout_commission = 0.0
@@ -163,7 +166,6 @@ def summarize(snapshot):
         buyout_quantity += quantity
         buyout_realization += seller_price * quantity
         buyout_commission += (seller_price - buyout_price) * quantity
-
         sku = item.get('sku')
         if sku is not None:
             row = products[str(sku)]
@@ -172,40 +174,21 @@ def summarize(snapshot):
             row['realization'] += seller_price * quantity
             row['sales_amount'] += seller_price * quantity
 
-    logistics_signed = sum(amount_by_type.get(name, 0.0) for name in LOGISTICS_TYPES)
-    storage_signed = sum(amount_by_type.get(name, 0.0) for name in STORAGE_TYPES)
     placement_cost = snapshot.get('placement_cost')
     storage_from_report = placement_cost is not None
-    storage_value = abs(_number(placement_cost)) if storage_from_report else _expense(storage_signed)
-    acquiring_signed = amount_by_type.get(ACQUIRING_TYPE, 0.0)
+    storage_value = abs(_number(placement_cost)) if storage_from_report else _expense(amount_by_bucket.get('Сумма хранения', 0.0))
 
-    discount_points_by_type = amount_by_type.get(DISCOUNT_POINTS_TYPE, 0.0)
-    discount_points = abs(discount_points_by_type) if discount_points_by_type else max(0.0, discount_points_from_products)
+    discount_by_type = amount_by_bucket.get(DISCOUNT_POINTS_TYPE, 0.0)
+    discount_points = abs(discount_by_type) if discount_by_type else max(0.0, discount_points_from_products)
+    compensation_signed = amount_by_bucket.get('Компенсации', 0.0)
 
-    compensation_signed = sum(
-        amount for name, amount in amount_by_type.items() if _is_compensation(name)
-    )
-
-    # Revenue in the accrual report is separated from "Возврат выручки". The
-    # TrueStats "Сумма продаж" is net domestic revenue + partner programs +
-    # original seller value of marketplace buyouts.
     domestic_sales = revenue - abs(return_revenue) + partner_programs
     sales_amount = domestic_sales + buyout_realization
     sales_quantity = revenue_qty - return_qty + buyout_quantity
     realization = realization_domestic + buyout_realization
     nominal_commission = nominal_commission_domestic + buyout_commission
 
-    excluded_from_other = set(LOGISTICS_TYPES) | set(STORAGE_TYPES) | {
-        REVENUE_TYPE, RETURN_REVENUE_TYPE, ACQUIRING_TYPE, DISCOUNT_POINTS_TYPE,
-    } | PARTNER_TYPES | ADVERTISING_LIKE_TYPES
-
-    other_deductions = 0.0
-    for name, signed in amount_by_type.items():
-        if name in excluded_from_other or _is_compensation(name):
-            continue
-        if signed < 0:
-            other_deductions += -signed
-
+    other_deductions = _expense(amount_by_bucket.get('Прочие удержания', 0.0))
     orders = snapshot.get('orders') or {}
     orders_amount = orders.get('amount')
     orders_quantity = orders.get('quantity')
@@ -213,10 +196,10 @@ def summarize(snapshot):
 
     metrics = {
         'realization': round(realization, 2),
-        'logistics': round(_expense(logistics_signed), 2),
+        'logistics': round(_expense(amount_by_bucket.get('Сумма логистики', 0.0)), 2),
         'storage': round(storage_value, 2),
         'nominal_commission': round(max(0.0, nominal_commission), 2),
-        'acquiring': round(_expense(acquiring_signed), 2),
+        'acquiring': round(_expense(amount_by_bucket.get(ACQUIRING_TYPE, 0.0)), 2),
         'advertising': None,
         'sales_quantity': int(sales_quantity),
         'sales_amount': round(sales_amount, 2),
@@ -237,7 +220,7 @@ def summarize(snapshot):
         'marketplace_buyout_commission': round(buyout_commission, 2),
         'nominal_commission_domestic': round(nominal_commission_domestic, 2),
         'storage_from_placement_report': storage_from_report,
-        'storage_accrual_fallback': round(_expense(storage_signed), 2),
+        'storage_accrual_fallback': round(_expense(amount_by_bucket.get('Сумма хранения', 0.0)), 2),
     }
 
     warnings = []
@@ -250,32 +233,15 @@ def summarize(snapshot):
     warnings.append('Реклама пока не рассчитывается: по инструкции TrueStats она берётся из Аналитики продвижения + Оплата за заказ, а это отдельный Promotion/Performance API, не Seller API.')
 
     types = []
-    for name, row in operation_rows.items():
-        category = 'Прочие удержания'
-        if name in LOGISTICS_TYPES:
-            category = 'Сумма логистики'
-        elif name in STORAGE_TYPES:
+    for row in operation_rows.values():
+        category = row['bucket']
+        if category == 'Сумма хранения':
             category = 'Сумма хранения (резерв; основной источник — отчёт размещения)'
-        elif name == ACQUIRING_TYPE:
-            category = 'Эквайринг'
-        elif name in (REVENUE_TYPE, RETURN_REVENUE_TYPE):
-            category = 'Количество продаж / Сумма продаж'
-        elif name in PARTNER_TYPES:
-            category = 'Сумма продаж'
-        elif name == DISCOUNT_POINTS_TYPE:
-            category = 'Баллы за скидки'
-        elif _is_compensation(name):
-            category = 'Компенсации'
-        elif name in ADVERTISING_LIKE_TYPES:
+        elif category == 'Реклама':
             category = 'Реклама (не используется: нужен Promotion API)'
-        elif row['amount'] >= 0:
+        elif category == 'Прочие удержания' and row['amount'] >= 0:
             category = 'Доход / не является удержанием'
-        types.append({
-            'name': name,
-            'count': row['count'],
-            'amount': round(row['amount'], 2),
-            'truestats_metric': category,
-        })
+        types.append({'name': row['name'], 'count': row['count'], 'amount': round(row['amount'], 2), 'truestats_metric': category})
     types.sort(key=lambda row: abs(row['amount']), reverse=True)
 
     product_rows = []
@@ -286,13 +252,8 @@ def summarize(snapshot):
     product_rows.sort(key=lambda row: abs(row['realization']), reverse=True)
 
     return {
-        'at': snapshot.get('at'),
-        'since': snapshot.get('since'),
-        'to': snapshot.get('to'),
-        'metrics': metrics,
-        'components': components,
-        'operation_types': types,
-        'products': product_rows,
-        'warnings': warnings,
+        'at': snapshot.get('at'), 'since': snapshot.get('since'), 'to': snapshot.get('to'),
+        'metrics': metrics, 'components': components, 'operation_types': types,
+        'products': product_rows, 'warnings': warnings,
         'methodology': 'Метрики сгруппированы по публичной инструкции TrueStats для Ozon (новый API).',
     }
