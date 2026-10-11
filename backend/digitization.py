@@ -39,6 +39,21 @@ def _expense(value):
     return max(0.0, -_number(value))
 
 
+def _percent(part, base):
+    part = _number(part)
+    base = _number(base)
+    if not base:
+        return None
+    return round(part / base * 100, 2)
+
+
+def _average(total, quantity):
+    quantity = int(_number(quantity))
+    if quantity <= 0:
+        return None
+    return round(_number(total) / quantity, 2)
+
+
 def _norm(value):
     text = str(value or '').strip().casefold().replace('ё', 'е')
     text = text.replace('–', '-').replace('—', '-')
@@ -110,11 +125,16 @@ def summarize(snapshot):
     realization_domestic = 0.0
     nominal_commission_domestic = 0.0
     discount_points_from_products = 0.0
-    products = defaultdict(lambda: {'sku': '', 'sales_quantity': 0, 'sales_amount': 0.0, 'realization': 0.0})
+    products = defaultdict(lambda: {
+        'sku': '', 'sales_quantity': 0, 'sales_amount': 0.0, 'realization': 0.0
+    })
 
     for index, accrual in enumerate(accruals):
         type_id = str(accrual.get('accrual_id', accrual.get('type_id', 'unknown')))
-        info = type_info.get(type_id, {'aliases': [type_id], 'display': type_id, 'bucket': 'Прочие удержания'})
+        info = type_info.get(
+            type_id,
+            {'aliases': [type_id], 'display': type_id, 'bucket': 'Прочие удержания'},
+        )
         bucket = info['bucket']
         display = str(info['display'])
         amount = _money(accrual.get('total_amount'))
@@ -176,10 +196,18 @@ def summarize(snapshot):
 
     placement_cost = snapshot.get('placement_cost')
     storage_from_report = placement_cost is not None
-    storage_value = abs(_number(placement_cost)) if storage_from_report else _expense(amount_by_bucket.get('Сумма хранения', 0.0))
+    storage_value = (
+        abs(_number(placement_cost))
+        if storage_from_report
+        else _expense(amount_by_bucket.get('Сумма хранения', 0.0))
+    )
 
     discount_by_type = amount_by_bucket.get(DISCOUNT_POINTS_TYPE, 0.0)
-    discount_points = abs(discount_by_type) if discount_by_type else max(0.0, discount_points_from_products)
+    discount_points = (
+        abs(discount_by_type)
+        if discount_by_type
+        else max(0.0, discount_points_from_products)
+    )
     compensation_signed = amount_by_bucket.get('Компенсации', 0.0)
 
     domestic_sales = revenue - abs(return_revenue) + partner_programs
@@ -188,26 +216,69 @@ def summarize(snapshot):
     realization = realization_domestic + buyout_realization
     nominal_commission = nominal_commission_domestic + buyout_commission
 
+    logistics = _expense(amount_by_bucket.get('Сумма логистики', 0.0))
+    acquiring = _expense(amount_by_bucket.get(ACQUIRING_TYPE, 0.0))
     other_deductions = _expense(amount_by_bucket.get('Прочие удержания', 0.0))
+    returns_amount = abs(return_revenue)
+    returns_quantity = return_qty
+
     orders = snapshot.get('orders') or {}
     orders_amount = orders.get('amount')
     orders_quantity = orders.get('quantity')
     orders_errors = orders.get('errors') or []
 
+    # These TrueStats dashboard metrics require seller-owned inputs that do not
+    # exist in Seller API. They stay empty until those sources are connected.
+    clean_profit = snapshot.get('clean_profit')
+    taxes = snapshot.get('taxes')
+    cogs = snapshot.get('cogs')
+    if clean_profit is not None:
+        clean_profit = round(_number(clean_profit), 2)
+    if taxes is not None:
+        taxes = round(_number(taxes), 2)
+    if cogs is not None:
+        cogs = round(_number(cogs), 2)
+
+    margin = _percent(clean_profit, realization) if clean_profit is not None else None
+    roi = _percent(clean_profit, cogs) if clean_profit is not None and cogs else None
+    average_profit = _average(clean_profit, sales_quantity) if clean_profit is not None else None
+
     metrics = {
-        'realization': round(realization, 2),
-        'logistics': round(_expense(amount_by_bucket.get('Сумма логистики', 0.0)), 2),
-        'storage': round(storage_value, 2),
-        'nominal_commission': round(max(0.0, nominal_commission), 2),
-        'acquiring': round(_expense(amount_by_bucket.get(ACQUIRING_TYPE, 0.0)), 2),
-        'advertising': None,
-        'sales_quantity': int(sales_quantity),
-        'sales_amount': round(sales_amount, 2),
+        # Exact top-card names in TrueStats "Оцифровка".
         'orders_amount': round(_number(orders_amount), 2) if orders_amount is not None else None,
         'orders_quantity': int(_number(orders_quantity)) if orders_quantity is not None else None,
+        'sales_amount': round(sales_amount, 2),
+        'sales_quantity': int(sales_quantity),
+        'clean_profit': clean_profit,
+        'margin': margin,
+        'returns_amount': round(returns_amount, 2),
+        'returns_quantity': int(returns_quantity),
+        'logistics': round(logistics, 2),
+        'logistics_share': _percent(logistics, realization),
+        'nominal_commission': round(max(0.0, nominal_commission), 2),
+        'nominal_commission_share': _percent(max(0.0, nominal_commission), realization),
+        'roi': roi,
+        'average_profit': average_profit,
+        'taxes': taxes,
+        'taxes_share': _percent(taxes, realization) if taxes is not None else None,
+
+        # Reconciliation metrics used below the cards.
+        'realization': round(realization, 2),
+        'storage': round(storage_value, 2),
+        'acquiring': round(acquiring, 2),
+        'advertising': None,
         'discount_points': round(discount_points, 2),
         'compensations': round(compensation_signed, 2),
         'other_deductions': round(other_deductions, 2),
+    }
+
+    summary = {
+        'price_before_spp': _average(realization, sales_quantity),
+        'average_sale_price': _average(sales_amount, sales_quantity),
+        'realization': round(realization, 2),
+        'sales': round(sales_amount, 2),
+        'to_transfer': None,
+        'returns': round(returns_amount, 2),
     }
 
     components = {
@@ -220,17 +291,36 @@ def summarize(snapshot):
         'marketplace_buyout_commission': round(buyout_commission, 2),
         'nominal_commission_domestic': round(nominal_commission_domestic, 2),
         'storage_from_placement_report': storage_from_report,
-        'storage_accrual_fallback': round(_expense(amount_by_bucket.get('Сумма хранения', 0.0)), 2),
+        'storage_accrual_fallback': round(
+            _expense(amount_by_bucket.get('Сумма хранения', 0.0)), 2
+        ),
     }
 
     warnings = []
     if snapshot.get('buyout_error'):
-        warnings.append('Выкупы маркетплейсом не загружены: показатели Реализация, Номинальная комиссия, Количество продаж и Сумма продаж неполные.')
+        warnings.append(
+            'Выкупы маркетплейсом не загружены: показатели Реализация, '
+            'Номинальная комиссия, Продажи и количество продаж неполные.'
+        )
     if snapshot.get('placement_error'):
-        warnings.append('Отчёт «Стоимость размещения → По товарам» не загружен. Сумма хранения показана по начислениям как резервный вариант и может не совпадать с TrueStats.')
+        warnings.append(
+            'Отчёт «Стоимость размещения → По товарам» не загружен. '
+            'Сумма хранения показана по начислениям как резервный вариант и '
+            'может не совпадать с TrueStats.'
+        )
     if orders_errors:
         warnings.append('Сверка заказов неполная: ' + '; '.join(str(x) for x in orders_errors))
-    warnings.append('Реклама пока не рассчитывается: по инструкции TrueStats она берётся из Аналитики продвижения + Оплата за заказ, а это отдельный Promotion/Performance API, не Seller API.')
+    warnings.append(
+        'Реклама пока не рассчитывается: по методике TrueStats она берётся из '
+        'Аналитики продвижения + Оплата за заказ, то есть из отдельного '
+        'Promotion/Performance API.'
+    )
+    if clean_profit is None or taxes is None or cogs is None:
+        warnings.append(
+            'Чистая прибыль, ROI, Средняя прибыль и Налоги не подменяются '
+            'расчётами Seller API: для них нужны себестоимость/фулфилмент, '
+            'налоговые настройки, реклама и операционные расходы продавца.'
+        )
 
     types = []
     for row in operation_rows.values():
@@ -241,7 +331,12 @@ def summarize(snapshot):
             category = 'Реклама (не используется: нужен Promotion API)'
         elif category == 'Прочие удержания' and row['amount'] >= 0:
             category = 'Доход / не является удержанием'
-        types.append({'name': row['name'], 'count': row['count'], 'amount': round(row['amount'], 2), 'truestats_metric': category})
+        types.append({
+            'name': row['name'],
+            'count': row['count'],
+            'amount': round(row['amount'], 2),
+            'truestats_metric': category,
+        })
     types.sort(key=lambda row: abs(row['amount']), reverse=True)
 
     product_rows = []
@@ -252,8 +347,14 @@ def summarize(snapshot):
     product_rows.sort(key=lambda row: abs(row['realization']), reverse=True)
 
     return {
-        'at': snapshot.get('at'), 'since': snapshot.get('since'), 'to': snapshot.get('to'),
-        'metrics': metrics, 'components': components, 'operation_types': types,
-        'products': product_rows, 'warnings': warnings,
-        'methodology': 'Метрики сгруппированы по публичной инструкции TrueStats для Ozon (новый API).',
+        'at': snapshot.get('at'),
+        'since': snapshot.get('since'),
+        'to': snapshot.get('to'),
+        'metrics': metrics,
+        'summary': summary,
+        'components': components,
+        'operation_types': types,
+        'products': product_rows,
+        'warnings': warnings,
+        'methodology': 'Метрики названы и сгруппированы как в TrueStats «Оцифровка».',
     }
