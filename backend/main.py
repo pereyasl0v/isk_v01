@@ -13,6 +13,7 @@ from .ozon import Ozon, ApiError
 from .storage import Store
 from .inventory import summarize, aggregate
 from .replenishment import calculate as replenishment_calculate
+from .digitization import summarize as digitization_summarize
 
 ROOT=Path(__file__).resolve().parents[1]
 DATA=Path(os.environ.get('OZON_FBO_DATA_DIR',str(Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'VKR_Ozon_FBO_Web')))
@@ -58,6 +59,9 @@ class Connect(BaseModel):
 class History(BaseModel):
     days:int=Field(default=90,ge=1,le=365)
 
+class DigitizationParams(BaseModel):
+    days:int=Field(default=30,ge=1,le=31)
+
 @app.post('/api/connect')
 def connect(body:Connect,request:Request,response:Response):
     try:
@@ -70,7 +74,6 @@ def connect(body:Connect,request:Request,response:Response):
         if old and old['job']['running']:
             raise HTTPException(409,'Дождитесь завершения загрузки.')
         sessions.pop(request.cookies.get('fbo_session',''),None)
-        # Expired sessions are pruned without ever writing credentials to disk.
         for k in list(sessions):
             if time.time()-sessions[k]['used']>8*3600 and not sessions[k]['job']['running']:
                 sessions.pop(k)
@@ -127,6 +130,8 @@ def launch(s,kind,days=90):
                     progress(warning)
                 store.save(s['client'],'inventory',{'products':products,'stocks':stocks,
                             'analytics':analytics,'warning':warning})
+            elif kind=='digitization':
+                store.save(s['client'],'digitization',s['api'].finance_transactions(days,progress))
             else:
                 store.save(s['client'],'history',s['api'].postings(days,progress))
             progress('Загрузка завершена. Снимок сохранён.')
@@ -153,6 +158,10 @@ def sync(request:Request):
 def sync_history(body:History,request:Request):
     return launch(current(request),'history',body.days)
 
+@app.post('/api/digitization/sync')
+def sync_digitization(body:DigitizationParams,request:Request):
+    return launch(current(request),'digitization',body.days)
+
 @app.get('/api/inventory')
 def inventory(request:Request):
     data=store.latest(current(request)['client'],'inventory')
@@ -163,6 +172,17 @@ def inventory(request:Request):
 @app.get('/api/history')
 def history(request:Request):
     return store.latest(current(request)['client'],'history') or {'at':None,'postings':[]}
+
+@app.get('/api/digitization')
+def digitization(request:Request):
+    data=store.latest(current(request)['client'],'digitization')
+    if not data:
+        return {'at':None,'since':None,'to':None,'totals':None,'operation_types':[],'products':[],
+                'unallocated_product_operations':0,'note':'Загрузите финансовые операции Ozon.'}
+    try:
+        return digitization_summarize(data)
+    except (ValueError,KeyError,TypeError):
+        raise HTTPException(422,'Не удалось обработать финансовый снимок Ozon.') from None
 
 class ReplenishmentParams(BaseModel):
     window:int=Field(default=14)
