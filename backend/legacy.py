@@ -1,9 +1,11 @@
 """Read-only Ozon adapter. Contract: user-provided Seller API body, 2026-10-10."""
 import json
+import os
 import threading
 import time
 import urllib.request
 import urllib.error
+from pathlib import Path
 
 BASE = 'https://api-seller.ozon.ru'
 ALLOWED = {'/v1/roles', '/v3/product/list', '/v3/product/info/list',
@@ -16,6 +18,8 @@ SESSION_CACHE_PATHS = {
     '/v1/finance/accrual/types',
     '/v1/report/placement/by-products/create',
 }
+PLACEMENT_CREATE_PATH = '/v1/report/placement/by-products/create'
+PLACEMENT_CACHE_TTL = 12 * 3600
 
 class ApiError(Exception):
     pass
@@ -31,8 +35,15 @@ class Ozon:
         self.transport = transport
         self.sleep = sleep
         self._response_cache = {}
+        self._response_cache_at = {}
         self._rate_lock = threading.Lock()
         self._last_request_at = 0.0
+        data_dir = Path(os.environ.get(
+            'OZON_FBO_DATA_DIR',
+            str(Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'VKR_Ozon_FBO_Web')
+        ))
+        self._placement_cache_file = data_dir / 'ozon_report_cache.json'
+        self._load_placement_cache()
 
     @staticmethod
     def _cache_key(path, payload):
@@ -40,9 +51,66 @@ class Ozon:
             return None
         return path + ':' + json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
 
+    def _load_placement_cache(self):
+        try:
+            raw = json.loads(self._placement_cache_file.read_text(encoding='utf-8'))
+        except (OSError, ValueError, TypeError):
+            return
+        now = time.time()
+        for key, record in (raw or {}).items():
+            if not key.startswith(PLACEMENT_CREATE_PATH + ':') or not isinstance(record, dict):
+                continue
+            saved_at = record.get('at')
+            result = record.get('result')
+            try:
+                fresh = now - float(saved_at) <= PLACEMENT_CACHE_TTL
+            except (TypeError, ValueError):
+                fresh = False
+            if fresh and isinstance(result, dict) and result.get('code'):
+                # Scope cache to the current Client ID so report codes from
+                # another cabinet can never be reused accidentally.
+                client_prefix = f'client={self.client_id}|'
+                if key.startswith(client_prefix + PLACEMENT_CREATE_PATH + ':'):
+                    self._response_cache[key[len(client_prefix):]] = result
+                    self._response_cache_at[key[len(client_prefix):]] = float(saved_at)
+
+    def _save_placement_cache(self):
+        try:
+            self._placement_cache_file.parent.mkdir(parents=True, exist_ok=True)
+            existing = {}
+            try:
+                existing = json.loads(self._placement_cache_file.read_text(encoding='utf-8')) or {}
+            except (OSError, ValueError, TypeError):
+                pass
+            now = time.time()
+            cleaned = {}
+            for key, record in existing.items():
+                if not isinstance(record, dict):
+                    continue
+                try:
+                    if now - float(record.get('at')) <= PLACEMENT_CACHE_TTL:
+                        cleaned[key] = record
+                except (TypeError, ValueError):
+                    continue
+            for key, result in self._response_cache.items():
+                if key.startswith(PLACEMENT_CREATE_PATH + ':') and isinstance(result, dict) and result.get('code'):
+                    cleaned[f'client={self.client_id}|{key}'] = {
+                        'at': self._response_cache_at.get(key, now),
+                        'result': result,
+                    }
+            temp = self._placement_cache_file.with_suffix('.tmp')
+            temp.write_text(json.dumps(cleaned, ensure_ascii=False), encoding='utf-8')
+            temp.replace(self._placement_cache_file)
+        except OSError:
+            # Cache failure must never break Seller API reads.
+            pass
+
     def _remember(self, cache_key, result):
         if cache_key is not None:
             self._response_cache[cache_key] = result
+            self._response_cache_at[cache_key] = time.time()
+            if cache_key.startswith(PLACEMENT_CREATE_PATH + ':'):
+                self._save_placement_cache()
         return result
 
     def _throttle(self):
@@ -111,7 +179,7 @@ class Ozon:
                     # Long Retry-After usually means a method-specific quota,
                     # not a short burst. Do not freeze the local app for hours.
                     if delay > 120:
-                        if path == '/v1/report/placement/by-products/create':
+                        if path == PLACEMENT_CREATE_PATH:
                             raise ApiError(
                                 'Ozon исчерпал лимит отчётов стоимости размещения '
                                 '(не больше 5 созданий в день). Уже созданный отчёт '
