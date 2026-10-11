@@ -2,7 +2,7 @@ import os
 import secrets
 import threading
 import time
-from datetime import date
+from datetime import date, datetime, time as dt_time, timezone
 from pathlib import Path
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, SecretStr
-from .ozon import Ozon, ApiError
+from .ozon import Ozon, ApiError, MOSCOW_TZ
 from .storage import Store
 from .inventory import summarize, aggregate
 from .replenishment import calculate as replenishment_calculate
@@ -130,8 +130,20 @@ def launch(s,kind,days=90,date_from=None,date_to=None):
                     analytics=None
                     warning='Аналитика недоступна или ответ неполный. Доступный остаток неизвестен; смотрите исходные строки.'
                     progress(warning)
+                fbs_stock_quantity=None
+                fbs_stocks=[]
+                fbs_stock_error=None
+                try:
+                    fbs=s['api'].fbs_stocks(products,progress)
+                    fbs_stock_quantity=fbs.get('quantity')
+                    fbs_stocks=fbs.get('rows') or []
+                except ApiError as exc:
+                    fbs_stock_error=str(exc)
+                    progress('FBS-остатки недоступны: '+str(exc))
                 store.save(s['client'],'inventory',{'products':products,'stocks':stocks,
-                            'analytics':analytics,'warning':warning})
+                            'analytics':analytics,'warning':warning,
+                            'fbs_stock_quantity':fbs_stock_quantity,'fbs_stocks':fbs_stocks,
+                            'fbs_stock_error':fbs_stock_error})
             elif kind=='digitization':
                 store.save(s['client'],'digitization',s['api'].finance_transactions(date_from,date_to,progress))
             else:
@@ -172,8 +184,28 @@ def sync_digitization(body:DigitizationParams,request:Request):
 def inventory(request:Request):
     data=store.latest(current(request)['client'],'inventory')
     if not data:
-        return {'at':None,'products':[],'stocks':[],'analytics':None,'summary':None,'aggregated':[]}
+        return {'at':None,'products':[],'stocks':[],'analytics':None,'summary':None,'aggregated':[],
+                'fbs_stock_quantity':None,'fbs_stocks':[],'fbs_stock_error':None}
     return {**data,'summary':summarize(data),'aggregated':aggregate(data)}
+
+@app.get('/api/inventory/history')
+def inventory_history(date_from:date,date_to:date,request:Request):
+    if date_to < date_from:
+        raise HTTPException(422,'Дата окончания не может быть раньше даты начала.')
+    if (date_to-date_from).days > 366:
+        raise HTTPException(422,'История остатков запрашивается максимум за 367 дней.')
+    start=datetime.combine(date_from,dt_time.min,tzinfo=MOSCOW_TZ).astimezone(timezone.utc).isoformat()
+    end=datetime.combine(date_to,dt_time.max,tzinfo=MOSCOW_TZ).astimezone(timezone.utc).isoformat()
+    rows=store.between(current(request)['client'],'inventory',start,end)
+    daily={}
+    for data in rows:
+        try:
+            day=datetime.fromisoformat(data['at']).astimezone(MOSCOW_TZ).date().isoformat()
+            daily[day]={'at':data['at'],'summary':summarize(data),'aggregated':aggregate(data),
+                        'fbs_stock_quantity':data.get('fbs_stock_quantity')}
+        except (ValueError,KeyError,TypeError):
+            continue
+    return {'days':[{'date':day,**daily[day]} for day in sorted(daily)]}
 
 @app.get('/api/history')
 def history(request:Request):
