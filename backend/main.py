@@ -2,6 +2,7 @@ import os
 import secrets
 import threading
 import time
+from datetime import date
 from pathlib import Path
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -60,7 +61,8 @@ class History(BaseModel):
     days:int=Field(default=90,ge=1,le=365)
 
 class DigitizationParams(BaseModel):
-    days:int=Field(default=30,ge=1,le=31)
+    date_from:date
+    date_to:date
 
 @app.post('/api/connect')
 def connect(body:Connect,request:Request,response:Response):
@@ -101,7 +103,7 @@ def state(request:Request):
                 'roles':[r.get('name','') for r in s['roles'].get('roles',[])],
                 'job':dict(s['job']),'logs':list(s['logs'])}
 
-def launch(s,kind,days=90):
+def launch(s,kind,days=90,date_from=None,date_to=None):
     def progress(message):
         with lock:
             s['job']['message']=message
@@ -131,7 +133,7 @@ def launch(s,kind,days=90):
                 store.save(s['client'],'inventory',{'products':products,'stocks':stocks,
                             'analytics':analytics,'warning':warning})
             elif kind=='digitization':
-                store.save(s['client'],'digitization',s['api'].finance_transactions(days,progress))
+                store.save(s['client'],'digitization',s['api'].finance_transactions(date_from,date_to,progress))
             else:
                 store.save(s['client'],'history',s['api'].postings(days,progress))
             progress('Загрузка завершена. Снимок сохранён.')
@@ -160,7 +162,11 @@ def sync_history(body:History,request:Request):
 
 @app.post('/api/digitization/sync')
 def sync_digitization(body:DigitizationParams,request:Request):
-    return launch(current(request),'digitization',body.days)
+    if body.date_to < body.date_from:
+        raise HTTPException(422,'Дата окончания не может быть раньше даты начала.')
+    if (body.date_to-body.date_from).days > 30:
+        raise HTTPException(422,'Выберите период не больше 31 дня.')
+    return launch(current(request),'digitization',date_from=body.date_from,date_to=body.date_to)
 
 @app.get('/api/inventory')
 def inventory(request:Request):
@@ -177,8 +183,8 @@ def history(request:Request):
 def digitization(request:Request):
     data=store.latest(current(request)['client'],'digitization')
     if not data:
-        return {'at':None,'since':None,'to':None,'totals':None,'operation_types':[],'products':[],
-                'unallocated_product_operations':0,'note':'Загрузите финансовые операции Ozon.'}
+        return {'at':None,'since':None,'to':None,'metrics':None,'components':{},'operation_types':[],
+                'products':[],'warnings':[],'methodology':'Загрузите данные за выбранный период.'}
     try:
         return digitization_summarize(data)
     except (ValueError,KeyError,TypeError):
