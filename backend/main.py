@@ -176,8 +176,6 @@ def sync_history(body:History,request:Request):
 def sync_digitization(body:DigitizationParams,request:Request):
     if body.date_to < body.date_from:
         raise HTTPException(422,'Дата окончания не может быть раньше даты начала.')
-    if (body.date_to-body.date_from).days > 30:
-        raise HTTPException(422,'Выберите период не больше 31 дня.')
     return launch(current(request),'digitization',date_from=body.date_from,date_to=body.date_to)
 
 @app.get('/api/inventory')
