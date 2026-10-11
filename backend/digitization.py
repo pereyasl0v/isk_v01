@@ -168,7 +168,8 @@ def summarize(snapshot):
                 row['sku'] = str(sku)
                 row['sales_quantity'] += sign
                 row['realization'] += sign * seller_price
-                row['sales_amount'] += sign * abs(amount)
+                if bucket == REVENUE_TYPE:
+                    row['sales_amount'] += abs(amount)
 
     revenue = amount_by_bucket.get(REVENUE_TYPE, 0.0)
     return_revenue = amount_by_bucket.get(RETURN_REVENUE_TYPE, 0.0)
@@ -210,7 +211,9 @@ def summarize(snapshot):
     )
     compensation_signed = amount_by_bucket.get('Компенсации', 0.0)
 
-    domestic_sales = revenue - abs(return_revenue) + partner_programs
+    # TrueStats: Продажи = Выручка + Программы партнеров + зарубежные выкупы.
+    # Возврат выручки показывается отдельной метрикой и здесь повторно не вычитается.
+    domestic_sales = revenue + partner_programs
     sales_amount = domestic_sales + buyout_realization
     sales_quantity = revenue_qty - return_qty + buyout_quantity
     realization = realization_domestic + buyout_realization
