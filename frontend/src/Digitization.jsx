@@ -78,7 +78,6 @@ export default function Digitization({state,digi,act}){
  const orders=n(m.orders_amount);
  const ordersQty=m.orders_quantity??null;
  const returns=n(m.returns_amount);
- const returnsQty=n(m.returns_quantity);
  const logistics=n(m.logistics);
  const commission=n(m.nominal_commission);
  const acquiring=n(m.acquiring);
@@ -102,8 +101,9 @@ export default function Digitization({state,digi,act}){
  const hasCost=sku=>Object.prototype.hasOwnProperty.call(costs,String(sku));
  const costCoverage=soldRows.filter(r=>hasCost(r.sku)).length;
  const allSoldCosts=soldRows.length>0&&costCoverage===soldRows.length;
- const unitCost=sku=>n(costs[String(sku)]?.cost)+n(costs[String(sku)]?.fulfillment)+n(costs[String(sku)]?.vat);
- const cogs=allSoldCosts?round(soldRows.reduce((sum,row)=>sum+n(row.sales_quantity)*unitCost(row.sku),0)):null;
+ const saleUnitCost=sku=>n(costs[String(sku)]?.cost)+n(costs[String(sku)]?.fulfillment);
+ const stockUnitCost=sku=>saleUnitCost(sku)+n(costs[String(sku)]?.vat);
+ const cogs=allSoldCosts?round(soldRows.reduce((sum,row)=>sum+n(row.sales_quantity)*saleUnitCost(row.sku),0)):null;
  const averageCogs=cogs!==null&&n(salesQty)>0?round(cogs/n(salesQty)):null;
 
  const taxIncome=sales===null?null:round(sales+compensationWithoutPoints-foreignCommission+n(settings.operationalIncome));
@@ -128,7 +128,7 @@ export default function Digitization({state,digi,act}){
  const stockQty=inventory?.summary?.available??null;
  const activeStock=(inventory?.aggregated||[]).filter(r=>n(r.available)>0);
  const allStockCosts=activeStock.length>0&&activeStock.every(r=>hasCost(r.sku));
- const capitalizationCost=allStockCosts?round(activeStock.reduce((sum,row)=>sum+n(row.available)*unitCost(row.sku),0)):null;
+ const capitalizationCost=allStockCosts?round(activeStock.reduce((sum,row)=>sum+n(row.available)*stockUnitCost(row.sku),0)):null;
  const days=periodDays(digi?.since,digi?.effective_to||digi?.to);
  const turnoverSales=stockQty!==null&&days&&n(salesQty)>0?round(n(stockQty)/(n(salesQty)/days)):null;
  const turnoverOrders=stockQty!==null&&days&&n(ordersQty)>0?round(n(stockQty)/(n(ordersQty)/days)):null;
@@ -143,11 +143,11 @@ export default function Digitization({state,digi,act}){
   ...row,
   name:catalogBySku.get(String(row.sku))?.name||'',
   share:realization?round(n(row.realization)/realization*100):null,
-  unit_cost:hasCost(row.sku)?round(unitCost(row.sku)):null,
-  cogs:hasCost(row.sku)?round(n(row.sales_quantity)*unitCost(row.sku)):null,
+  unit_cost:hasCost(row.sku)?round(saleUnitCost(row.sku)):null,
+  cogs:hasCost(row.sku)?round(n(row.sales_quantity)*saleUnitCost(row.sku)):null,
  }));
-
  const missingProfitCosts=soldRows.length-costCoverage;
+
  return <>
   <div className="overview-heading"><div><h1>Оцифровка</h1><p className="muted mt-2">Метрики и формулы TrueStats · снимок: {dateTime(digi?.at)}</p></div><div className="flex gap-2 flex-wrap items-center"><input aria-label="Дата начала" type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/><span className="muted">—</span><input aria-label="Дата окончания" type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/><button className="primary" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={()=>act('/digitization/sync',{date_from:dateFrom,date_to:dateTo})}>Обновить <RefreshCw size={16}/></button></div></div>
   {invalid&&<div className="notice warning mt-4"><AlertTriangle size={18}/>Дата окончания не может быть раньше даты начала.</div>}
@@ -200,11 +200,11 @@ export default function Digitization({state,digi,act}){
   </div>
 
   <section className="panel mb-5">
-   <div className="panel-title"><div><h3>Себестоимость товаров</h3><p className="muted mt-2">Для Ozon TrueStats фиксирует себестоимость по дате заказа. В этой версии задаётся значение «по умолчанию»: СС + фулфилмент + НДС.</p></div><span className="badge">{costCoverage}/{soldRows.length} проданных SKU заполнено</span></div>
-   <div className="table-scroll"><table><thead><tr><th>Товар</th><th>SKU</th><th>Себестоимость, ₽</th><th>Фулфилмент, ₽</th><th>НДС, ₽</th><th>Итого на 1 шт.</th></tr></thead><tbody>
+   <div className="panel-title"><div><h3>Себестоимость товаров</h3><p className="muted mt-2">Для Ozon TrueStats фиксирует себестоимость по дате заказа. В этой версии задаётся значение «по умолчанию»: СС, фулфилмент и НДС.</p></div><span className="badge">{costCoverage}/{soldRows.length} проданных SKU заполнено</span></div>
+   <div className="table-scroll"><table><thead><tr><th>Товар</th><th>SKU</th><th>Себестоимость, ₽</th><th>Фулфилмент, ₽</th><th>НДС, ₽</th><th>СС продаж / 1 шт.</th><th>Капитализация / 1 шт.</th></tr></thead><tbody>
     {costRows.map(row=><tr key={row.sku}><td>{row.name||row.offer_id||'Товар'}</td><td>{row.sku}</td>
      {['cost','fulfillment','vat'].map(field=><td key={field}><input style={{width:120}} type="number" min="0" step="0.01" value={costs[row.sku]?.[field]??''} placeholder="0" onChange={e=>saveCost(row.sku,field,e.target.value)}/></td>)}
-     <td>{hasCost(row.sku)?money(unitCost(row.sku)):'—'}</td></tr>)}
+     <td>{hasCost(row.sku)?money(saleUnitCost(row.sku)):'—'}</td><td>{hasCost(row.sku)?money(stockUnitCost(row.sku)):'—'}</td></tr>)}
    </tbody></table></div>
    {!costRows.length&&<div className="empty"><Calculator size={34}/><h3>Нет товаров</h3><p>Сначала обновите товары и оцифровку.</p></div>}
   </section>
@@ -222,32 +222,20 @@ export default function Digitization({state,digi,act}){
   <section className="panel mb-5"><div className="panel-title"><h3>Сводный отчёт</h3><span className="badge">{digi?.since||'—'} — {digi?.effective_to||digi?.to||'—'}</span></div>
    <div className="table-scroll"><table><thead><tr><th>Метрика</th><th>За период</th></tr></thead><tbody>
     {[
-     ['Цена до СПП',priceBefore],
-     ['Средн. цена продажи',averageSale],
-     ['Реализация (сумма продаж до СПП)',realization],
-     ['Продажи',sales],
-     ['Себестоимость продаж',cogs],
-     ['Чистая прибыль',cleanProfit],
-     ['К перечислению',null],
-     ['Возвраты',returns],
+     ['Цена до СПП',priceBefore],['Средн. цена продажи',averageSale],['Реализация (сумма продаж до СПП)',realization],['Продажи',sales],
+     ['Себестоимость продаж',cogs],['Чистая прибыль',cleanProfit],['К перечислению',null],['Возвраты',returns],
     ].map(([label,value])=><tr key={label}><td>{label}</td><td>{money(value)}</td></tr>)}
    </tbody></table></div>
   </section>
 
   <section className="panel mb-5"><div className="panel-title"><h3>Контроль расчёта TrueStats → Ozon</h3><span className="badge">Формулы</span></div><div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-4">
-   <Metric label="Реализация" value={realization}/>
-   <Metric label="Скидка МП / баллы" value={discount}/>
-   <Metric label="Продажи = Реализация − Скидка МП" value={sales}/>
-   <Metric label="Выкупы маркетплейсом" value={c.marketplace_buyout_realization}/>
-   <Metric label="Комиссия зарубежных выкупов" value={foreignCommission}/>
-   <Metric label="Эквайринг" value={acquiring}/>
-   <Metric label="Реклама" value={advertising} note="Оплата за заказ из Seller API"/>
-   <Metric label="Компенсации без баллов" value={compensationWithoutPoints}/>
+   <Metric label="Реализация" value={realization}/><Metric label="Скидка МП / баллы" value={discount}/><Metric label="Продажи = Реализация − Скидка МП" value={sales}/>
+   <Metric label="Выкупы маркетплейсом" value={c.marketplace_buyout_realization}/><Metric label="Комиссия зарубежных выкупов" value={foreignCommission}/><Metric label="Эквайринг" value={acquiring}/>
+   <Metric label="Реклама" value={advertising} note="Оплата за заказ из Seller API"/><Metric label="Компенсации без баллов" value={compensationWithoutPoints}/>
   </div></section>
 
   <section className="panel mb-5"><div className="panel-title"><h3>По SKU</h3><span className="badge">Продажи + себестоимость</span></div><SimpleTable rows={productRows.slice(0,200)} empty="Нет товарных строк" columns={[
-   ['name','Товар'],['sku','SKU'],['sales_quantity','Продажи, шт',count],['realization','Реализация',money],
-   ['share','Доля в общей выручке',pct],['unit_cost','СС+ФФ+НДС / шт',money],['cogs','Себестоимость продаж',money],
+   ['name','Товар'],['sku','SKU'],['sales_quantity','Продажи, шт',count],['realization','Реализация',money],['share','Доля в общей выручке',pct],['unit_cost','СС+ФФ / шт',money],['cogs','Себестоимость продаж',money],
   ]}/></section>
 
   {(digi?.warnings||[]).length>0&&<section className="panel mb-5"><div className="panel-title"><h3>Что ещё влияет на точность</h3></div>{digi.warnings.filter(w=>!String(w).includes('Чистая прибыль')).map((w,i)=><p className="muted mt-2" key={i}><AlertTriangle size={15}/> {w}</p>)}
