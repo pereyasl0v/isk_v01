@@ -1,7 +1,9 @@
 import json
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
+
 
 class Store:
     def __init__(self,path):
@@ -12,6 +14,18 @@ class Store:
                 at TEXT NOT NULL, payload TEXT NOT NULL)''')
             c.execute('CREATE INDEX IF NOT EXISTS snapshot_lookup ON snapshots(client,kind,id)')
             c.execute('CREATE INDEX IF NOT EXISTS snapshot_time_lookup ON snapshots(client,kind,at)')
+            c.execute('''CREATE TABLE IF NOT EXISTS api_cache (
+                client TEXT NOT NULL,
+                namespace TEXT NOT NULL,
+                cache_key TEXT NOT NULL,
+                updated_at REAL NOT NULL,
+                payload TEXT NOT NULL,
+                PRIMARY KEY(client,namespace,cache_key))''')
+            c.execute('CREATE INDEX IF NOT EXISTS api_cache_updated ON api_cache(updated_at)')
+            # The cache is only an acceleration layer. Keep roughly one year so
+            # historical Seller API reads can be reused without growing forever.
+            c.execute('DELETE FROM api_cache WHERE updated_at < ?', (time.time()-370*86400,))
+
     @contextmanager
     def db(self):
         connection=sqlite3.connect(self.path, timeout=30)
@@ -20,16 +34,19 @@ class Store:
                 yield connection
         finally:
             connection.close()
+
     def save(self,client,kind,data):
         payload=json.dumps(data,ensure_ascii=False,allow_nan=False)
         with self.db() as c:
             c.execute('INSERT INTO snapshots(client,kind,at,payload) VALUES (?,?,?,?)',
                       (client,kind,datetime.now(timezone.utc).isoformat(),payload))
+
     def latest(self,client,kind):
         with self.db() as c:
             row=c.execute('SELECT at,payload FROM snapshots WHERE client=? AND kind=? ORDER BY id DESC LIMIT 1',
                           (client,kind)).fetchone()
         return {'at':row[0],**json.loads(row[1])} if row else None
+
     def between(self,client,kind,at_from,at_to,limit=5000):
         with self.db() as c:
             rows=c.execute(
@@ -37,3 +54,51 @@ class Store:
                 (client,kind,at_from,at_to,int(limit))
             ).fetchall()
         return [{'at':at,**json.loads(payload)} for at,payload in rows]
+
+    def cache_get(self,client,namespace,cache_key,max_age=None):
+        """Read one reusable API response if it is still fresh enough."""
+        with self.db() as c:
+            row=c.execute(
+                'SELECT updated_at,payload FROM api_cache WHERE client=? AND namespace=? AND cache_key=?',
+                (str(client),str(namespace),str(cache_key))
+            ).fetchone()
+            if not row:
+                return None
+            updated_at,payload=row
+            if max_age is not None and time.time()-float(updated_at)>float(max_age):
+                c.execute(
+                    'DELETE FROM api_cache WHERE client=? AND namespace=? AND cache_key=?',
+                    (str(client),str(namespace),str(cache_key))
+                )
+                return None
+        try:
+            value=json.loads(payload)
+        except (ValueError,TypeError):
+            self.cache_delete(client,namespace,cache_key)
+            return None
+        return value
+
+    def cache_put(self,client,namespace,cache_key,data):
+        payload=json.dumps(data,ensure_ascii=False,allow_nan=False,separators=(',',':'))
+        with self.db() as c:
+            c.execute('''INSERT INTO api_cache(client,namespace,cache_key,updated_at,payload)
+                         VALUES (?,?,?,?,?)
+                         ON CONFLICT(client,namespace,cache_key) DO UPDATE SET
+                         updated_at=excluded.updated_at,payload=excluded.payload''',
+                      (str(client),str(namespace),str(cache_key),time.time(),payload))
+
+    def cache_delete(self,client,namespace,cache_key):
+        with self.db() as c:
+            c.execute('DELETE FROM api_cache WHERE client=? AND namespace=? AND cache_key=?',
+                      (str(client),str(namespace),str(cache_key)))
+
+    def cache_stats(self,client,namespace=None):
+        with self.db() as c:
+            if namespace is None:
+                row=c.execute('SELECT COUNT(*),COALESCE(SUM(LENGTH(payload)),0) FROM api_cache WHERE client=?',
+                              (str(client),)).fetchone()
+            else:
+                row=c.execute('''SELECT COUNT(*),COALESCE(SUM(LENGTH(payload)),0)
+                                 FROM api_cache WHERE client=? AND namespace=?''',
+                              (str(client),str(namespace))).fetchone()
+        return {'entries':int(row[0] or 0),'bytes':int(row[1] or 0)}
