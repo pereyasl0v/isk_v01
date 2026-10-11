@@ -79,9 +79,24 @@ class DigitizationTests(unittest.TestCase):
         self.assertEqual(m['sales_amount'], 765.0)
         self.assertEqual(m['orders_amount'], 2500.0)
         self.assertEqual(m['orders_quantity'], 4)
+        self.assertEqual(m['returns_amount'], 150.0)
+        self.assertEqual(m['returns_quantity'], 1)
+        self.assertEqual(m['logistics_share'], 2.53)
+        self.assertEqual(m['nominal_commission_share'], 9.09)
+        self.assertIsNone(m['clean_profit'])
+        self.assertIsNone(m['roi'])
+        self.assertIsNone(m['average_profit'])
+        self.assertIsNone(m['taxes'])
         self.assertEqual(m['discount_points'], 250.0)
         self.assertEqual(m['compensations'], 40.0)
         self.assertEqual(m['other_deductions'], 7.0)
+
+        self.assertEqual(result['summary']['price_before_spp'], 495.0)
+        self.assertEqual(result['summary']['average_sale_price'], 382.5)
+        self.assertEqual(result['summary']['realization'], 990.0)
+        self.assertEqual(result['summary']['sales'], 765.0)
+        self.assertEqual(result['summary']['returns'], 150.0)
+        self.assertIsNone(result['summary']['to_transfer'])
 
         self.assertEqual(result['components']['marketplace_buyout_realization'], 190.0)
         self.assertEqual(result['components']['marketplace_buyout_commission'], 10.0)
@@ -109,6 +124,31 @@ class DigitizationTests(unittest.TestCase):
         })
         self.assertEqual(result['metrics']['acquiring'], 12.5)
         self.assertEqual(result['metrics']['other_deductions'], 0.0)
+
+    def test_profit_metrics_are_only_calculated_when_seller_inputs_exist(self):
+        result = summarize({
+            'accrual_types': [{'id': 1, 'name': 'Выручка'}],
+            'accruals': [{
+                'accrual_id': 1,
+                'unit_number': 'sale-1',
+                'total_amount': {'amount': '800'},
+                'posting': {'products': [{
+                    'sku': 123,
+                    'commission': {'seller_price': {'amount': '1000'}},
+                }]},
+            }],
+            'buyout_products': [],
+            'orders': {},
+            'clean_profit': 200,
+            'taxes': 50,
+            'cogs': 400,
+        })
+        self.assertEqual(result['metrics']['clean_profit'], 200.0)
+        self.assertEqual(result['metrics']['margin'], 20.0)
+        self.assertEqual(result['metrics']['roi'], 50.0)
+        self.assertEqual(result['metrics']['average_profit'], 200.0)
+        self.assertEqual(result['metrics']['taxes'], 50.0)
+        self.assertEqual(result['metrics']['taxes_share'], 5.0)
 
 
 if __name__ == '__main__':
