@@ -15,6 +15,7 @@ from .storage import Store
 from .inventory import summarize, aggregate
 from .replenishment import calculate as replenishment_calculate
 from .digitization import summarize as digitization_summarize
+from .digitization_cache import combine_digitization_days, download_digitization_day, requested_days
 
 ROOT=Path(__file__).resolve().parents[1]
 DATA=Path(os.environ.get('OZON_FBO_DATA_DIR',str(Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'VKR_Ozon_FBO_Web')))
@@ -63,6 +64,7 @@ class History(BaseModel):
 class DigitizationParams(BaseModel):
     date_from:date
     date_to:date
+    refresh:bool=False
 
 @app.post('/api/connect')
 def connect(body:Connect,request:Request,response:Response):
@@ -84,7 +86,7 @@ def connect(body:Connect,request:Request,response:Response):
         sessions.pop(request.cookies.get('fbo_session',''),None)
         for k in list(sessions):
             if time.time()-sessions[k]['used']>8*3600 and not sessions[k]['job']['running']:
-                sessions.pop(k)
+                sessions.pop(k,None)
         token=secrets.token_urlsafe(32)
         sessions[token]={'client':client_id,'api':api,'roles':roles,'used':time.time(),
             'job':{'running':False,'message':'Кабинет подключён','error':None},'logs':[]}
@@ -109,9 +111,10 @@ def state(request:Request):
         return {'client_id':s['client'],'expires_at':s['roles'].get('expires_at'),
                 'roles':[r.get('name','') for r in s['roles'].get('roles',[])],
                 'job':dict(s['job']),'logs':list(s['logs']),'cache':cache,
-                'digitization_periods':store.digitization_period_count(s['client'])}
+                'digitization_periods':store.digitization_period_count(s['client']),
+                'digitization_days':store.digitization_coverage(s['client'])}
 
-def launch(s,kind,days=90,date_from=None,date_to=None):
+def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
     def progress(message):
         with lock:
             s['job']['message']=message
@@ -154,15 +157,64 @@ def launch(s,kind,days=90,date_from=None,date_to=None):
                             'fbs_stock_quantity':fbs_stock_quantity,'fbs_stocks':fbs_stocks,
                             'fbs_stock_error':fbs_stock_error})
             elif kind=='digitization':
-                store.save(s['client'],'digitization',s['api'].finance_transactions(date_from,date_to,progress))
+                first=s['api']._as_date(date_from)
+                requested_last=s['api']._as_date(date_to)
+                effective_last,current_day_excluded=s['api']._closed_last_day(requested_last)
+                if effective_last < first:
+                    progress('В выбранном периоде пока нет закрытых дней Ozon.')
+                else:
+                    if refresh:
+                        target_days=requested_days(first,effective_last)
+                        progress(f'Обновляем локальные данные: {len(target_days)} дн.')
+                    else:
+                        target_days=store.digitization_missing_days(
+                            s['client'],first.isoformat(),effective_last.isoformat()
+                        )
+                        if target_days:
+                            progress(f'Догружаем только отсутствующие дни: {len(target_days)}.')
+                        else:
+                            progress('Все закрытые дни выбранного периода уже есть в SQLite.')
+                    for index,day_text in enumerate(target_days,1):
+                        day=date.fromisoformat(day_text)
+                        progress(f'День {index}/{len(target_days)} · {day_text}')
+                        daily=download_digitization_day(s['api'],day,progress)
+                        store.save_digitization_day(s['client'],day_text,daily)
+
+                    coverage=store.digitization_coverage(
+                        s['client'],first.isoformat(),effective_last.isoformat()
+                    )
+                    if coverage.get('complete'):
+                        rows=store.digitization_days_between(
+                            s['client'],first.isoformat(),effective_last.isoformat()
+                        )
+                        combined=combine_digitization_days(rows,first,requested_last,effective_last)
+                        combined['current_day_excluded']=current_day_excluded
+                        # If an older exact-period snapshot contains the expensive
+                        # placement report, reuse only that component. Daily facts
+                        # remain the source for every other metric.
+                        exact=store.digitization_period(
+                            s['client'],first.isoformat(),requested_last.isoformat()
+                        )
+                        if exact and exact.get('placement_cost') is not None:
+                            combined['placement_cost']=exact.get('placement_cost')
+                        store.save(s['client'],'digitization',combined)
+                        progress(
+                            f'Локальная база готова: {coverage.get("available_days",0)} '
+                            f'из {coverage.get("requested_days",0)} дней.'
+                        )
+                    else:
+                        progress(
+                            f'Локальная база неполная: отсутствует '
+                            f'{len(coverage.get("missing_days") or [])} дней.'
+                        )
             else:
                 store.save(s['client'],'history',s['api'].postings(days,progress))
             after=s['api'].cache_counters() if hasattr(s['api'],'cache_counters') else before
             cache_hits=max(0,int(after.get('hits',0))-int(before.get('hits',0)))
             api_requests=max(0,int(after.get('api_requests',0))-int(before.get('api_requests',0)))
             if cache_hits or kind=='digitization':
-                progress(f'Локальный SQL-кэш: {cache_hits} ответов · новых запросов к Ozon: {api_requests}.')
-            progress('Загрузка завершена. Снимок сохранён.')
+                progress(f'Локальный SQL-кэш API: {cache_hits} ответов · новых запросов к Ozon: {api_requests}.')
+            progress('Загрузка завершена.')
         except ApiError as exc:
             with lock:
                 s['job']['error']=str(exc)
@@ -190,7 +242,7 @@ def sync_history(body:History,request:Request):
 def sync_digitization(body:DigitizationParams,request:Request):
     if body.date_to < body.date_from:
         raise HTTPException(422,'Дата окончания не может быть раньше даты начала.')
-    return launch(current(request),'digitization',date_from=body.date_from,date_to=body.date_to)
+    return launch(current(request),'digitization',date_from=body.date_from,date_to=body.date_to,refresh=body.refresh)
 
 @app.get('/api/inventory')
 def inventory(request:Request):
@@ -235,23 +287,68 @@ def digitization(request:Request,date_from:date|None=None,date_to:date|None=None
     if date_from is not None and date_to is not None:
         if date_to < date_from:
             raise HTTPException(422,'Дата окончания не может быть раньше даты начала.')
-        data=store.digitization_period(client,date_from.isoformat(),date_to.isoformat())
-        if not data:
-            return {
-                'available':False,'at':None,'since':date_from.isoformat(),'to':date_to.isoformat(),
-                'effective_to':None,'metrics':None,'components':{},'operation_types':[],
-                'products':[],'warnings':[],'methodology':'Локальной копии этого периода пока нет.',
-                'cache':{'source':'sqlite','hit':False},
-            }
-    else:
-        data=store.latest(client,'digitization')
-        if not data:
-            return {'available':False,'at':None,'since':None,'to':None,'metrics':None,'components':{},'operation_types':[],
-                    'products':[],'warnings':[],'methodology':'Загрузите данные за выбранный период.',
-                    'cache':{'source':'sqlite','hit':False}}
+        effective_last,current_day_excluded=Ozon._closed_last_day(date_to)
+        if effective_last >= date_from:
+            coverage=store.digitization_coverage(
+                client,date_from.isoformat(),effective_last.isoformat()
+            )
+            if coverage.get('complete'):
+                rows=store.digitization_days_between(
+                    client,date_from.isoformat(),effective_last.isoformat()
+                )
+                data=combine_digitization_days(rows,date_from,date_to,effective_last)
+                data['current_day_excluded']=current_day_excluded
+                exact=store.digitization_period(client,date_from.isoformat(),date_to.isoformat())
+                if exact and exact.get('placement_cost') is not None:
+                    data['placement_cost']=exact.get('placement_cost')
+                try:
+                    result=digitization_summarize(data)
+                    return {
+                        **result,'available':True,
+                        'cache':{
+                            'source':'sqlite-daily','hit':True,
+                            'updated_at':coverage.get('updated_at'),
+                            **coverage,
+                        },
+                    }
+                except (ValueError,KeyError,TypeError):
+                    raise HTTPException(422,'Не удалось обработать локальные дневные данные Ozon.') from None
+        else:
+            coverage={'days':0,'requested_days':0,'available_days':0,'missing_days':[],'complete':False}
+
+        # Exact old snapshots remain readable while the installation is being
+        # migrated. New calculations prefer digitization_days whenever coverage
+        # is complete.
+        legacy=store.digitization_period(client,date_from.isoformat(),date_to.isoformat())
+        if legacy:
+            try:
+                result=digitization_summarize(legacy)
+                return {
+                    **result,'available':True,
+                    'cache':{
+                        'source':'legacy-period','hit':True,'updated_at':legacy.get('at'),
+                        **coverage,
+                    },
+                }
+            except (ValueError,KeyError,TypeError):
+                pass
+        return {
+            'available':False,'at':None,'since':date_from.isoformat(),'to':date_to.isoformat(),
+            'effective_to':effective_last.isoformat() if effective_last>=date_from else None,
+            'metrics':None,'components':{},'operation_types':[],
+            'products':[],'warnings':[],'methodology':'Не все дни выбранного периода есть в локальной базе.',
+            'cache':{'source':'sqlite-daily','hit':False,**coverage},
+        }
+
+    data=store.latest(client,'digitization')
+    if not data:
+        return {'available':False,'at':None,'since':None,'to':None,'metrics':None,'components':{},'operation_types':[],
+                'products':[],'warnings':[],'methodology':'Загрузите данные за выбранный период.',
+                'cache':{'source':'sqlite-daily','hit':False,**store.digitization_coverage(client)}}
     try:
         result=digitization_summarize(data)
-        return {**result,'available':True,'cache':{'source':'sqlite','hit':True,'updated_at':data.get('at')}}
+        return {**result,'available':True,'cache':{'source':'sqlite-daily','hit':True,'updated_at':data.get('at'),
+                                                  **store.digitization_coverage(client)}}
     except (ValueError,KeyError,TypeError):
         raise HTTPException(422,'Не удалось обработать финансовый снимок Ozon.') from None
 
