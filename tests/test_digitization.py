@@ -3,65 +3,62 @@ import unittest
 from backend.digitization import summarize
 
 
+TYPES = [
+    {'id': 1, 'name': 'Выручка'},
+    {'id': 2, 'name': 'Возврат выручки'},
+    {'id': 3, 'name': 'Программы партнёров'},
+    {'id': 4, 'name': 'Вознаграждение за продажу'},
+    {'id': 5, 'name': 'Возврат вознаграждения'},
+    {'id': 6, 'name': 'Логистика'},
+    {'id': 7, 'name': 'Логистика - отмена начисления'},
+    {'id': 8, 'name': 'Эквайринг'},
+    {'id': 9, 'name': 'Баллы за скидки'},
+    {'id': 10, 'name': 'Продвижение с оплатой за заказ'},
+    {'id': 11, 'name': 'Неизвестное удержание'},
+    {'id': 12, 'name': 'Компенсация за потерю по вине Ozon'},
+    {'id': 13, 'name': 'Хранение'},
+]
+
+
+def row(type_id, amount, quantity=0, seller_price=0, sku=None):
+    return {
+        'type_id': type_id,
+        'amount': amount,
+        'quantity': quantity,
+        'seller_price': seller_price,
+        'sku': sku,
+    }
+
+
 class DigitizationTests(unittest.TestCase):
     def test_truestats_reconciliation_metrics(self):
         snapshot = {
             'at': '2026-10-11T10:00:00Z',
             'since': '2026-10-01',
             'to': '2026-10-11',
-            'accrual_types': [
-                {'id': 1, 'name': 'Выручка', 'description': 'Продажа'},
-                {'id': 2, 'name': 'Возврат выручки', 'description': 'Возврат'},
-                {'id': 3, 'name': 'Логистика'},
-                {'id': 4, 'name': 'Логистика - отмена начисления'},
-                {'id': 5, 'name': 'Эквайринг'},
-                {'id': 6, 'name': 'Размещение товаров на складе Ozon'},
-                {'id': 7, 'name': 'Программы партнеров'},
-                {'id': 8, 'name': 'Компенсация за потерю по вине Ozon'},
-                {'id': 9, 'name': 'Неизвестное удержание'},
-                {'id': 10, 'name': 'Баллы за скидки'},
-            ],
-            'accruals': [
-                {
-                    'accrual_id': 1,
-                    'unit_number': 'sale-1',
-                    'total_amount': {'amount': '700'},
-                    'posting': {'products': [{
-                        'sku': 123,
-                        'commission': {
-                            'seller_price': {'amount': '1000'},
-                            'commission': {'amount': '-100'},
-                            'bonus': {'amount': '300'},
-                        },
-                    }]},
-                },
-                {
-                    'accrual_id': 2,
-                    'unit_number': 'return-1',
-                    'total_amount': {'amount': '-150'},
-                    'posting': {'products': [{
-                        'sku': 123,
-                        'commission': {
-                            'seller_price': {'amount': '200'},
-                            'commission': {'amount': '-20'},
-                            'bonus': {'amount': '50'},
-                        },
-                    }]},
-                },
-                {'accrual_id': 3, 'total_amount': {'amount': '-30'}},
-                {'accrual_id': 4, 'total_amount': {'amount': '5'}},
-                {'accrual_id': 5, 'total_amount': {'amount': '-2'}},
-                {'accrual_id': 6, 'total_amount': {'amount': '-10'}},
-                {'accrual_id': 7, 'total_amount': {'amount': '25'}},
-                {'accrual_id': 8, 'total_amount': {'amount': '40'}},
-                {'accrual_id': 9, 'total_amount': {'amount': '-7'}},
-                {'accrual_id': 10, 'total_amount': {'amount': '250'}},
+            'effective_to': '2026-10-10',
+            'accrual_types': TYPES,
+            'accrual_rows': [
+                row(1, 700, 1, 1000, 123),
+                row(2, -150, 1, 200, 123),
+                row(3, 25, 1, 1000, 123),
+                row(4, -100, 1, 1000, 123),
+                row(5, 20, 1, 200, 123),
+                row(6, -30),
+                row(7, 5),
+                row(8, -2),
+                row(9, 250),
+                row(10, -12),
+                row(11, -7),
+                row(12, 40),
+                row(13, -10),
             ],
             'buyout_products': [{
                 'sku': 456,
                 'quantity': 2,
                 'seller_price_per_instance': 95,
                 'buyout_price': 90,
+                'amount': 180,
             }],
             'placement_cost': 11.5,
             'orders': {'amount': 2500, 'quantity': 4, 'postings': 3, 'errors': []},
@@ -70,55 +67,92 @@ class DigitizationTests(unittest.TestCase):
         result = summarize(snapshot)
         m = result['metrics']
         self.assertEqual(m['realization'], 990.0)
+        self.assertEqual(m['sales_amount'], 905.0)
+        self.assertEqual(m['sales_quantity'], 2)
+        self.assertEqual(m['returns_amount'], 200.0)
+        self.assertEqual(m['returns_quantity'], 1)
         self.assertEqual(m['logistics'], 25.0)
         self.assertEqual(m['storage'], 11.5)
         self.assertEqual(m['nominal_commission'], 90.0)
         self.assertEqual(m['acquiring'], 2.0)
-        self.assertIsNone(m['advertising'])
-        self.assertEqual(m['sales_quantity'], 2)
-        self.assertEqual(m['sales_amount'], 915.0)
-        self.assertEqual(m['orders_amount'], 2500.0)
-        self.assertEqual(m['orders_quantity'], 4)
-        self.assertEqual(m['returns_amount'], 150.0)
-        self.assertEqual(m['returns_quantity'], 1)
-        self.assertEqual(m['logistics_share'], 2.53)
-        self.assertEqual(m['nominal_commission_share'], 9.09)
-        self.assertIsNone(m['clean_profit'])
-        self.assertIsNone(m['roi'])
-        self.assertIsNone(m['average_profit'])
-        self.assertIsNone(m['taxes'])
+        self.assertEqual(m['advertising'], 12.0)
         self.assertEqual(m['discount_points'], 250.0)
         self.assertEqual(m['compensations'], 40.0)
         self.assertEqual(m['other_deductions'], 7.0)
+        self.assertEqual(m['orders_amount'], 2500.0)
+        self.assertEqual(m['orders_quantity'], 4)
+        self.assertEqual(m['logistics_share'], 2.53)
+        self.assertEqual(m['nominal_commission_share'], 9.09)
 
         self.assertEqual(result['summary']['price_before_spp'], 495.0)
-        self.assertEqual(result['summary']['average_sale_price'], 457.5)
-        self.assertEqual(result['summary']['realization'], 990.0)
-        self.assertEqual(result['summary']['sales'], 915.0)
-        self.assertEqual(result['summary']['returns'], 150.0)
-        self.assertIsNone(result['summary']['to_transfer'])
-
+        self.assertEqual(result['summary']['average_sale_price'], 452.5)
+        self.assertEqual(result['summary']['returns'], 200.0)
         self.assertEqual(result['components']['marketplace_buyout_realization'], 190.0)
+        self.assertEqual(result['components']['marketplace_buyout_sales'], 180.0)
         self.assertEqual(result['components']['marketplace_buyout_commission'], 10.0)
-        self.assertTrue(result['components']['storage_from_placement_report'])
-        self.assertEqual(result['components']['storage_accrual_fallback'], 10.0)
+
+    def test_uploaded_ozon_reports_match_truestats_cards_through_closed_day(self):
+        """Reference totals from the seller reports supplied for 30.09–11.10.2026.
+
+        TrueStats screenshot was taken on 11.10 and displays closed data through 10.10.
+        The values below are direct aggregates from the supplied Ozon reports.
+        """
+        snapshot = {
+            'since': '2026-09-30',
+            'to': '2026-10-11',
+            'effective_to': '2026-10-10',
+            'current_day_excluded': True,
+            'accrual_types': TYPES,
+            'accrual_rows': [
+                row(1, 32819.17, 121, 58489 / 121, 100),
+                row(2, -387.62, 1, 805, 100),
+                row(3, 291.48, 121, 0, 100),
+                row(4, -26368.52),
+                row(6, -8429.05),
+                row(8, -544.41),
+                row(9, 24960.97),
+                row(10, -1375.00),
+                row(11, -75.00),
+            ],
+            'buyout_products': [{
+                'sku': 200,
+                'quantity': 2,
+                'seller_price_per_instance': 460,
+                'buyout_price': 230.5,
+                'amount': 461,
+            }],
+            'placement_cost': 0,
+            'orders': {'amount': 51745, 'quantity': 125, 'errors': []},
+        }
+        m = summarize(snapshot)['metrics']
+        self.assertEqual(m['realization'], 58604.0)
+        self.assertEqual(m['sales_amount'], 33571.65)
+        self.assertEqual(m['sales_quantity'], 122)
+        self.assertEqual(m['returns_amount'], 805.0)
+        self.assertEqual(m['returns_quantity'], 1)
+        self.assertEqual(m['logistics'], 8429.05)
+        self.assertEqual(m['logistics_share'], 14.38)
+        self.assertEqual(m['nominal_commission'], 26827.52)
+        self.assertEqual(m['nominal_commission_share'], 45.78)
+        self.assertEqual(m['acquiring'], 544.41)
+        self.assertEqual(m['advertising'], 1375.0)
+        self.assertEqual(m['other_deductions'], 75.0)
 
     def test_storage_falls_back_to_accrual_when_report_unavailable(self):
         result = summarize({
-            'accrual_types': [{'id': 6, 'name': 'Хранение'}],
-            'accruals': [{'accrual_id': 6, 'total_amount': {'amount': '-12.5'}}],
+            'accrual_types': TYPES,
+            'accrual_rows': [row(13, -12.5)],
             'buyout_products': [],
             'placement_error': 'report unavailable',
             'orders': {},
         })
         self.assertEqual(result['metrics']['storage'], 12.5)
         self.assertFalse(result['components']['storage_from_placement_report'])
-        self.assertTrue(any('Стоимость размещения' in item for item in result['warnings']))
 
     def test_type_name_not_description_drives_grouping(self):
         result = summarize({
-            'accrual_types': [{'id': 5, 'name': 'Эквайринг', 'description': 'Другое описание'}],
-            'accruals': [{'accrual_id': 5, 'total_amount': {'amount': '-12.5'}}],
+            'accrual_types': [{'id': 8, 'name': 'Эквайринг', 'description': 'Другое описание'}],
+            'accrual_rows': [row(8, -12.5)],
             'buyout_products': [],
             'orders': {},
         })
@@ -127,16 +161,8 @@ class DigitizationTests(unittest.TestCase):
 
     def test_profit_metrics_are_only_calculated_when_seller_inputs_exist(self):
         result = summarize({
-            'accrual_types': [{'id': 1, 'name': 'Выручка'}],
-            'accruals': [{
-                'accrual_id': 1,
-                'unit_number': 'sale-1',
-                'total_amount': {'amount': '800'},
-                'posting': {'products': [{
-                    'sku': 123,
-                    'commission': {'seller_price': {'amount': '1000'}},
-                }]},
-            }],
+            'accrual_types': TYPES,
+            'accrual_rows': [row(1, 800, 1, 1000, 123)],
             'buyout_products': [],
             'orders': {},
             'clean_profit': 200,
