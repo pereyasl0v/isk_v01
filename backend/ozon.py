@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta, timezone
 from .legacy import Ozon as BaseOzon, ApiError, ALLOWED
 
-ALLOWED.update({'/v1/analytics/stocks', '/v3/posting/fbo/list'})
+ALLOWED.update({'/v1/analytics/stocks', '/v3/posting/fbo/list', '/v3/finance/transaction/list'})
 
 class Ozon(BaseOzon):
     def analytics(self, products, stocks, progress):
@@ -50,3 +50,57 @@ class Ozon(BaseOzon):
             seen.add(nxt)
             cursor=nxt
         raise ApiError('История слишком велика. Уменьшите период.')
+
+    def finance_transactions(self, days, progress):
+        """Download finance transactions for a short accounting window.
+
+        Ozon limits the date range of this method, so the UI intentionally caps it
+        at 31 days. Raw responses are reduced to fields needed for analytics.
+        """
+        if days < 1 or days > 31:
+            raise ApiError('Финансовый период должен быть от 1 до 31 дня.')
+        until = datetime.now(timezone.utc)
+        since = until - timedelta(days=days)
+        operations = []
+        page = 1
+        page_count = 1
+        while page <= page_count:
+            data = self.call('/v3/finance/transaction/list', {
+                'filter': {
+                    'date': {'from': since.isoformat(), 'to': until.isoformat()},
+                    'operation_type': [],
+                    'posting_number': '',
+                    'transaction_type': 'all',
+                },
+                'page': page,
+                'page_size': 1000,
+            })
+            result = data.get('result') or {}
+            batch = result.get('operations') or []
+            if not isinstance(batch, list):
+                raise ApiError('Ozon вернул некорректный список финансовых операций.')
+            for row in batch:
+                operations.append({
+                    'operation_id': row.get('operation_id'),
+                    'operation_date': row.get('operation_date'),
+                    'operation_type': row.get('operation_type'),
+                    'operation_type_name': row.get('operation_type_name'),
+                    'amount': row.get('amount'),
+                    'accruals_for_sale': row.get('accruals_for_sale'),
+                    'sale_commission': row.get('sale_commission'),
+                    'posting': row.get('posting') or {},
+                    'items': [
+                        {'name': item.get('name',''), 'sku': item.get('sku')}
+                        for item in (row.get('items') or [])
+                    ],
+                    'services': [
+                        {'name': service.get('name',''), 'price': service.get('price')}
+                        for service in (row.get('services') or [])
+                    ],
+                })
+            page_count = int(result.get('page_count') or page)
+            progress(f'Финансы Ozon: {len(operations)} операций · страница {page} из {page_count}')
+            page += 1
+            if page > 10000:
+                raise ApiError('Слишком много страниц финансовых операций. Уменьшите период.')
+        return {'since': since.isoformat(), 'to': until.isoformat(), 'operations': operations}
