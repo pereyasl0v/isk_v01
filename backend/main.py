@@ -108,7 +108,8 @@ def state(request:Request):
         cache=store.cache_stats(s['client'],'ozon_api')
         return {'client_id':s['client'],'expires_at':s['roles'].get('expires_at'),
                 'roles':[r.get('name','') for r in s['roles'].get('roles',[])],
-                'job':dict(s['job']),'logs':list(s['logs']),'cache':cache}
+                'job':dict(s['job']),'logs':list(s['logs']),'cache':cache,
+                'digitization_periods':store.digitization_period_count(s['client'])}
 
 def launch(s,kind,days=90,date_from=None,date_to=None):
     def progress(message):
@@ -227,13 +228,30 @@ def history(request:Request):
     return {**data,'postings':postings}
 
 @app.get('/api/digitization')
-def digitization(request:Request):
-    data=store.latest(current(request)['client'],'digitization')
-    if not data:
-        return {'at':None,'since':None,'to':None,'metrics':None,'components':{},'operation_types':[],
-                'products':[],'warnings':[],'methodology':'Загрузите данные за выбранный период.'}
+def digitization(request:Request,date_from:date|None=None,date_to:date|None=None):
+    client=current(request)['client']
+    if (date_from is None) != (date_to is None):
+        raise HTTPException(422,'Укажите обе даты периода.')
+    if date_from is not None and date_to is not None:
+        if date_to < date_from:
+            raise HTTPException(422,'Дата окончания не может быть раньше даты начала.')
+        data=store.digitization_period(client,date_from.isoformat(),date_to.isoformat())
+        if not data:
+            return {
+                'available':False,'at':None,'since':date_from.isoformat(),'to':date_to.isoformat(),
+                'effective_to':None,'metrics':None,'components':{},'operation_types':[],
+                'products':[],'warnings':[],'methodology':'Локальной копии этого периода пока нет.',
+                'cache':{'source':'sqlite','hit':False},
+            }
+    else:
+        data=store.latest(client,'digitization')
+        if not data:
+            return {'available':False,'at':None,'since':None,'to':None,'metrics':None,'components':{},'operation_types':[],
+                    'products':[],'warnings':[],'methodology':'Загрузите данные за выбранный период.',
+                    'cache':{'source':'sqlite','hit':False}}
     try:
-        return digitization_summarize(data)
+        result=digitization_summarize(data)
+        return {**result,'available':True,'cache':{'source':'sqlite','hit':True,'updated_at':data.get('at')}}
     except (ValueError,KeyError,TypeError):
         raise HTTPException(422,'Не удалось обработать финансовый снимок Ozon.') from None
 
