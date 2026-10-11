@@ -1,10 +1,12 @@
 """Read-only Ozon adapter. Contract: user-provided Seller API body, 2026-10-10."""
+import hashlib
 import json
 import os
 import threading
 import time
 import urllib.request
 import urllib.error
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 BASE = 'https://api-seller.ozon.ru'
@@ -21,11 +23,27 @@ SESSION_CACHE_PATHS = {
 PLACEMENT_CREATE_PATH = '/v1/report/placement/by-products/create'
 PLACEMENT_CACHE_TTL = 12 * 3600
 
+# Persistent cache is deliberately limited to historical/reporting methods.
+# Live stock/catalog methods are never read from this cache.
+PERSISTENT_CACHE_TTLS = {
+    '/v1/finance/accrual/types': 7 * 86400,
+    '/v1/finance/accrual/postings': 12 * 3600,
+    '/v1/finance/products/buyout': 12 * 3600,
+    '/v1/returns/list': 12 * 3600,
+    '/v3/posting/fbo/list': 6 * 3600,
+    '/v4/posting/fbs/list': 6 * 3600,
+    PLACEMENT_CREATE_PATH: PLACEMENT_CACHE_TTL,
+}
+MOSCOW_TZ = timezone(timedelta(hours=3))
+
+
 class ApiError(Exception):
     pass
 
+
 class Ozon:
-    def __init__(self, client_id, api_key, transport=None, sleep=time.sleep):
+    def __init__(self, client_id, api_key, transport=None, sleep=time.sleep,
+                 cache_get=None, cache_put=None):
         self.client_id = client_id.strip()
         self.api_key = api_key.strip()
         if not self.client_id.isdigit() or not self.api_key:
@@ -34,10 +52,14 @@ class Ozon:
             raise ApiError('API Key должен быть одной строкой.')
         self.transport = transport
         self.sleep = sleep
+        self.cache_get = cache_get
+        self.cache_put = cache_put
         self._response_cache = {}
         self._response_cache_at = {}
         self._rate_lock = threading.Lock()
         self._last_request_at = 0.0
+        self._persistent_cache_hits = 0
+        self._api_requests = 0
         data_dir = Path(os.environ.get(
             'OZON_FBO_DATA_DIR',
             str(Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'VKR_Ozon_FBO_Web')
@@ -46,10 +68,44 @@ class Ozon:
         self._load_placement_cache()
 
     @staticmethod
-    def _cache_key(path, payload):
+    def _canonical_payload(payload):
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+
+    @classmethod
+    def _cache_key(cls, path, payload):
         if path not in SESSION_CACHE_PATHS:
             return None
-        return path + ':' + json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+        return path + ':' + cls._canonical_payload(payload)
+
+    @classmethod
+    def _persistent_cache_key(cls, path, payload):
+        if path != '/v1/finance/accrual/by-day' and path not in PERSISTENT_CACHE_TTLS:
+            return None
+        raw=(path + ':' + cls._canonical_payload(payload)).encode('utf-8')
+        return path + ':' + hashlib.sha256(raw).hexdigest()
+
+    @staticmethod
+    def _persistent_cache_ttl(path, payload):
+        # Finance-by-day is the biggest source of repeated calls. A closed day
+        # is reusable, but recent days receive a shorter TTL because Ozon may
+        # still post corrections after the calendar day has ended.
+        if path == '/v1/finance/accrual/by-day':
+            try:
+                requested=date.fromisoformat(str(payload.get('date') or ''))
+            except ValueError:
+                return None
+            age=(datetime.now(MOSCOW_TZ).date()-requested).days
+            if age <= 0:
+                return None
+            if age == 1:
+                return 2 * 3600
+            if age <= 7:
+                return 12 * 3600
+            return 30 * 86400
+        return PERSISTENT_CACHE_TTLS.get(path)
+
+    def cache_counters(self):
+        return {'hits':self._persistent_cache_hits,'api_requests':self._api_requests}
 
     def _load_placement_cache(self):
         try:
@@ -103,12 +159,32 @@ class Ozon:
             # Cache failure must never break Seller API reads.
             pass
 
-    def _remember(self, cache_key, result):
-        if cache_key is not None:
-            self._response_cache[cache_key] = result
-            self._response_cache_at[cache_key] = time.time()
-            if cache_key.startswith(PLACEMENT_CREATE_PATH + ':'):
+    def _read_persistent_cache(self, path, payload):
+        key=self._persistent_cache_key(path,payload)
+        ttl=self._persistent_cache_ttl(path,payload)
+        if key is None or ttl is None or self.cache_get is None:
+            return None, key
+        try:
+            result=self.cache_get('ozon_api',key,ttl)
+        except Exception:
+            result=None
+        if isinstance(result,dict):
+            self._persistent_cache_hits += 1
+            return result,key
+        return None,key
+
+    def _remember(self, session_key, persistent_key, result):
+        if session_key is not None:
+            self._response_cache[session_key] = result
+            self._response_cache_at[session_key] = time.time()
+            if session_key.startswith(PLACEMENT_CREATE_PATH + ':'):
                 self._save_placement_cache()
+        if persistent_key is not None and self.cache_put is not None:
+            try:
+                self.cache_put('ozon_api',persistent_key,result)
+            except Exception:
+                # SQL cache must never turn a successful Ozon response into a failure.
+                pass
         return result
 
     def _throttle(self):
@@ -126,15 +202,23 @@ class Ozon:
         if path not in ALLOWED:
             raise ApiError('Операция не разрешена модулем чтения.')
 
-        cache_key = self._cache_key(path, payload)
-        if cache_key is not None and cache_key in self._response_cache:
-            return self._response_cache[cache_key]
+        session_key = self._cache_key(path, payload)
+        if session_key is not None and session_key in self._response_cache:
+            return self._response_cache[session_key]
+
+        cached,persistent_key=self._read_persistent_cache(path,payload)
+        if cached is not None:
+            if session_key is not None:
+                self._response_cache[session_key]=cached
+                self._response_cache_at[session_key]=time.time()
+            return cached
 
         if self.transport:
+            self._api_requests += 1
             result = self.transport(path, payload)
             if not isinstance(result, dict):
                 raise ApiError('Неожиданный формат ответа Ozon.')
-            return self._remember(cache_key, result)
+            return self._remember(session_key, persistent_key, result)
 
         request = urllib.request.Request(BASE + path,
             data=json.dumps(payload).encode(), method='POST', headers={
@@ -150,6 +234,7 @@ class Ozon:
         for attempt in range(6):
             try:
                 self._throttle()
+                self._api_requests += 1
                 with opener.open(request, timeout=40) as response:
                     result = json.load(response)
                     remaining = response.headers.get('Ratelimit-Remaining')
@@ -163,7 +248,7 @@ class Ozon:
                             self.sleep(1)
                     except (TypeError, ValueError):
                         pass
-                return self._remember(cache_key, result)
+                return self._remember(session_key, persistent_key, result)
             except urllib.error.HTTPError as exc:
                 code = exc.code
                 if code in (429, 500, 502, 503, 504) and attempt < 5:
