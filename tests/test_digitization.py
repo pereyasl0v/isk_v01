@@ -15,6 +15,8 @@ TYPES = [
     {'id': 9, 'name': 'PackingFee'},
     {'id': 10, 'name': 'PackageCost'},
     {'id': 11, 'name': 'Storage'},
+    {'id': 12, 'name': 'Штраф'},
+    {'id': 13, 'name': 'Платная приемка'},
 ]
 
 
@@ -59,6 +61,7 @@ class DigitizationTests(unittest.TestCase):
                 {'sku': 201, 'quantity': 1, 'seller_price_per_instance': 135, 'amount': 99.9},
             ],
             'placement_cost': 0,
+            'returns': {'quantity': 15, 'rows': 15, 'by_type': {'FullReturn': 14, 'PartialReturn': 1}},
             'orders': {'amount': 50945, 'quantity': 124, 'errors': []},
         }
         result = summarize(snapshot)
@@ -66,10 +69,12 @@ class DigitizationTests(unittest.TestCase):
         self.assertEqual(m['orders_amount'], 50945.0)
         self.assertEqual(m['orders_quantity'], 124)
         self.assertEqual(m['realization'], 58604.0)
-        self.assertEqual(m['sales_amount'], 33571.65)
+        self.assertEqual(m['sales_amount'], 33643.03)
         self.assertEqual(m['sales_quantity'], 122)
         self.assertEqual(m['returns_amount'], 805.0)
         self.assertEqual(m['returns_quantity'], 1)
+        self.assertEqual(m['buyout_percent'], 89.05)
+        self.assertEqual(m['refusals_returns_quantity'], 15)
         self.assertEqual(m['logistics'], 8429.05)
         self.assertEqual(m['logistics_share'], 14.38)
         self.assertEqual(m['nominal_commission'], 26827.52)
@@ -94,7 +99,7 @@ class DigitizationTests(unittest.TestCase):
         self.assertEqual(m['advertising'], 30.0)
         self.assertEqual(m['other_deductions'], 0.0)
 
-    def test_buyout_split_gross_sales_and_commission(self):
+    def test_buyout_commission_does_not_reduce_sales_twice(self):
         snapshot = {
             'accrual_types': TYPES,
             'accrual_rows': [],
@@ -104,9 +109,22 @@ class DigitizationTests(unittest.TestCase):
         }
         m = summarize(snapshot)['metrics']
         self.assertEqual(m['realization'], 200.0)
-        self.assertEqual(m['sales_amount'], 150.0)
+        self.assertEqual(m['sales_amount'], 200.0)
         self.assertEqual(m['sales_quantity'], 2)
         self.assertEqual(m['nominal_commission'], 50.0)
+
+    def test_paid_acceptance_and_penalties_are_not_other_deductions(self):
+        snapshot = {
+            'accrual_types': TYPES,
+            'accrual_rows': [row(12, -17), row(13, -23), row(9, -5)],
+            'sales_facts': {},
+            'buyout_products': [],
+            'orders': {},
+        }
+        m = summarize(snapshot)['metrics']
+        self.assertEqual(m['penalties'], 17.0)
+        self.assertEqual(m['paid_acceptance'], 23.0)
+        self.assertEqual(m['other_deductions'], 5.0)
 
 
 if __name__ == '__main__':
