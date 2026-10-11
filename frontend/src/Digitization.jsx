@@ -38,6 +38,7 @@ export default function Digitization({state,digi,act}){
  const [dateFrom,setDateFrom]=useState(defaults.from);
  const [dateTo,setDateTo]=useState(defaults.to);
  const [inventory,setInventory]=useState(null);
+ const [inventoryHistory,setInventoryHistory]=useState([]);
  const client=state?.client_id||'local';
  const costKey=`isk-digitization-costs-${client}`;
  const settingsKey=`isk-digitization-settings-${client}`;
@@ -56,9 +57,21 @@ export default function Digitization({state,digi,act}){
   return()=>{live=false};
  },[state,digi?.at]);
 
+ useEffect(()=>{
+  const first=digi?.since, last=digi?.effective_to||digi?.to;
+  if(!state||!first||!last){setInventoryHistory([]);return}
+  let live=true;
+  const q=new URLSearchParams({date_from:first,date_to:last});
+  fetch(`/api/inventory/history?${q}`,{credentials:'same-origin'})
+   .then(r=>r.ok?r.json():null).then(data=>{if(live)setInventoryHistory(data?.days||[])})
+   .catch(()=>{if(live)setInventoryHistory([])});
+  return()=>{live=false};
+ },[state,digi?.since,digi?.effective_to,digi?.to,digi?.at]);
+
  const saveCost=(sku,field,value)=>{
   setCosts(prev=>{
-   const next={...prev,[sku]:{cost:n(prev[sku]?.cost),fulfillment:n(prev[sku]?.fulfillment),vat:n(prev[sku]?.vat),[field]:n(value)}};
+   const old=prev[sku]||{};
+   const next={...prev,[sku]:{cost:n(old.cost),fulfillment:n(old.fulfillment),vat:n(old.vat),own_stock:n(old.own_stock),[field]:n(value)}};
    localStorage.setItem(costKey,JSON.stringify(next));
    return next;
   });
@@ -73,7 +86,7 @@ export default function Digitization({state,digi,act}){
  const comparisonCutoff=digi?.effective_to&&digi?.to&&digi.effective_to!==digi.to;
  const discount=n(m.discount_points);
  const realization=n(m.realization);
- const sales=digi?.metrics?round(realization-discount):null;
+ const sales=digi?.metrics?round(n(m.sales_amount)||realization-discount):null;
  const salesQty=m.sales_quantity??null;
  const orders=n(m.orders_amount);
  const ordersQty=m.orders_quantity??null;
@@ -83,19 +96,12 @@ export default function Digitization({state,digi,act}){
  const acquiring=n(m.acquiring);
  const advertising=n(m.advertising);
  const storage=n(m.storage);
+ const paidAcceptance=n(m.paid_acceptance);
+ const penalties=n(m.penalties);
  const other=n(m.other_deductions);
  const compensationWithoutPoints=n(m.compensations);
  const compensationWithPoints=discount;
  const foreignCommission=n(c.marketplace_buyout_commission);
-
- const operations=digi?.operation_types||[];
- const opExpense=(regex,excluded)=>operations.reduce((sum,row)=>{
-  const text=`${row.name||''} ${row.truestats_metric||''}`;
-  if(regex.test(text)&&(!excluded||!excluded.test(text)))return sum+(n(row.amount)<0?-n(row.amount):0);
-  return sum;
- },0);
- const paidAcceptance=round(opExpense(/платн.*при[её]м|paid.*accept|supply.*accept|warehouse.*accept/i,/return|возврат|pickup/i));
- const penalties=round(opExpense(/штраф|fine|penalt/i));
 
  const soldRows=(digi?.products||[]).filter(r=>n(r.sales_quantity)!==0);
  const hasCost=sku=>Object.prototype.hasOwnProperty.call(costs,String(sku));
@@ -112,7 +118,7 @@ export default function Digitization({state,digi,act}){
  const taxes=taxBase===null?null:round(n(outgoingVat)+taxBase*n(settings.taxRate)/100);
 
  const cleanWithoutOps=cogs===null||sales===null||taxes===null?null:round(
-  sales-logistics-advertising-storage-n(paidAcceptance)-other-cogs-taxes-commission-acquiring-n(penalties)+compensationWithPoints+compensationWithoutPoints
+  sales-logistics-advertising-storage-paidAcceptance-other-cogs-taxes-commission-acquiring-penalties+compensationWithPoints+compensationWithoutPoints
  );
  const cleanProfit=cleanWithoutOps===null?null:round(cleanWithoutOps-n(settings.operationalExpenses));
  const margin=cleanProfit===null?null:round(percent(cleanProfit,realization));
@@ -125,11 +131,26 @@ export default function Digitization({state,digi,act}){
  const averageSale=round(divide(sales,salesQty));
  const avgLogistics=round(divide(logistics,salesQty));
 
- const stockQty=inventory?.summary?.available??null;
- const activeStock=(inventory?.aggregated||[]).filter(r=>n(r.available)>0);
+ const historyEnd=inventoryHistory.length?inventoryHistory[inventoryHistory.length-1]:null;
+ const endAggregated=historyEnd?.aggregated||inventory?.aggregated||[];
+ const stockQty=historyEnd?.summary?.available??inventory?.summary?.available??null;
+ const fbsStockQty=historyEnd?.fbs_stock_quantity??inventory?.fbs_stock_quantity??null;
+ const activeStock=endAggregated.filter(r=>n(r.available)>0);
  const allStockCosts=activeStock.length>0&&activeStock.every(r=>hasCost(r.sku));
  const capitalizationCost=allStockCosts?round(activeStock.reduce((sum,row)=>sum+n(row.available)*stockUnitCost(row.sku),0)):null;
+ const ownStockQty=Object.entries(costs).reduce((sum,[,v])=>sum+n(v?.own_stock),0);
+ const ownCapitalization=round(Object.entries(costs).reduce((sum,[sku,v])=>sum+n(v?.own_stock)*stockUnitCost(sku),0));
+
+ const dailyCaps=inventoryHistory.map(day=>{
+  const active=(day.aggregated||[]).filter(r=>n(r.available)>0);
+  if(active.some(r=>!hasCost(r.sku)))return null;
+  const mp=active.reduce((sum,row)=>sum+n(row.available)*stockUnitCost(row.sku),0);
+  return mp+ownCapitalization;
+ }).filter(v=>v!==null);
+ const averageCapitalization=dailyCaps.length?round(dailyCaps.reduce((a,b)=>a+b,0)/dailyCaps.length):null;
  const days=periodDays(digi?.since,digi?.effective_to||digi?.to);
+ const gmroi=cleanProfit!==null&&n(averageCapitalization)>0?round(percent(cleanProfit,averageCapitalization)):null;
+ const annualGmroi=gmroi!==null&&days?round(gmroi*365/days):null;
  const turnoverSales=stockQty!==null&&days&&n(salesQty)>0?round(n(stockQty)/(n(salesQty)/days)):null;
  const turnoverOrders=stockQty!==null&&days&&n(ordersQty)>0?round(n(stockQty)/(n(ordersQty)/days)):null;
 
@@ -147,6 +168,7 @@ export default function Digitization({state,digi,act}){
   cogs:hasCost(row.sku)?round(n(row.sales_quantity)*saleUnitCost(row.sku)):null,
  }));
  const missingProfitCosts=soldRows.length-costCoverage;
+ const operations=digi?.operation_types||[];
 
  return <>
   <div className="overview-heading"><div><h1>Оцифровка</h1><p className="muted mt-2">Метрики и формулы TrueStats · снимок: {dateTime(digi?.at)}</p></div><div className="flex gap-2 flex-wrap items-center"><input aria-label="Дата начала" type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/><span className="muted">—</span><input aria-label="Дата окончания" type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/><button className="primary" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={()=>act('/digitization/sync',{date_from:dateFrom,date_to:dateTo})}>Обновить <RefreshCw size={16}/></button></div></div>
@@ -160,7 +182,7 @@ export default function Digitization({state,digi,act}){
    <Metric label="Продажи" value={sales} note={count(salesQty)}/>
    <Metric label="Реализация" value={realization}/>
    <Metric label="Заказы" value={orders} note={count(ordersQty)}/>
-   <Metric label="Процент выкупа" value={null} note="Нужны отказы Ozon" format={pct}/>
+   <Metric label="Процент выкупа" value={m.buyout_percent} format={pct} note={m.refusals_returns_quantity!==null&&m.refusals_returns_quantity!==undefined?`Отказы + возвраты: ${count(m.refusals_returns_quantity)}`:'—'}/>
    <Metric label="Логистика" value={logistics} note={pct(percent(logistics,realization))} icon={Truck}/>
    <Metric label="Реклама/ДРР" value={advertising} note={pct(drr)} icon={BarChart3}/>
    <Metric label="Хранение" value={storage} note={pct(percent(storage,realization))} icon={Boxes}/>
@@ -183,13 +205,13 @@ export default function Digitization({state,digi,act}){
    <Metric label="Оборачиваемость по прод." value={turnoverSales} format={daysFmt}/>
    <Metric label="Оборачиваемость по зак." value={turnoverOrders} format={daysFmt}/>
    <Metric label="Капитализация по себес." value={capitalizationCost} note={capitalizationCost===null?'Нужна СС для всех SKU с остатком':null}/>
-   <Metric label="Средняя капитализация" value={null} note="Нужны ежедневные снимки остатков"/>
+   <Metric label="Средняя капитализация" value={averageCapitalization} note={inventoryHistory.length?`Снимков остатков: ${inventoryHistory.length}`:'Нужна история снимков остатков'}/>
    <Metric label="Капитализация по розн." value={null} note="Нужна цена прошлой полной недели"/>
-   <Metric label="Капитализ. на моих складах" value={0}/>
-   <Metric label="Остатки на моих складах" value={0} format={count}/>
-   <Metric label="FBS-остатки, шт" value={null} format={count}/>
-   <Metric label="GMROI" value={null} note="Нужна средняя капитализация" format={pct}/>
-   <Metric label="Годовой GMROI" value={null} note="Нужна средняя капитализация" format={pct}/>
+   <Metric label="Капитализ. на моих складах" value={ownCapitalization}/>
+   <Metric label="Остатки на моих складах" value={ownStockQty} format={count}/>
+   <Metric label="FBS-остатки, шт" value={fbsStockQty} format={count} note={inventory?.fbs_stock_error||undefined}/>
+   <Metric label="GMROI" value={gmroi} format={pct}/>
+   <Metric label="Годовой GMROI" value={annualGmroi} format={pct}/>
    <Metric label="Штрафы" value={penalties} note={pct(percent(penalties,realization))}/>
    <Metric label="Скидка МП" value={discount} note={pct(percent(discount,realization))}/>
    <Metric label="Компенсация с баллами" value={compensationWithPoints} note={pct(percent(compensationWithPoints,realization))}/>
@@ -200,17 +222,17 @@ export default function Digitization({state,digi,act}){
   </div>
 
   <section className="panel mb-5">
-   <div className="panel-title"><div><h3>Себестоимость товаров</h3><p className="muted mt-2">Для Ozon TrueStats фиксирует себестоимость по дате заказа. В этой версии задаётся значение «по умолчанию»: СС, фулфилмент и НДС.</p></div><span className="badge">{costCoverage}/{soldRows.length} проданных SKU заполнено</span></div>
-   <div className="table-scroll"><table><thead><tr><th>Товар</th><th>SKU</th><th>Себестоимость, ₽</th><th>Фулфилмент, ₽</th><th>НДС, ₽</th><th>СС продаж / 1 шт.</th><th>Капитализация / 1 шт.</th></tr></thead><tbody>
+   <div className="panel-title"><div><h3>Себестоимость товаров</h3><p className="muted mt-2">Себестоимость продаж считается по формуле TrueStats: количество продаж × (СС + ФФ). НДС используется для капитализации остатков: (СС + ФФ + НДС) × остаток.</p></div><span className="badge">{costCoverage}/{soldRows.length} проданных SKU заполнено</span></div>
+   <div className="table-scroll"><table><thead><tr><th>Товар</th><th>SKU</th><th>Себестоимость, ₽</th><th>Фулфилмент, ₽</th><th>НДС, ₽</th><th>Мои склады, шт</th><th>СС продаж / 1 шт.</th><th>Капитализация / 1 шт.</th></tr></thead><tbody>
     {costRows.map(row=><tr key={row.sku}><td>{row.name||row.offer_id||'Товар'}</td><td>{row.sku}</td>
-     {['cost','fulfillment','vat'].map(field=><td key={field}><input style={{width:120}} type="number" min="0" step="0.01" value={costs[row.sku]?.[field]??''} placeholder="0" onChange={e=>saveCost(row.sku,field,e.target.value)}/></td>)}
+     {['cost','fulfillment','vat','own_stock'].map(field=><td key={field}><input style={{width:120}} type="number" min="0" step={field==='own_stock'?'1':'0.01'} value={costs[row.sku]?.[field]??''} placeholder="0" onChange={e=>saveCost(row.sku,field,e.target.value)}/></td>)}
      <td>{hasCost(row.sku)?money(saleUnitCost(row.sku)):'—'}</td><td>{hasCost(row.sku)?money(stockUnitCost(row.sku)):'—'}</td></tr>)}
    </tbody></table></div>
    {!costRows.length&&<div className="empty"><Calculator size={34}/><h3>Нет товаров</h3><p>Сначала обновите товары и оцифровку.</p></div>}
   </section>
 
   <section className="panel mb-5">
-   <div className="panel-title"><div><h3>Налоги и операционные расходы</h3><p className="muted mt-2">Расчёт УСН «Доходы» для Ozon: Доходы = Продажи + компенсации без баллов − комиссия зарубежных выкупов; затем НДС и УСН.</p></div><span className="badge">Настройки сохраняются локально</span></div>
+   <div className="panel-title"><div><h3>Налоги и операционные расходы</h3><p className="muted mt-2">Для текущего примера используется УСН «Доходы»: налоговая база строится из продаж и официальных компенсаций с учётом комиссии зарубежных выкупов.</p></div><span className="badge">Настройки сохраняются локально</span></div>
    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
     <label className="field">УСН, %<input type="number" min="0" step="0.01" value={settings.taxRate} onChange={e=>saveSetting('taxRate',e.target.value)}/></label>
     <label className="field">НДС, %<input type="number" min="0" step="0.01" value={settings.vatRate} onChange={e=>saveSetting('vatRate',e.target.value)}/></label>
@@ -235,11 +257,12 @@ export default function Digitization({state,digi,act}){
   </div></section>
 
   <section className="panel mb-5"><div className="panel-title"><h3>По SKU</h3><span className="badge">Продажи + себестоимость</span></div><SimpleTable rows={productRows.slice(0,200)} empty="Нет товарных строк" columns={[
-   ['name','Товар'],['sku','SKU'],['sales_quantity','Продажи, шт',count],['realization','Реализация',money],['share','Доля в общей выручке',pct],['unit_cost','СС+ФФ / шт',money],['cogs','Себестоимость продаж',money],
+   ['name','Товар'],['sku','SKU'],['sales_quantity','Продажи, шт',count],['realization','Реализация',money],['sales_amount','Продажи',money],['share','Доля в общей выручке',pct],['unit_cost','СС+ФФ / шт',money],['cogs','Себестоимость продаж',money],
   ]}/></section>
 
   {(digi?.warnings||[]).length>0&&<section className="panel mb-5"><div className="panel-title"><h3>Что ещё влияет на точность</h3></div>{digi.warnings.filter(w=>!String(w).includes('Чистая прибыль')).map((w,i)=><p className="muted mt-2" key={i}><AlertTriangle size={15}/> {w}</p>)}
-   <p className="muted mt-2"><AlertTriangle size={15}/> Процент выкупа требует количества отказов; Средняя капитализация и GMROI требуют ежедневной истории остатков; Капитализация по рознице требует цены прошлой полной календарной недели.</p>
+   {averageCapitalization===null&&<p className="muted mt-2"><AlertTriangle size={15}/> Средняя капитализация и GMROI появятся по мере накопления снимков остатков. TrueStats также считает среднее только по дням, когда остатки были собраны.</p>}
+   <p className="muted mt-2"><AlertTriangle size={15}/> Капитализация по рознице требует отдельной загрузки средневзвешенной цены до СПП за прошлую полную календарную неделю; этот источник ещё подключается.</p>
   </section>}
 
   <section className="panel"><div className="panel-title"><h3>Типы начислений Ozon</h3><span className="badge">Диагностика</span></div><SimpleTable rows={operations} empty="Нет начислений" columns={[["name","Тип начисления"],["truestats_metric","Метрика TrueStats"],["count","Строк"],["amount","Сумма итого",money]]}/></section>
