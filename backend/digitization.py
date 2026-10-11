@@ -21,9 +21,9 @@ LOGISTICS_TYPES = {
     'Обработка отправления Drop-off (СЦ) - отмена начисления',
 }
 
-# TrueStats verifies storage against FBO -> "Стоимость размещения" -> report by
-# products. Seller API exposes the same charge through the accrual dictionary;
-# these are the known names used for that charge. They are explicit on purpose.
+# Fallback only. The primary source for "Сумма хранения" is the exact Ozon
+# "Стоимость размещения -> По товарам" report and its column
+# "Начисленная стоимость размещения".
 STORAGE_TYPES = {
     'Размещение товаров на складе Ozon',
     'Размещение товаров на складе',
@@ -174,6 +174,9 @@ def summarize(snapshot):
 
     logistics_signed = sum(amount_by_type.get(name, 0.0) for name in LOGISTICS_TYPES)
     storage_signed = sum(amount_by_type.get(name, 0.0) for name in STORAGE_TYPES)
+    placement_cost = snapshot.get('placement_cost')
+    storage_from_report = placement_cost is not None
+    storage_value = abs(_number(placement_cost)) if storage_from_report else _expense(storage_signed)
     acquiring_signed = amount_by_type.get(ACQUIRING_TYPE, 0.0)
 
     discount_points_by_type = amount_by_type.get(DISCOUNT_POINTS_TYPE, 0.0)
@@ -211,7 +214,7 @@ def summarize(snapshot):
     metrics = {
         'realization': round(realization, 2),
         'logistics': round(_expense(logistics_signed), 2),
-        'storage': round(_expense(storage_signed), 2),
+        'storage': round(storage_value, 2),
         'nominal_commission': round(max(0.0, nominal_commission), 2),
         'acquiring': round(_expense(acquiring_signed), 2),
         'advertising': None,
@@ -233,11 +236,15 @@ def summarize(snapshot):
         'marketplace_buyout_quantity': buyout_quantity,
         'marketplace_buyout_commission': round(buyout_commission, 2),
         'nominal_commission_domestic': round(nominal_commission_domestic, 2),
+        'storage_from_placement_report': storage_from_report,
+        'storage_accrual_fallback': round(_expense(storage_signed), 2),
     }
 
     warnings = []
     if snapshot.get('buyout_error'):
         warnings.append('Выкупы маркетплейсом не загружены: показатели Реализация, Номинальная комиссия, Количество продаж и Сумма продаж неполные.')
+    if snapshot.get('placement_error'):
+        warnings.append('Отчёт «Стоимость размещения → По товарам» не загружен. Сумма хранения показана по начислениям как резервный вариант и может не совпадать с TrueStats.')
     if orders_errors:
         warnings.append('Сверка заказов неполная: ' + '; '.join(str(x) for x in orders_errors))
     warnings.append('Реклама пока не рассчитывается: по инструкции TrueStats она берётся из Аналитики продвижения + Оплата за заказ, а это отдельный Promotion/Performance API, не Seller API.')
@@ -248,7 +255,7 @@ def summarize(snapshot):
         if name in LOGISTICS_TYPES:
             category = 'Сумма логистики'
         elif name in STORAGE_TYPES:
-            category = 'Сумма хранения'
+            category = 'Сумма хранения (резерв; основной источник — отчёт размещения)'
         elif name == ACQUIRING_TYPE:
             category = 'Эквайринг'
         elif name in (REVENUE_TYPE, RETURN_REVENUE_TYPE):
