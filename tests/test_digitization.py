@@ -63,6 +63,7 @@ class DigitizationTests(unittest.TestCase):
                 'seller_price_per_instance': 95,
                 'buyout_price': 90,
             }],
+            'placement_cost': 11.5,
             'orders': {'amount': 2500, 'quantity': 4, 'postings': 3, 'errors': []},
         }
 
@@ -70,7 +71,7 @@ class DigitizationTests(unittest.TestCase):
         m = result['metrics']
         self.assertEqual(m['realization'], 990.0)
         self.assertEqual(m['logistics'], 25.0)
-        self.assertEqual(m['storage'], 10.0)
+        self.assertEqual(m['storage'], 11.5)
         self.assertEqual(m['nominal_commission'], 90.0)
         self.assertEqual(m['acquiring'], 2.0)
         self.assertIsNone(m['advertising'])
@@ -84,6 +85,20 @@ class DigitizationTests(unittest.TestCase):
 
         self.assertEqual(result['components']['marketplace_buyout_realization'], 190.0)
         self.assertEqual(result['components']['marketplace_buyout_commission'], 10.0)
+        self.assertTrue(result['components']['storage_from_placement_report'])
+        self.assertEqual(result['components']['storage_accrual_fallback'], 10.0)
+
+    def test_storage_falls_back_to_accrual_when_report_unavailable(self):
+        result = summarize({
+            'accrual_types': [{'id': 6, 'name': 'Хранение'}],
+            'accruals': [{'accrual_id': 6, 'total_amount': {'amount': '-12.5'}}],
+            'buyout_products': [],
+            'placement_error': 'report unavailable',
+            'orders': {},
+        })
+        self.assertEqual(result['metrics']['storage'], 12.5)
+        self.assertFalse(result['components']['storage_from_placement_report'])
+        self.assertTrue(any('Стоимость размещения' in item for item in result['warnings']))
 
     def test_type_name_not_description_drives_grouping(self):
         result = summarize({
