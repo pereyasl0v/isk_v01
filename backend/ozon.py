@@ -147,97 +147,143 @@ class Ozon(BaseOzon):
             return today_moscow - timedelta(days=1), True
         return requested_last, False
 
+    @staticmethod
+    def _date_chunks(first, last, days=31):
+        """Yield inclusive date ranges without imposing a UI-visible period limit."""
+        if days < 1:
+            raise ValueError('Размер блока периода должен быть положительным.')
+        current = first
+        while current <= last:
+            chunk_last = min(last, current + timedelta(days=days - 1))
+            yield current, chunk_last
+            current = chunk_last + timedelta(days=1)
+
     def _orders_for_period(self, first, last, progress):
         if last < first:
             return {'amount': 0.0, 'quantity': 0, 'postings': 0, 'fbo': 0, 'fbs': 0, 'errors': []}
-        since_msk = datetime.combine(first, dt_time.min, tzinfo=MOSCOW_TZ)
-        until_msk = datetime.combine(last, dt_time.max, tzinfo=MOSCOW_TZ)
-        since = since_msk.astimezone(timezone.utc).isoformat()
-        until = until_msk.astimezone(timezone.utc).isoformat()
         result = {'amount': 0.0, 'quantity': 0, 'postings': 0, 'fbo': 0, 'fbs': 0, 'errors': []}
-        for scheme, path in (('fbo', '/v3/posting/fbo/list'), ('fbs', '/v4/posting/fbs/list')):
-            cursor = ''
-            seen = set()
-            try:
-                for _ in range(10000):
-                    data = self.call(path, {
-                        'cursor': cursor, 'limit': 100, 'sort_dir': 'ASC',
-                        'filter': {'since': since, 'to': until},
-                        'with': {'analytics_data': False, 'financial_data': False, 'legal_info': False},
-                    })
-                    postings = data.get('postings') or []
-                    if not isinstance(postings, list):
-                        raise ApiError(f'Ozon вернул некорректный список заказов {scheme.upper()}.')
-                    for posting in postings:
-                        result['postings'] += 1
-                        result[scheme] += 1
-                        for product in posting.get('products') or []:
-                            quantity = int(product.get('quantity') or 0)
-                            result['quantity'] += quantity
-                            result['amount'] += self._price(product.get('price')) * quantity
-                    progress(f'Заказы {scheme.upper()}: {result[scheme]} отправлений')
-                    if not data.get('has_next', False):
-                        break
-                    nxt = data.get('cursor') or ''
-                    if not nxt or nxt in seen:
-                        raise ApiError(f'Ozon повторил курсор заказов {scheme.upper()}.')
-                    seen.add(nxt)
-                    cursor = nxt
-                else:
-                    raise ApiError(f'Слишком много страниц заказов {scheme.upper()}.')
-            except ApiError as exc:
-                result['errors'].append(f'{scheme.upper()}: {exc}')
-                progress(f'Заказы {scheme.upper()} недоступны: {exc}')
+        for chunk_first, chunk_last in self._date_chunks(first, last):
+            since_msk = datetime.combine(chunk_first, dt_time.min, tzinfo=MOSCOW_TZ)
+            until_msk = datetime.combine(chunk_last, dt_time.max, tzinfo=MOSCOW_TZ)
+            since = since_msk.astimezone(timezone.utc).isoformat()
+            until = until_msk.astimezone(timezone.utc).isoformat()
+            for scheme, path in (('fbo', '/v3/posting/fbo/list'), ('fbs', '/v4/posting/fbs/list')):
+                cursor = ''
+                seen = set()
+                try:
+                    for _ in range(10000):
+                        data = self.call(path, {
+                            'cursor': cursor, 'limit': 100, 'sort_dir': 'ASC',
+                            'filter': {'since': since, 'to': until},
+                            'with': {'analytics_data': False, 'financial_data': False, 'legal_info': False},
+                        })
+                        postings = data.get('postings') or []
+                        if not isinstance(postings, list):
+                            raise ApiError(f'Ozon вернул некорректный список заказов {scheme.upper()}.')
+                        for posting in postings:
+                            result['postings'] += 1
+                            result[scheme] += 1
+                            for product in posting.get('products') or []:
+                                quantity = int(product.get('quantity') or 0)
+                                result['quantity'] += quantity
+                                result['amount'] += self._price(product.get('price')) * quantity
+                        progress(
+                            f'Заказы {scheme.upper()}: {result[scheme]} отправлений · '
+                            f'{chunk_first.isoformat()}—{chunk_last.isoformat()}'
+                        )
+                        if not data.get('has_next', False):
+                            break
+                        nxt = data.get('cursor') or ''
+                        if not nxt or nxt in seen:
+                            raise ApiError(f'Ozon повторил курсор заказов {scheme.upper()}.')
+                        seen.add(nxt)
+                        cursor = nxt
+                    else:
+                        raise ApiError(f'Слишком много страниц заказов {scheme.upper()}.')
+                except ApiError as exc:
+                    result['errors'].append(
+                        f'{scheme.upper()} {chunk_first.isoformat()}—{chunk_last.isoformat()}: {exc}'
+                    )
+                    progress(f'Заказы {scheme.upper()} недоступны: {exc}')
         result['amount'] = round(result['amount'], 2)
         return result
 
     def _returns_for_period(self, first, last, progress):
-        """Return decisions (returns/refusals) for TrueStats buyout percentage."""
+        """Count customer decision events for the TrueStats buyout percentage."""
         if last < first:
-            return {'quantity': 0, 'rows': 0, 'by_type': {}}
-        since_msk = datetime.combine(first, dt_time.min, tzinfo=MOSCOW_TZ)
-        until_msk = datetime.combine(last, dt_time.max, tzinfo=MOSCOW_TZ)
-        since = since_msk.astimezone(timezone.utc).isoformat()
-        until = until_msk.astimezone(timezone.utc).isoformat()
-        last_id = 0
-        seen = set()
-        quantity = 0
-        row_count = 0
-        by_type = {}
-        for _ in range(10000):
-            data = self.call('/v1/returns/list', {
-                'filter': {
-                    'logistic_return_date': {'time_from': since, 'time_to': until},
-                },
-                'limit': 500,
-                'last_id': last_id,
-            })
-            batch = data.get('returns') or []
-            if not isinstance(batch, list):
-                raise ApiError('Ozon вернул некорректный список возвратов.')
-            for item in batch:
-                q = int((item.get('product') or {}).get('quantity') or 0)
-                quantity += max(0, q)
-                row_count += 1
-                kind = str(item.get('type') or 'Unknown')
-                by_type[kind] = by_type.get(kind, 0) + max(0, q)
-            progress(f'Возвраты/отказы: {row_count} строк · {quantity} шт')
-            if not data.get('has_next', False):
-                break
-            if not batch:
-                raise ApiError('Ozon указал следующую страницу возвратов без данных.')
-            nxt = batch[-1].get('id')
-            try:
-                nxt = int(nxt)
-            except (TypeError, ValueError):
-                raise ApiError('Ozon не вернул last_id для возвратов.') from None
-            if nxt in seen:
-                raise ApiError('Ozon повторил last_id возвратов.')
-            seen.add(nxt)
-            last_id = nxt
-        else:
-            raise ApiError('Слишком много страниц возвратов.')
-        return {'quantity': quantity, 'rows': row_count, 'by_type': by_type}
+            return {'quantity': 0, 'rows': 0, 'by_type': {}, 'date_filter': 'visual_status_change_moment'}
+
+        def load(date_filter):
+            quantity = 0
+            row_count = 0
+            by_type = {}
+            seen_return_ids = set()
+            for chunk_first, chunk_last in self._date_chunks(first, last):
+                since_msk = datetime.combine(chunk_first, dt_time.min, tzinfo=MOSCOW_TZ)
+                until_msk = datetime.combine(chunk_last, dt_time.max, tzinfo=MOSCOW_TZ)
+                since = since_msk.astimezone(timezone.utc).isoformat()
+                until = until_msk.astimezone(timezone.utc).isoformat()
+                last_id = 0
+                seen_cursors = set()
+                for _ in range(10000):
+                    data = self.call('/v1/returns/list', {
+                        'filter': {
+                            date_filter: {'time_from': since, 'time_to': until},
+                        },
+                        'limit': 500,
+                        'last_id': last_id,
+                    })
+                    batch = data.get('returns') or []
+                    if not isinstance(batch, list):
+                        raise ApiError('Ozon вернул некорректный список возвратов.')
+                    for item in batch:
+                        item_id = item.get('id')
+                        dedupe_key = str(item_id) if item_id not in (None, '') else None
+                        if dedupe_key is not None and dedupe_key in seen_return_ids:
+                            continue
+                        if dedupe_key is not None:
+                            seen_return_ids.add(dedupe_key)
+                        q = int((item.get('product') or {}).get('quantity') or 0)
+                        q = max(0, q)
+                        quantity += q
+                        row_count += 1
+                        kind = str(item.get('type') or 'Unknown')
+                        by_type[kind] = by_type.get(kind, 0) + q
+                    progress(
+                        f'Возвраты/отказы: {row_count} строк · {quantity} шт · '
+                        f'{chunk_first.isoformat()}—{chunk_last.isoformat()}'
+                    )
+                    if not data.get('has_next', False):
+                        break
+                    if not batch:
+                        raise ApiError('Ozon указал следующую страницу возвратов без данных.')
+                    nxt = batch[-1].get('id')
+                    try:
+                        nxt = int(nxt)
+                    except (TypeError, ValueError):
+                        raise ApiError('Ozon не вернул last_id для возвратов.') from None
+                    if nxt in seen_cursors:
+                        raise ApiError('Ozon повторил last_id возвратов.')
+                    seen_cursors.add(nxt)
+                    last_id = nxt
+                else:
+                    raise ApiError('Слишком много страниц возвратов.')
+            return {
+                'quantity': quantity,
+                'rows': row_count,
+                'by_type': by_type,
+                'date_filter': date_filter,
+            }
+
+        # TrueStats defines redemption by the customer decision. visual_status_change_moment
+        # is closer to that event than the later physical logistic-return date.
+        try:
+            return load('visual_status_change_moment')
+        except ApiError as exc:
+            progress(f'События решения покупателя недоступны, используем дату логистического возврата: {exc}')
+            result = load('logistic_return_date')
+            result['fallback_error'] = str(exc)
+            return result
 
     def _download_report_bytes(self, url):
         url = str(url or '').strip()
@@ -425,8 +471,6 @@ class Ozon(BaseOzon):
         requested_last = self._as_date(date_to)
         if requested_last < first:
             raise ApiError('Дата окончания не может быть раньше даты начала.')
-        if (requested_last - first).days > 30:
-            raise ApiError('Финансовый период в одном запросе должен быть не больше 31 дня.')
         effective_last, current_day_excluded = self._closed_last_day(requested_last)
 
         type_data = self.call('/v1/finance/accrual/types', {})
@@ -479,13 +523,18 @@ class Ozon(BaseOzon):
         buyout_error = None
         if effective_last >= first:
             try:
-                data = self.call('/v1/finance/products/buyout', {
-                    'date_from': first.isoformat(), 'date_to': effective_last.isoformat(),
-                })
-                buyout_products = data.get('products') or []
-                if not isinstance(buyout_products, list):
-                    raise ApiError('Ozon вернул некорректный отчёт по выкупленным товарам.')
-                progress(f'Выкупы маркетплейсом: {len(buyout_products)} строк')
+                for chunk_first, chunk_last in self._date_chunks(first, effective_last):
+                    data = self.call('/v1/finance/products/buyout', {
+                        'date_from': chunk_first.isoformat(), 'date_to': chunk_last.isoformat(),
+                    })
+                    products = data.get('products') or []
+                    if not isinstance(products, list):
+                        raise ApiError('Ozon вернул некорректный отчёт по выкупленным товарам.')
+                    buyout_products.extend(products)
+                    progress(
+                        f'Выкупы маркетплейсом: {len(buyout_products)} строк · '
+                        f'{chunk_first.isoformat()}—{chunk_last.isoformat()}'
+                    )
             except ApiError as exc:
                 buyout_error = str(exc)
                 progress(f'Выкупы маркетплейсом недоступны: {exc}')
