@@ -57,8 +57,9 @@ class Ozon:
         except (OSError, ValueError, TypeError):
             return
         now = time.time()
+        client_prefix = f'client={self.client_id}|'
         for key, record in (raw or {}).items():
-            if not key.startswith(PLACEMENT_CREATE_PATH + ':') or not isinstance(record, dict):
+            if not key.startswith(client_prefix + PLACEMENT_CREATE_PATH + ':') or not isinstance(record, dict):
                 continue
             saved_at = record.get('at')
             result = record.get('result')
@@ -67,12 +68,9 @@ class Ozon:
             except (TypeError, ValueError):
                 fresh = False
             if fresh and isinstance(result, dict) and result.get('code'):
-                # Scope cache to the current Client ID so report codes from
-                # another cabinet can never be reused accidentally.
-                client_prefix = f'client={self.client_id}|'
-                if key.startswith(client_prefix + PLACEMENT_CREATE_PATH + ':'):
-                    self._response_cache[key[len(client_prefix):]] = result
-                    self._response_cache_at[key[len(client_prefix):]] = float(saved_at)
+                inner_key = key[len(client_prefix):]
+                self._response_cache[inner_key] = result
+                self._response_cache_at[inner_key] = float(saved_at)
 
     def _save_placement_cache(self):
         try:
