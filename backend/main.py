@@ -66,8 +66,14 @@ class DigitizationParams(BaseModel):
 
 @app.post('/api/connect')
 def connect(body:Connect,request:Request,response:Response):
+    client_id=body.client_id
     try:
-        api=Ozon(body.client_id,body.api_key.get_secret_value())
+        api=Ozon(
+            client_id,
+            body.api_key.get_secret_value(),
+            cache_get=lambda namespace,key,max_age: store.cache_get(client_id,namespace,key,max_age),
+            cache_put=lambda namespace,key,value: store.cache_put(client_id,namespace,key,value),
+        )
         roles=api.roles()
     except ApiError as exc:
         raise HTTPException(400,str(exc)) from None
@@ -80,10 +86,10 @@ def connect(body:Connect,request:Request,response:Response):
             if time.time()-sessions[k]['used']>8*3600 and not sessions[k]['job']['running']:
                 sessions.pop(k)
         token=secrets.token_urlsafe(32)
-        sessions[token]={'client':body.client_id,'api':api,'roles':roles,'used':time.time(),
+        sessions[token]={'client':client_id,'api':api,'roles':roles,'used':time.time(),
             'job':{'running':False,'message':'Кабинет подключён','error':None},'logs':[]}
     response.set_cookie('fbo_session',token,httponly=True,samesite='strict',max_age=8*3600)
-    return {'client_id':body.client_id,'expires_at':roles.get('expires_at')}
+    return {'client_id':client_id,'expires_at':roles.get('expires_at')}
 
 @app.post('/api/disconnect')
 def disconnect(request:Request,response:Response):
@@ -99,9 +105,10 @@ def disconnect(request:Request,response:Response):
 def state(request:Request):
     s=current(request)
     with lock:
+        cache=store.cache_stats(s['client'],'ozon_api')
         return {'client_id':s['client'],'expires_at':s['roles'].get('expires_at'),
                 'roles':[r.get('name','') for r in s['roles'].get('roles',[])],
-                'job':dict(s['job']),'logs':list(s['logs'])}
+                'job':dict(s['job']),'logs':list(s['logs']),'cache':cache}
 
 def launch(s,kind,days=90,date_from=None,date_to=None):
     def progress(message):
@@ -114,6 +121,7 @@ def launch(s,kind,days=90,date_from=None,date_to=None):
             raise HTTPException(409,'Загрузка уже выполняется.')
         s['job']={'running':True,'message':'Подключаемся к Ozon…','error':None}
     def work():
+        before=s['api'].cache_counters() if hasattr(s['api'],'cache_counters') else {'hits':0,'api_requests':0}
         try:
             if kind=='inventory':
                 products,stocks=s['api'].download(progress)
@@ -148,6 +156,11 @@ def launch(s,kind,days=90,date_from=None,date_to=None):
                 store.save(s['client'],'digitization',s['api'].finance_transactions(date_from,date_to,progress))
             else:
                 store.save(s['client'],'history',s['api'].postings(days,progress))
+            after=s['api'].cache_counters() if hasattr(s['api'],'cache_counters') else before
+            cache_hits=max(0,int(after.get('hits',0))-int(before.get('hits',0)))
+            api_requests=max(0,int(after.get('api_requests',0))-int(before.get('api_requests',0)))
+            if cache_hits or kind=='digitization':
+                progress(f'Локальный SQL-кэш: {cache_hits} ответов · новых запросов к Ozon: {api_requests}.')
             progress('Загрузка завершена. Снимок сохранён.')
         except ApiError as exc:
             with lock:
