@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {groupStocks,statusLabel} from './src/presentation.js';
+assert.equal(statusLabel('delivered'),'Доставлено');
+assert.equal(statusLabel('cancelled'),'Отменено');
+assert.equal(statusLabel('unexpected_english'),'Другой статус');
+const products=[{id:1,name:'Карточка',offer_id:'A',sku:10}];
+const rows=[{offer_id:'A',sku:10,warehouse_id:1,available_stock_count:2},{offer_id:'A',sku:11,warehouse_id:2,available_stock_count:3}];
+const groups=groupStocks(products,rows);
+assert.equal(groups.length,1);
+assert.equal(groups[0].total,5);
+assert.deepEqual(groups[0].skus,['10','11']);
+assert.equal(groups[0].rows.length,2);
+assert.equal(groupStocks(products,[{product_id:1,sku:10,warehouse_id:1,present:6,reserved:2}],true)[0].total,6);
+console.log('Localization and card grouping checks passed.');
