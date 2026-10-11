@@ -209,7 +209,11 @@ def inventory_history(date_from:date,date_to:date,request:Request):
 
 @app.get('/api/history')
 def history(request:Request):
-    return store.latest(current(request)['client'],'history') or {'at':None,'postings':[]}
+    data=store.latest(current(request)['client'],'history')
+    if not data:
+        return {'at':None,'postings':[]}
+    postings=sorted(data.get('postings') or [],key=lambda row:str(row.get('created_at') or ''),reverse=True)
+    return {**data,'postings':postings}
 
 @app.get('/api/digitization')
 def digitization(request:Request):
