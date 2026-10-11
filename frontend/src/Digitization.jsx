@@ -37,10 +37,12 @@ export default function Digitization({state,digi,act}){
  const m=digi?.metrics;
  const c=digi?.components||{};
  const invalid=dateFrom&&dateTo&&dateFrom>dateTo;
+ const closedDay=digi?.effective_to&&digi?.to&&digi.effective_to!==digi.to;
  return <>
   <div className="overview-heading"><div><h1>Оцифровка</h1><p className="muted mt-2">Метрики и названия как в TrueStats · снимок: {dateTime(digi?.at)}</p></div><div className="flex gap-2 flex-wrap items-center"><input aria-label="Дата начала" type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/><span className="muted">—</span><input aria-label="Дата окончания" type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/><button className="primary" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={()=>act('/digitization/sync',{date_from:dateFrom,date_to:dateTo})}>Обновить <RefreshCw size={16}/></button></div></div>
   {invalid&&<div className="notice warning mt-4"><AlertTriangle size={18}/>Дата окончания не может быть раньше даты начала.</div>}
-  {digi?.since&&<p className="muted mt-4">Период: {digi.since} — {digi.to}</p>}
+  {digi?.since&&<p className="muted mt-4">Выбранный период: {digi.since} — {digi.to}{digi?.effective_to?` · закрытые данные Ozon по ${digi.effective_to} включительно`:''}</p>}
+  {closedDay&&<div className="notice warning mt-4"><AlertTriangle size={18}/>Текущий день не включён в расчёт: на скриншоте TrueStats за 11.10 последняя колонка также 10.10. Это нужно, чтобы сравнивать одинаково закрытые данные.</div>}
 
   <div className="grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-3 gap-4 my-6">
    <Metric label="Заказы" value={m?.orders_amount} note={count(m?.orders_quantity)}/>
@@ -50,11 +52,11 @@ export default function Digitization({state,digi,act}){
    <Metric label="Логистика" value={m?.logistics} note={pct(m?.logistics_share)} icon={Truck}/>
    <Metric label="Номинальная комиссия" value={m?.nominal_commission} note={pct(m?.nominal_commission_share)} icon={ReceiptText}/>
    <Metric label="ROI" value={m?.roi} format={pct} icon={BarChart3}/>
-   <Metric label="Средняя прибыль" value={m?.average_profit}/>
+   <Metric label="Средняя прибыль на 1 шт" value={m?.average_profit}/>
    <Metric label="Налоги" value={m?.taxes} note={pct(m?.taxes_share)} icon={ReceiptText}/>
   </div>
 
-  <section className="panel mb-5"><div className="panel-title"><h3>Сводный отчёт</h3><span className="badge">{digi?.since||'—'} — {digi?.to||'—'}</span></div><SummaryTable summary={digi?.summary}/></section>
+  <section className="panel mb-5"><div className="panel-title"><h3>Сводный отчёт</h3><span className="badge">{digi?.since||'—'} — {digi?.effective_to||digi?.to||'—'}</span></div><SummaryTable summary={digi?.summary}/></section>
 
   {(digi?.warnings||[]).length>0&&<section className="panel mb-5"><div className="panel-title"><h3>Что нужно для полного совпадения</h3></div>{digi.warnings.map((w,i)=><p className="muted mt-2" key={i}><AlertTriangle size={15}/> {w}</p>)}</section>}
 
@@ -62,7 +64,7 @@ export default function Digitization({state,digi,act}){
    <Metric label="Реализация" value={m?.realization}/>
    <Metric label="Сумма хранения" value={m?.storage} icon={Boxes}/>
    <Metric label="Эквайринг" value={m?.acquiring}/>
-   <Metric label="Реклама" value={m?.advertising} note="Promotion/Performance API" icon={BarChart3}/>
+   <Metric label="Реклама" value={m?.advertising} note="Оплата за заказ из Seller API" icon={BarChart3}/>
    <Metric label="Баллы за скидки" value={m?.discount_points}/>
    <Metric label="Компенсации" value={m?.compensations}/>
    <Metric label="Прочие удержания" value={m?.other_deductions}/>
