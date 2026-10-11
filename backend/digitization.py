@@ -1,13 +1,12 @@
-"""Financial snapshot aggregation for Ozon Seller API transactions."""
+"""Aggregate Ozon /v1/finance/accrual/* snapshots into dashboard metrics."""
 from collections import defaultdict
-from datetime import datetime
 import math
 
 LOGISTICS_MARKERS = (
-    'fulfillment', 'pickup', 'dropoff', 'flowtrans', 'deliv', 'return',
-    'redistribution', 'courier', 'crossdocking',
+    'logistic', 'delivery', 'return', 'pickup', 'dropoff', 'courier', 'crossdock',
+    'логист', 'достав', 'возврат', 'перевоз', 'обработк отправ',
 )
-STORAGE_MARKERS = ('storage', 'warehouse')
+STORAGE_MARKERS = ('storage', 'placement', 'хранен', 'размещен', 'складск')
 
 
 def _number(value):
@@ -20,10 +19,15 @@ def _number(value):
     return result if math.isfinite(result) else 0.0
 
 
+def _money(value):
+    if isinstance(value, dict):
+        return _number(value.get('amount'))
+    return _number(value)
+
+
 def _expense(value):
-    """Return a positive expense regardless of API sign convention."""
-    value = _number(value)
-    return -value if value < 0 else value
+    value = _money(value)
+    return -value if value < 0 else 0.0
 
 
 def _service_bucket(name):
@@ -35,10 +39,30 @@ def _service_bucket(name):
     return 'other_services'
 
 
+def _fee_pairs(node):
+    """Yield every nested {type_id/accrual_id, accrued} pair once."""
+    if isinstance(node, dict):
+        type_id = node.get('accrual_id', node.get('type_id'))
+        if type_id is not None and isinstance(node.get('accrued'), dict):
+            yield str(type_id), _money(node.get('accrued'))
+        for value in node.values():
+            yield from _fee_pairs(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _fee_pairs(value)
+
+
 def summarize(snapshot):
-    operations = snapshot.get('operations') or []
+    accruals = snapshot.get('accruals') or []
+    type_rows = snapshot.get('accrual_types') or []
+    names = {}
+    for row in type_rows:
+        key = row.get('id')
+        if key is not None:
+            names[str(key)] = row.get('description') or row.get('name') or str(key)
+
     totals = {
-        'operations': len(operations),
+        'operations': len(accruals),
         'gross_sales': 0.0,
         'commission': 0.0,
         'logistics': 0.0,
@@ -51,43 +75,61 @@ def summarize(snapshot):
         'sku': '', 'name': '', 'operations': 0, 'gross_sales': 0.0,
         'commission': 0.0, 'services': 0.0, 'net_accrual': 0.0,
     })
-    unallocated = 0
 
-    for op in operations:
-        sale = _number(op.get('accruals_for_sale'))
-        commission = _expense(op.get('sale_commission'))
-        amount = _number(op.get('amount'))
-        totals['gross_sales'] += sale
-        totals['commission'] += commission
-        totals['net_accrual'] += amount
-
-        services_total = 0.0
-        for service in op.get('services') or []:
-            price = _expense(service.get('price'))
-            services_total += price
-            bucket = _service_bucket(service.get('name'))
-            totals[bucket] += price
-
-        code = str(op.get('operation_type') or 'unknown')
-        bucket = by_type[code]
-        bucket['name'] = op.get('operation_type_name') or code
-        bucket['count'] += 1
-        bucket['amount'] += amount
-
-        items = op.get('items') or []
-        skus = {str(item.get('sku')) for item in items if item.get('sku') is not None}
-        if len(skus) == 1:
-            sku = next(iter(skus))
-            row = by_sku[sku]
-            row['sku'] = sku
-            row['name'] = next((item.get('name') for item in items if item.get('name')), row['name'])
-            row['operations'] += 1
-            row['gross_sales'] += sale
-            row['commission'] += commission
-            row['services'] += services_total
+    def add_fee(type_id, amount, sku=None):
+        expense = -amount if amount < 0 else 0.0
+        totals[_service_bucket(names.get(type_id, type_id))] += expense
+        if sku is not None:
+            row = by_sku[str(sku)]
+            row['sku'] = str(sku)
+            row['services'] += expense
             row['net_accrual'] += amount
-        elif items:
-            unallocated += 1
+
+    for accrual in accruals:
+        amount = _money(accrual.get('total_amount'))
+        totals['net_accrual'] += amount
+        type_id = str(accrual.get('accrual_id', accrual.get('type_id', 'unknown')))
+        type_bucket = by_type[type_id]
+        type_bucket['name'] = names.get(type_id, type_id)
+        type_bucket['count'] += 1
+        type_bucket['amount'] += amount
+
+        posting = accrual.get('posting') or {}
+        for product in posting.get('products') or []:
+            sku = product.get('sku')
+            if sku is None:
+                continue
+            row = by_sku[str(sku)]
+            row['sku'] = str(sku)
+            row['operations'] += 1
+            commission = product.get('commission') or {}
+            sale = _money(commission.get('seller_price'))
+            signed_commission = _money(commission.get('sale_commission'))
+            commission_expense = -signed_commission if signed_commission < 0 else 0.0
+            totals['gross_sales'] += sale
+            totals['commission'] += commission_expense
+            row['gross_sales'] += sale
+            row['commission'] += commission_expense
+            row['net_accrual'] += sale + signed_commission
+
+            delivery = product.get('delivery') or {}
+            delivery_total = _money(delivery.get('total_accrued'))
+            # delivery.total_accrued is the signed SKU-level total. Individual
+            # services are used only to classify the same expense by type.
+            row['net_accrual'] += delivery_total
+            for fee_type, fee_amount in _fee_pairs(delivery.get('services') or []):
+                expense = -fee_amount if fee_amount < 0 else 0.0
+                totals[_service_bucket(names.get(fee_type, fee_type))] += expense
+            row['services'] += -delivery_total if delivery_total < 0 else 0.0
+
+        for group in (accrual.get('item_fees') or {}).get('fees') or []:
+            sku = group.get('sku')
+            for fee_type, fee_amount in _fee_pairs(group.get('fees') or []):
+                add_fee(fee_type, fee_amount, sku)
+
+        for section in ('non_item_fee', 'container_fees'):
+            for fee_type, fee_amount in _fee_pairs(accrual.get(section)):
+                add_fee(fee_type, fee_amount)
 
     for key in ('gross_sales', 'commission', 'logistics', 'storage', 'other_services', 'net_accrual'):
         totals[key] = round(totals[key], 2)
@@ -113,6 +155,6 @@ def summarize(snapshot):
         'totals': totals,
         'operation_types': types,
         'products': products,
-        'unallocated_product_operations': unallocated,
-        'note': 'Чистое начисление Ozon показано до себестоимости, налогов и рекламы. SKU-детализация включает только операции, где однозначно определён один SKU.',
+        'unallocated_product_operations': 0,
+        'note': 'Чистое начисление Ozon берётся из total_amount актуального API начислений. Полная чистая прибыль появится после добавления себестоимости, налогов и рекламы.',
     }
