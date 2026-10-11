@@ -1,11 +1,17 @@
 """Read-only Ozon Seller API adapter."""
+import csv
+import io
+import urllib.parse
+import urllib.request
 from datetime import date, datetime, time as dt_time, timedelta, timezone
+from openpyxl import load_workbook
 from .legacy import Ozon as BaseOzon, ApiError, ALLOWED
 
 ALLOWED.update({
     '/v1/analytics/stocks', '/v3/posting/fbo/list', '/v4/posting/fbs/list',
     '/v1/finance/accrual/by-day', '/v1/finance/accrual/types',
     '/v1/finance/products/buyout',
+    '/v1/report/placement/by-products/create', '/v1/report/info',
 })
 
 
@@ -72,6 +78,18 @@ class Ozon(BaseOzon):
         except (TypeError, ValueError):
             return 0.0
 
+    @staticmethod
+    def _report_number(value):
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+        text = str(value or '').strip().replace('\xa0', '').replace(' ', '').replace(',', '.')
+        for suffix in ('₽', 'руб.', 'руб'):
+            text = text.replace(suffix, '')
+        try:
+            return float(text)
+        except ValueError:
+            return 0.0
+
     def _orders_for_period(self, first, last, progress):
         """Return FBO+FBS order quantity and amount for the selected creation period."""
         since = datetime.combine(first, dt_time.min, tzinfo=timezone.utc).isoformat()
@@ -112,21 +130,115 @@ class Ozon(BaseOzon):
                 else:
                     raise ApiError(f'Слишком много страниц заказов {scheme.upper()}.')
             except ApiError as exc:
-                # A seller may not use one of the schemes. Keep the other scheme usable,
-                # but surface the reason so the UI never presents the total as complete.
                 result['errors'].append(f'{scheme.upper()}: {exc}')
                 progress(f'Заказы {scheme.upper()} недоступны: {exc}')
 
         result['amount'] = round(result['amount'], 2)
         return result
 
-    def finance_transactions(self, date_from, date_to, progress):
-        """Download the exact Seller API sources used for TrueStats-style reconciliation.
+    def _download_report_bytes(self, url):
+        url = str(url or '').strip()
+        parsed = urllib.parse.urlparse(url)
+        host = (parsed.hostname or '').lower()
+        if parsed.scheme != 'https' or not (host.endswith('.ozon.ru') or host.endswith('.ozone.ru')):
+            raise ApiError('Ozon вернул недопустимую ссылку на отчёт размещения.')
+        request = urllib.request.Request(url, headers={'User-Agent': 'ISK/0.1'})
+        try:
+            with urllib.request.urlopen(request, timeout=40) as response:
+                data = response.read(50 * 1024 * 1024 + 1)
+        except OSError as exc:
+            raise ApiError('Не удалось скачать отчёт о стоимости размещения.') from exc
+        if len(data) > 50 * 1024 * 1024:
+            raise ApiError('Отчёт о стоимости размещения слишком большой.')
+        return data
 
-        /v1/finance/accrual/by-day replaces the retired transaction/list method.
-        /v1/finance/products/buyout is required for marketplace buyouts (foreign sales).
-        FBO/FBS posting lists are used only for the separate orders reconciliation metric.
-        """
+    def _placement_sum(self, raw):
+        target = 'Начисленная стоимость размещения'
+
+        if raw[:2] == b'PK':
+            try:
+                workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+                for sheet in workbook.worksheets:
+                    rows = sheet.iter_rows(values_only=True)
+                    header = None
+                    index = None
+                    for _ in range(30):
+                        row = next(rows, None)
+                        if row is None:
+                            break
+                        normalized = [' '.join(str(v or '').split()) for v in row]
+                        if target in normalized:
+                            header = normalized
+                            index = normalized.index(target)
+                            break
+                    if header is None:
+                        continue
+                    total = 0.0
+                    for row in rows:
+                        if index < len(row):
+                            total += self._report_number(row[index])
+                    return round(total, 2)
+            except Exception as exc:
+                raise ApiError('Не удалось прочитать XLSX-отчёт стоимости размещения.') from exc
+        else:
+            text = None
+            for encoding in ('utf-8-sig', 'cp1251'):
+                try:
+                    text = raw.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            if text is None:
+                raise ApiError('Неизвестная кодировка отчёта стоимости размещения.')
+            sample = text[:4096]
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters=';,\t')
+            except csv.Error:
+                dialect = csv.excel
+                dialect.delimiter = ';'
+            rows = csv.reader(io.StringIO(text), dialect)
+            index = None
+            for _ in range(30):
+                row = next(rows, None)
+                if row is None:
+                    break
+                normalized = [' '.join(str(v or '').split()) for v in row]
+                if target in normalized:
+                    index = normalized.index(target)
+                    break
+            if index is not None:
+                total = 0.0
+                for row in rows:
+                    if index < len(row):
+                        total += self._report_number(row[index])
+                return round(total, 2)
+
+        raise ApiError('В отчёте Ozon нет столбца «Начисленная стоимость размещения».')
+
+    def _placement_cost_report(self, first, last, progress):
+        created = self.call('/v1/report/placement/by-products/create', {
+            'date_from': first.isoformat(), 'date_to': last.isoformat(),
+        })
+        code = created.get('code') or ''
+        if not code:
+            raise ApiError('Ozon не вернул идентификатор отчёта стоимости размещения.')
+        progress('Формируется отчёт стоимости размещения…')
+        for _ in range(45):
+            info = self.call('/v1/report/info', {'code': code}).get('result') or {}
+            status = info.get('status')
+            if status == 'success':
+                file_url = info.get('file')
+                raw = self._download_report_bytes(file_url)
+                value = self._placement_sum(raw)
+                progress(f'Стоимость размещения: {value:.2f} ₽')
+                return value
+            if status == 'failed':
+                raise ApiError('Ozon не смог сформировать отчёт стоимости размещения.')
+            self.sleep(1)
+        raise ApiError('Ozon слишком долго формирует отчёт стоимости размещения.')
+
+    def finance_transactions(self, date_from, date_to, progress):
+        """Download Seller API sources required by the public TrueStats reconciliation."""
         first = self._as_date(date_from)
         last = self._as_date(date_to)
         if last < first:
@@ -178,6 +290,14 @@ class Ozon(BaseOzon):
             buyout_error = str(exc)
             progress(f'Выкупы маркетплейсом недоступны: {exc}')
 
+        placement_cost = None
+        placement_error = None
+        try:
+            placement_cost = self._placement_cost_report(first, last, progress)
+        except ApiError as exc:
+            placement_error = str(exc)
+            progress(f'Стоимость размещения недоступна: {exc}')
+
         orders = self._orders_for_period(first, last, progress)
 
         return {
@@ -187,5 +307,7 @@ class Ozon(BaseOzon):
             'accruals': all_accruals,
             'buyout_products': buyout_products,
             'buyout_error': buyout_error,
+            'placement_cost': placement_cost,
+            'placement_error': placement_error,
             'orders': orders,
         }
