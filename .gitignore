@@ -1,3 +1,5 @@
 .venv
 __pycache__/
 *.py[cod]
+frontend/dist/
+frontend/node_modules/
