@@ -30,9 +30,9 @@ function Overview(){
  return <><div className="overview-heading"><div><h1>Обзор запасов</h1><p className="muted mt-2">Обновлено: {date(inv?.at)}</p></div><button className="primary" disabled={!state||state.job.running} onClick={()=>act('/sync',{})}>Обновить данные <RefreshCw size={16}/></button></div>
  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6"><Card label="Доступно к продаже" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек"/></div>
  {inv?.warning&&<Notice>{inv.warning}</Notice>}
- <section className="panel overview-action"><div><h3>Пополнение запасов</h3><p className="muted mt-2">Узнайте, когда закончится товар на каждом складе и по всем складам вместе.</p></div><NavLink to="/replenishment" className="action-link">Прогноз пополнения <ArrowUpRight size={18}/></NavLink></section></>
+ <section className="panel overview-action"><div><h3>Пополнение запасов</h3><p className="muted mt-2">Узнайте, когда закончится товар на каждом складе и по всем складам вместе.</p></div><NavLink to="/replenishment" className="action-link">Прогноз пополнения <ArrowUpRight size={18}/></NavLink></section><div className="mt-5"><ProductCatalog/></div></>
 }
-function Products(){const {inv}=useApp();const [q,setQ]=useState('');const rows=(inv?.products||[]).filter(p=>[p.name,p.offer_id,p.id,p.sku].join(' ').toLowerCase().includes(q.toLowerCase()));return <section className="panel"><div className="panel-title"><h3>Каталог товаров</h3><span className="badge">{rows.length} карточек</span></div><Filter value={q} set={setQ}/><Table rows={rows} columns={[["name","Название"],["offer_id","Артикул"],["id","Код товара"],["sku","SKU"]]}/></section>}
+function ProductCatalog(){const {inv}=useApp();const [q,setQ]=useState('');const rows=(inv?.products||[]).filter(p=>[p.name,p.offer_id,p.id,p.sku].join(' ').toLowerCase().includes(q.toLowerCase()));return <section className="panel"><div className="panel-title"><h3>Каталог товаров</h3><span className="badge">{rows.length} карточек</span></div><Filter value={q} set={setQ}/><Table rows={rows} columns={[["name","Название"],["offer_id","Артикул"],["id","Код товара"],["sku","SKU"]]}/></section>}
 function Stocks(){
  const {inv}=useApp();const [q,setQ]=useState('');const [raw,setRaw]=useState(false);const [only,setOnly]=useState(true);
  const warehouseNames=new Map((inv?.analytics||[]).map(r=>[String(r.warehouse_id),r.warehouse_name]));
@@ -109,7 +109,7 @@ function AdminUsers(){
   </section>
  </div>
 }
-const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/market-calculator','Калькулятор WB / Ozon',Calculator],['/products','Товары',Package],['/stocks','Остатки FBO',Warehouse],['/history','История отправлений',Truck],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
+const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/market-calculator','Калькулятор WB / Ozon',Calculator],['/stocks','Остатки FBO',Warehouse],['/history','История отправлений',Truck],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
 function RequireAccount({children}){const {me}=useApp();return me?.active_account_id?children:<Navigate to="/connection" replace/>}
 function App(){
  const location=useLocation();const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);
@@ -149,7 +149,7 @@ function App(){
      <Route path="/" element={<RequireAccount><Overview/></RequireAccount>}/>
      <Route path="/digitization" element={<RequireAccount><DigitizationCached state={state} digi={digi} act={act}/></RequireAccount>}/>
      <Route path="/market-calculator" element={<RequireAccount><MarketPage userId={me.user.id} isAdmin={me.user.role==='admin'}/></RequireAccount>}/>
-     <Route path="/products" element={<RequireAccount><Products/></RequireAccount>}/>
+     <Route path="/products" element={<Navigate to="/" replace/>}/>
      <Route path="/stocks" element={<RequireAccount><Stocks/></RequireAccount>}/>
      <Route path="/history" element={<RequireAccount><History/></RequireAccount>}/>
      <Route path="/replenishment" element={<RequireAccount><Replenishment inv={inv} hist={hist} api={api}/></RequireAccount>}/>
