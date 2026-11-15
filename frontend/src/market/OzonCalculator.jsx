@@ -41,8 +41,8 @@ export default function OzonCalculator({items=[], selectedId="", onSelect=()=>{}
   const entries = state.prices[itemId] || Array(10).fill("");
   const prices = entries.map(n).filter(value=>value>0);
   const scenarios = useMemo(
-    ()=>calculateOzonScenarios(prices,item ? n(item.yuan)*n(item.rate)+n(item.freight) : 0,input),
-    [entries.join("|"),item?.id,item?.yuan,item?.rate,item?.freight,JSON.stringify(input)]
+    ()=>calculateOzonScenarios(prices,item ? n(item.landedCostPerUnit ?? (n(item.yuan)*n(item.rate)+n(item.freight))) : 0,input),
+    [entries.join("|"),item?.id,item?.yuan,item?.rate,item?.freight,item?.landedCostPerUnit,JSON.stringify(input)]
   );
   const updateInput = changes => {
     if(!itemId) return;
