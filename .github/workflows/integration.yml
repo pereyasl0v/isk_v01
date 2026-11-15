@@ -30,6 +30,8 @@ jobs:
       - run: node --test src/market/*.test.mjs
       - run: node --test src/digitization-period.test.mjs
         working-directory: frontend
+      - run: node --test src/inventory-capitalization.test.mjs
+        working-directory: frontend
       - run: npm run build
         working-directory: frontend
       - run: node --check extension/wb-capture/wb-capture.js && node --check extension/ozon-capture/ozon-capture.js
