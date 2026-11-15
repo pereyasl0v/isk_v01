@@ -5,7 +5,7 @@ import threading
 import time
 from datetime import date, datetime, time as dt_time, timezone
 from pathlib import Path
-from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi import FastAPI, Request, Response, HTTPException, Depends
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
@@ -31,7 +31,6 @@ store=Store(DATA/'inventory.sqlite3',encryption_key=ENCRYPTION_KEY)
 app=FastAPI(title='Интелектуальная система контроля (ИСК)',version='0.3.0',docs_url=None,redoc_url=None)
 ALLOWED_HOSTS=[v.strip() for v in os.getenv('ISK_ALLOWED_HOSTS','127.0.0.1,localhost,testserver').split(',') if v.strip()]
 app.add_middleware(TrustedHostMiddleware,allowed_hosts=ALLOWED_HOSTS)
-app.include_router(market_router)
 runtime_accounts={}
 lock=threading.RLock()
 ALLOWED_ORIGINS={v.strip() for v in os.getenv('ISK_ALLOWED_ORIGINS',
@@ -68,6 +67,9 @@ def authenticated(request):
     if not session:raise HTTPException(401,'Сессия истекла. Войдите снова.')
     session['token_hash']=digest
     return session
+
+
+app.include_router(market_router,dependencies=[Depends(authenticated)])
 
 
 def current(request):
@@ -151,14 +153,18 @@ def auth_status():
 def auth_login(body:Login,request:Request,response:Response):
     username=body.username.strip()
     ip=request.client.host if request.client else 'unknown'
-    if store.login_is_locked(ip,username):
+    if store.login_is_locked(ip,username) or store.login_is_locked(ip,'*'):
         raise HTTPException(429,'Слишком много неудачных попыток. Повторите через 15 минут.')
     user=store.get_user_by_username(username)
     password=body.password.get_secret_value()
     if not user or not user['is_active'] or not verify_password(password,user['password_hash']):
         store.record_login_failure(ip,username)
+        store.record_login_failure(ip,'*')
         raise HTTPException(401,'Неверный логин или пароль.')
     store.clear_login_failures(ip,username)
+    store.clear_login_failures(ip,'*')
+    old_token=request.cookies.get('isk_session','')
+    if old_token:store.delete_auth_session(token_digest(old_token))
     accounts=store.list_ozon_accounts(user['id'])
     active=next((a['id'] for a in accounts if a['connected']),None)
     token=secrets.token_urlsafe(48)
