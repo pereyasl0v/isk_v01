@@ -1,5 +1,6 @@
 import os
 import secrets
+import sqlite3
 import threading
 import time
 from datetime import date, datetime, time as dt_time, timezone
@@ -10,6 +11,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, SecretStr
+from .security import (SESSION_TTL_SECONDS, decrypt_secret, encrypt_secret, hash_password,
+                       load_encryption_key, token_digest, valid_username, verify_password)
 from .ozon import Ozon, ApiError, MOSCOW_TZ
 from .storage import Store
 from .inventory import summarize, aggregate
@@ -21,103 +24,265 @@ from .digitization_cache import combine_digitization_days, download_digitization
 ROOT=Path(__file__).resolve().parents[1]
 DATA=Path(os.environ.get('OZON_FBO_DATA_DIR',str(Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'VKR_Ozon_FBO_Web')))
 DATA.mkdir(parents=True,exist_ok=True)
-store=Store(DATA/'inventory.sqlite3')
-app=FastAPI(title='Интелектуальная система контроля (ИСК)',version='0.2.0',docs_url=None,redoc_url=None)
-# Defaults stay loopback-only. Configure explicit public hostnames behind HTTPS if deployed remotely.
+try: os.chmod(DATA,0o700)
+except OSError: pass
+ENCRYPTION_KEY=load_encryption_key()
+store=Store(DATA/'inventory.sqlite3',encryption_key=ENCRYPTION_KEY)
+app=FastAPI(title='Интелектуальная система контроля (ИСК)',version='0.3.0',docs_url=None,redoc_url=None)
 ALLOWED_HOSTS=[v.strip() for v in os.getenv('ISK_ALLOWED_HOSTS','127.0.0.1,localhost,testserver').split(',') if v.strip()]
 app.add_middleware(TrustedHostMiddleware,allowed_hosts=ALLOWED_HOSTS)
 app.include_router(market_router)
-sessions={}
+runtime_accounts={}
 lock=threading.RLock()
 ALLOWED_ORIGINS={v.strip() for v in os.getenv('ISK_ALLOWED_ORIGINS',
     'http://127.0.0.1:8000,http://localhost:8000,http://127.0.0.1:5173,http://localhost:5173').split(',') if v.strip()}
 
+
 @app.middleware('http')
 async def local_guard(request,call_next):
-    if request.url.path.startswith('/api') and request.method not in ('GET','HEAD'):
-        if request.headers.get('origin') not in ALLOWED_ORIGINS or request.headers.get('x-local-app')!='fbo':
+    if request.url.path.startswith('/api') and request.method not in ('GET','HEAD','OPTIONS'):
+        origin=request.headers.get('origin')
+        if not origin or origin not in ALLOWED_ORIGINS:
             return JSONResponse({'detail':'Недопустимый источник запроса.'},status_code=403)
     response=await call_next(request)
     response.headers['Cache-Control']='no-store'
+    response.headers['Pragma']='no-cache'
     response.headers['X-Content-Type-Options']='nosniff'
     response.headers['Referrer-Policy']='no-referrer'
     response.headers['X-Frame-Options']='DENY'
+    response.headers['Permissions-Policy']='camera=(), microphone=(), geolocation=()'
+    response.headers['Content-Security-Policy']="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     return response
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request,exc):
     return JSONResponse({'detail':'Проверьте формат введённых данных.'},status_code=422)
 
+
+def authenticated(request):
+    raw=request.cookies.get('isk_session','')
+    if not raw:raise HTTPException(401,'Войдите в систему.')
+    digest=token_digest(raw)
+    session=store.get_auth_session(digest)
+    if not session:raise HTTPException(401,'Сессия истекла. Войдите снова.')
+    session['token_hash']=digest
+    return session
+
+
 def current(request):
-    token=request.cookies.get('fbo_session','')
+    auth=authenticated(request)
+    if not ENCRYPTION_KEY:
+        raise HTTPException(503,'На сервере не настроен ключ шифрования. Администратор должен установить Docker secret.')
+    account_id=auth.get('active_account_id')
+    if not account_id:raise HTTPException(409,'Сначала выберите подключённый кабинет Ozon.')
+    account=store.get_ozon_account(account_id,auth['user_id'])
+    if not account or not account['connected'] or not account['api_key_ciphertext']:
+        raise HTTPException(409,'Кабинет Ozon не подключён. Выберите другой кабинет или подключите этот заново.')
     with lock:
-        s=sessions.get(token)
-        if not s or time.time()-s['used']>8*3600:
-            sessions.pop(token,None)
-            raise HTTPException(401,'Подключите кабинет Ozon.')
-        s['used']=time.time()
-        return s
+        cached=runtime_accounts.get(account_id)
+        if cached and cached.get('updated_at')==account['updated_at']:
+            return cached
+        try:api_key=decrypt_secret(account['api_key_ciphertext'],ENCRYPTION_KEY)
+        except Exception:
+            raise HTTPException(503,'Не удалось расшифровать ключ Ozon. Проверьте резервную копию ключа шифрования.') from None
+        scope='account:'+account_id
+        api=Ozon(account['client_id'],api_key,
+            cache_get=lambda namespace,key,max_age: store.cache_get(scope,namespace,key,max_age),
+            cache_put=lambda namespace,key,value: store.cache_put(scope,namespace,key,value))
+        runtime={'user_id':auth['user_id'],'account_id':account_id,'client_id':account['client_id'],
+            'client':scope,'api':api,'roles':account['roles'],'updated_at':account['updated_at'],
+            'job':{'running':False,'message':'Кабинет подключён','error':None},'logs':[]}
+        runtime_accounts[account_id]=runtime
+        return runtime
+
+
+def require_admin(request):
+    auth=authenticated(request)
+    if auth['user']['role']!='admin':raise HTTPException(403,'Доступ разрешён только администратору.')
+    return auth
+
+
+def public_account(account):
+    return {'id':account['id'],'client_id':account['client_id'],'connected':account['connected'],
+            'roles':[r.get('name','') for r in account['roles'].get('roles',[])],
+            'expires_at':account['roles'].get('expires_at'),'updated_at':account['updated_at']}
+
 
 class Connect(BaseModel):
     client_id:str=Field(pattern=r'^\d+$',max_length=30)
     api_key:SecretStr
 
+
+class Login(BaseModel):
+    username:str=Field(min_length=3,max_length=32)
+    password:SecretStr=Field(min_length=12,max_length=256)
+
+
+class NewUser(BaseModel):
+    username:str=Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9._-]{2,31}$')
+    password:SecretStr=Field(min_length=12,max_length=256)
+
+
+class UserStatus(BaseModel):
+    active:bool
+
+
+class SelectAccount(BaseModel):
+    account_id:str=Field(min_length=1,max_length=64)
+
+
 class History(BaseModel):
     days:int=Field(default=90,ge=1,le=365)
+
 
 class DigitizationParams(BaseModel):
     date_from:date
     date_to:date
     refresh:bool=False
 
+
+@app.get('/api/auth/status')
+def auth_status():
+    return {'initialized':store.count_users()>0}
+
+
+@app.post('/api/auth/login')
+def auth_login(body:Login,request:Request,response:Response):
+    username=body.username.strip()
+    ip=request.client.host if request.client else 'unknown'
+    if store.login_is_locked(ip,username):
+        raise HTTPException(429,'Слишком много неудачных попыток. Повторите через 15 минут.')
+    user=store.get_user_by_username(username)
+    password=body.password.get_secret_value()
+    if not user or not user['is_active'] or not verify_password(password,user['password_hash']):
+        store.record_login_failure(ip,username)
+        raise HTTPException(401,'Неверный логин или пароль.')
+    store.clear_login_failures(ip,username)
+    accounts=store.list_ozon_accounts(user['id'])
+    active=next((a['id'] for a in accounts if a['connected']),None)
+    token=secrets.token_urlsafe(48)
+    store.create_auth_session(token_digest(token),user['id'],active,SESSION_TTL_SECONDS)
+    response.set_cookie('isk_session',token,httponly=True,samesite='strict',
+        secure=os.getenv('ISK_SECURE_COOKIE','false').lower() in ('true','1','yes'),
+        max_age=SESSION_TTL_SECONDS,path='/')
+    return {'ok':True}
+
+
+@app.post('/api/auth/logout')
+def auth_logout(request:Request,response:Response):
+    raw=request.cookies.get('isk_session','')
+    if raw:store.delete_auth_session(token_digest(raw))
+    response.delete_cookie('isk_session',path='/',httponly=True,
+        secure=os.getenv('ISK_SECURE_COOKIE','false').lower() in ('true','1','yes'),samesite='strict')
+    return {'ok':True}
+
+
+@app.get('/api/auth/me')
+def auth_me(request:Request):
+    auth=authenticated(request)
+    accounts=store.list_ozon_accounts(auth['user_id'])
+    active_id=auth.get('active_account_id')
+    active=next((a for a in accounts if a['id']==active_id and a['connected']),None)
+    if not active:
+        active=next((a for a in accounts if a['connected']),None)
+        active_id=active['id'] if active else None
+        store.set_session_account(auth['token_hash'],auth['user_id'],active_id)
+    return {'user':auth['user'],'accounts':[public_account(a) for a in accounts],
+            'active_account_id':active_id,'session_expires_at':auth['expires_at']}
+
+
+@app.get('/api/admin/users')
+def admin_users(request:Request):
+    require_admin(request)
+    return {'users':store.list_users()}
+
+
+@app.post('/api/admin/users')
+def admin_create_user(body:NewUser,request:Request):
+    require_admin(request)
+    if not valid_username(body.username):
+        raise HTTPException(422,'Логин: 3–32 символа, латиница, цифры, точка, дефис или подчёркивание.')
+    try:user=store.create_user(body.username,hash_password(body.password.get_secret_value()),'user')
+    except sqlite3.IntegrityError:raise HTTPException(409,'Пользователь с таким логином уже существует.') from None
+    return {'user':{k:user[k] for k in ('id','username','role','is_active','created_at')}}
+
+
+@app.post('/api/admin/users/{user_id}/status')
+def admin_user_status(user_id:str,body:UserStatus,request:Request):
+    auth=require_admin(request)
+    if user_id==auth['user_id'] and not body.active:
+        raise HTTPException(409,'Нельзя отключить собственный аккаунт администратора.')
+    try:changed=store.set_user_active(user_id,body.active)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
+    if not changed:raise HTTPException(404,'Пользователь не найден.')
+    return {'ok':True}
+
+
+@app.get('/api/accounts')
+def accounts(request:Request):
+    auth=authenticated(request)
+    return {'accounts':[public_account(a) for a in store.list_ozon_accounts(auth['user_id'])],
+            'active_account_id':auth.get('active_account_id')}
+
+
+@app.post('/api/accounts/select')
+def select_account(body:SelectAccount,request:Request):
+    auth=authenticated(request)
+    if not store.set_session_account(auth['token_hash'],auth['user_id'],body.account_id):
+        raise HTTPException(404,'Подключённый кабинет не найден в вашем аккаунте.')
+    return {'ok':True,'active_account_id':body.account_id}
+
+
 @app.post('/api/connect')
-def connect(body:Connect,request:Request,response:Response):
+def connect(body:Connect,request:Request):
+    auth=authenticated(request)
+    if not ENCRYPTION_KEY:
+        raise HTTPException(503,'Подключение недоступно: настройте ISK encryption key Docker secret.')
     client_id=body.client_id
+    api_key=body.api_key.get_secret_value()
     try:
-        api=Ozon(
-            client_id,
-            body.api_key.get_secret_value(),
-            cache_get=lambda namespace,key,max_age: store.cache_get(client_id,namespace,key,max_age),
-            cache_put=lambda namespace,key,value: store.cache_put(client_id,namespace,key,value),
-        )
+        api=Ozon(client_id,api_key)
         roles=api.roles()
     except ApiError as exc:
         raise HTTPException(400,str(exc)) from None
-    with lock:
-        old=sessions.get(request.cookies.get('fbo_session',''))
-        if old and old['job']['running']:
-            raise HTTPException(409,'Дождитесь завершения загрузки.')
-        sessions.pop(request.cookies.get('fbo_session',''),None)
-        for k in list(sessions):
-            if time.time()-sessions[k]['used']>8*3600 and not sessions[k]['job']['running']:
-                sessions.pop(k,None)
-        token=secrets.token_urlsafe(32)
-        sessions[token]={'client':client_id,'api':api,'roles':roles,'used':time.time(),
-            'job':{'running':False,'message':'Кабинет подключён','error':None},'logs':[]}
-    response.set_cookie('fbo_session',token,httponly=True,samesite='strict',max_age=8*3600,
-                        secure=os.getenv('ISK_SECURE_COOKIE','false').lower() in ('true','1','yes'))
-    return {'client_id':client_id,'expires_at':roles.get('expires_at')}
+    ciphertext=encrypt_secret(api_key,ENCRYPTION_KEY)
+    account=store.upsert_ozon_account(auth['user_id'],client_id,ciphertext,roles)
+    scope='account:'+account['id']
+    store.migrate_legacy_client_data(client_id,scope,account['id'])
+    store.set_session_account(auth['token_hash'],auth['user_id'],account['id'])
+    with lock:runtime_accounts.pop(account['id'],None)
+    return {'client_id':client_id,'account_id':account['id'],'expires_at':roles.get('expires_at')}
+
 
 @app.post('/api/disconnect')
-def disconnect(request:Request,response:Response):
-    s=current(request)
+def disconnect(request:Request):
+    auth=authenticated(request)
+    account_id=auth.get('active_account_id')
+    if not account_id:raise HTTPException(409,'Нет выбранного кабинета.')
+    account=store.get_ozon_account(account_id,auth['user_id'])
+    if not account:raise HTTPException(404,'Кабинет не найден.')
     with lock:
-        if s['job']['running']:
-            raise HTTPException(409,'Дождитесь завершения загрузки.')
-        sessions.pop(request.cookies.get('fbo_session',''),None)
-    response.delete_cookie('fbo_session')
-    return {'ok':True}
+        running=runtime_accounts.get(account_id,{}).get('job',{}).get('running',False)
+        if running:raise HTTPException(409,'Дождитесь завершения загрузки.')
+        runtime_accounts.pop(account_id,None)
+    store.disconnect_ozon_account(account_id,auth['user_id'])
+    store.set_session_account(auth['token_hash'],auth['user_id'],None)
+    return {'ok':True,'data_preserved':True}
+
 
 @app.get('/api/state')
 def state(request:Request):
     s=current(request)
     with lock:
         cache=store.cache_stats(s['client'],'ozon_api')
-        return {'client_id':s['client'],'expires_at':s['roles'].get('expires_at'),
+        return {'client_id':s['client_id'],'account_id':s['account_id'],
+                'expires_at':s['roles'].get('expires_at'),
                 'roles':[r.get('name','') for r in s['roles'].get('roles',[])],
                 'job':dict(s['job']),'logs':list(s['logs']),'cache':cache,
                 'digitization_periods':store.digitization_period_count(s['client']),
                 'digitization_days':store.digitization_coverage(s['client'])}
+
 
 def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
     def progress(message):
