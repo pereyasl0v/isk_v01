@@ -136,10 +136,10 @@ function App(){
  if(!me)return <LoginScreen onSuccess={reload}/>;
  const navItems=me.user.role==='admin'?[...nav,['/admin/users','Пользователи',Users]]:nav;
  return <Context.Provider value={{me,state,setState,inv,hist,digi,reload,act,setError}}>
-  <div className="shell"><aside className="sidebar"><div className="brand"><div className="brand-icon"><Boxes size={25}/></div><div className="isk-brand">ИСК<span>Интеллектуальная система контроля</span></div></div>
+  <div className="shell"><aside className="sidebar"><div className="brand"><div className="brand-icon"><Boxes size={25}/></div><div className="isk-brand">ИСК</div></div>
    <nav>{navItems.map(([path,label,Icon])=><NavLink key={path} to={path} end={path==='/'} className={({isActive})=>'nav-item '+(isActive?'active':'')}><Icon size={19}/>{label}</NavLink>)}</nav>
    <div className="sidebar-footer"><span className="status-dot"/>{me.user.username}</div>
-  </aside><main><header><span className="header-name">Интеллектуальная система контроля</span><div className="header-actions"><NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink><button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button></div></header>
+  </aside><main><header><div className="header-actions" style={{marginLeft:"auto"}}><NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink><button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button></div></header>
    <div className="workspace"><nav className="breadcrumbs" aria-label="Хлебные крошки"><NavLink to="/">ИСК</NavLink><span>/</span><span aria-current="page">{navItems.find(([path])=>path===location.pathname)?.[1]||'Обзор'}</span></nav>
     {error&&<div role="alert"><Notice>{error}<button className="ml-3" onClick={()=>setError('')}>Закрыть</button></Notice></div>}
     {state?.job.running&&<div className="progress"><RefreshCw size={17} className="animate-spin"/>{state.job.message}</div>}{state?.job.error&&<Notice>{state.job.error}</Notice>}
