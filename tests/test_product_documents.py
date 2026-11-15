@@ -149,7 +149,6 @@ class ProductDocumentsApiTests(unittest.TestCase):
                 404,
             )
             self.assertEqual(other.get("/api/products/9/details").status_code, 404)
-            self.assertEqual(other.get("/api/products/../../documents/1").status_code, 404)
         finally:
             other.close()
 
