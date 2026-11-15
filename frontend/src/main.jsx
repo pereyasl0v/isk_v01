@@ -76,14 +76,14 @@ function Connection(){
     <div><strong>Кабинет {a.client_id}</strong><span className={a.connected?'connected-label':'disconnected-label'}>{a.connected?'Подключён':'Ключ удалён'}</span><small>{a.roles?.join(', ')||'Роли не сохранены'}</small></div>
     <div className="account-actions">{a.connected&&<button className={me.active_account_id===a.id?'primary':''} disabled={busy||me.active_account_id===a.id} onClick={()=>select(a.id)}>{me.active_account_id===a.id?'Выбран':'Выбрать'}</button>}</div>
    </div>)}</div>
-   {active&&state&&<><div className="connected mt-4"><CircleCheck size={22}/><strong>Активный кабинет {state.client_id}</strong></div><p className="muted mt-2">Срок ключа Ozon: {date(state.expires_at)}</p><button className="mt-4" disabled={busy||state.job.running} onClick={disconnect}><LogOut size={16}/> Удалить сохранённый ключ</button><p className="muted">История и статистика останутся в вашем аккаунте. Для возобновления подключения потребуется ввести ключ заново.</p></>}
+   {active&&state&&<><div className="connected mt-4"><CircleCheck size={22}/><strong>Активный кабинет {state.client_id}</strong></div><p className="muted mt-2">Срок ключа Ozon: {date(state.expires_at)}</p><button className="mt-4" disabled={busy||state.job.running} onClick={disconnect}><LogOut size={16}/> Удалить сохранённый ключ</button></>}
   </section>
   <section className="panel"><div className="panel-title"><h3>Добавить / обновить кабинет</h3><Plus size={20}/></div>
    <form onSubmit={connect}><label className="field">Идентификатор кабинета<input autoComplete="off" inputMode="numeric" pattern="[0-9]+" required value={client} onChange={e=>setClient(e.target.value)}/></label>
     <label className="field mt-4">Ключ API<input autoComplete="new-password" type="password" required minLength={10} value={key} onChange={e=>setKey(e.target.value)}/></label>
     <button className="primary mt-5" disabled={busy}>{busy?'Проверяем доступ…':'Сохранить подключение'}<ArrowRight size={16}/></button>
    </form>
-   <h3 className="mt-6">Защита данных</h3><ul className="guide"><li>Ключ API шифруется AES-256-GCM до сохранения в SQLite.</li><li>Данные и кабинеты изолированы по аккаунту пользователя.</li><li>Секрет шифрования хранится отдельно от Git и контейнерного образа.</li><li>Выход из ИСК не отключает кабинет.</li><li>Удаление ключа не удаляет ранее загруженную статистику.</li></ul>
+   
   </section>
  </div>
 }
