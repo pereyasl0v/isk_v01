@@ -253,14 +253,7 @@ export default function Digitization({state,digi,act}){
    </div>
   </section>
 
-  <section className="panel mb-5"><div className="panel-title"><h3>Сводный отчёт</h3><span className="badge">{digi?.since||'—'} — {digi?.effective_to||digi?.to||'—'}</span></div>
-   <div className="table-scroll"><table><thead><tr><th>Метрика</th><th>За период</th></tr></thead><tbody>
-    {[
-     ['Цена до СПП',priceBefore],['Средн. цена продажи',averageSale],['Реализация (сумма продаж до СПП)',realization],['Продажи',sales],
-     ['Себестоимость продаж',cogs],['Чистая прибыль',cleanProfit],['К перечислению',null],['Возвраты',returns],
-    ].map(([label,value])=><tr key={label}><td>{label}</td><td>{money(value)}</td></tr>)}
-   </tbody></table></div>
-  </section>
+  
 
   
 
