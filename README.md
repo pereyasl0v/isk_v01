@@ -94,6 +94,9 @@ sh scripts/init-secrets.sh
 cp .env.example .env
 # Обязательно отредактируйте .env: укажите свой домен, HTTPS-origin и ISK_SECURE_COOKIE=true.
 docker compose up -d --build
+# Только при обновлении существующего тома, созданного старым root-контейнером, выполните один раз:
+docker compose run --rm --user 0:0 --entrypoint sh isk -c 'chown -R 10001:10001 /data'
+docker compose up -d
 docker compose exec isk python -m backend.admin create-admin --username admin
 # Команда интерактивно запросит пароль администратора (не менее 12 символов).
 ```
