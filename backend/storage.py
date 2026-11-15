@@ -66,6 +66,10 @@ class Store:
                 updated_at TEXT NOT NULL, UNIQUE(user_id,client_id),
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)''')
             c.execute('CREATE INDEX IF NOT EXISTS ozon_account_user ON ozon_accounts(user_id,connected)')
+            c.execute('''CREATE TABLE IF NOT EXISTS costing_workspaces (
+                user_id TEXT PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL, payload TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)''')
             c.execute('''CREATE TABLE IF NOT EXISTS auth_login_attempts (
                 ip TEXT NOT NULL, username TEXT NOT NULL, window_started REAL NOT NULL,
                 failed_count INTEGER NOT NULL, locked_until REAL NOT NULL DEFAULT 0,
@@ -256,6 +260,49 @@ class Store:
                          WHERE id=? AND user_id=?''',
                       (datetime.now(timezone.utc).isoformat(),str(account_id),str(user_id)))
             return c.total_changes>0
+
+    def get_costing_workspace(self,user_id):
+        with self.db() as c:
+            row=c.execute(
+                'SELECT revision,updated_at,payload FROM costing_workspaces WHERE user_id=?',
+                (str(user_id),)
+            ).fetchone()
+        if not row:
+            return {'revision':0,'updated_at':None,'products':[],'shipments':[]}
+        try:
+            data=self._decode_payload(row[2])
+        except (ValueError,TypeError):
+            data={'products':[],'shipments':[]}
+        return {'revision':int(row[0]),'updated_at':row[1],
+                'products':data.get('products',[]),'shipments':data.get('shipments',[])}
+
+    def save_costing_workspace(self,user_id,expected_revision,data):
+        now=datetime.now(timezone.utc).isoformat()
+        payload=self._encode_payload(data)
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            row=c.execute(
+                'SELECT revision FROM costing_workspaces WHERE user_id=?',(str(user_id),)
+            ).fetchone()
+            current=int(row[0]) if row else 0
+            if current!=int(expected_revision):
+                raise ValueError('Данные уже изменены на другом устройстве. Обновите раздел и повторите сохранение.')
+            revision=current+1
+            if row:
+                changed=c.execute(
+                    '''UPDATE costing_workspaces SET revision=?,updated_at=?,payload=?
+                       WHERE user_id=? AND revision=?''',
+                    (revision,now,payload,str(user_id),current)
+                ).rowcount
+                if changed!=1:
+                    raise ValueError('Данные уже изменены на другом устройстве. Обновите раздел и повторите сохранение.')
+            else:
+                c.execute(
+                    'INSERT INTO costing_workspaces(user_id,revision,updated_at,payload) VALUES (?,?,?,?)',
+                    (str(user_id),revision,now,payload)
+                )
+        return {'revision':revision,'updated_at':now,
+                'products':data.get('products',[]),'shipments':data.get('shipments',[])}
 
     def migrate_legacy_client_data(self,client_id,account_scope,account_id):
         client_id=str(client_id)
