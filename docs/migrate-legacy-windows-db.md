@@ -55,7 +55,7 @@ docker compose exec isk python -c 'import sqlite3; c=sqlite3.connect("/data/inve
 После успешной проверки удалите только временную копию из контейнера:
 
 ```bash
-docker compose exec isk rm -f /tmp/isk-legacy.sqlite3
+docker compose exec --user 0:0 isk rm -f /tmp/isk-legacy.sqlite3
 ```
 
 Оригинальная Windows-база и резервная копия остаются на компьютере без изменений.
