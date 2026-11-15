@@ -64,7 +64,7 @@ Frontend уже собран: для запуска не требуются Node
 
 ### Первый запуск на VPS
 
-1. Создайте секретный ключ **один раз**: `sh scripts/init-secrets.sh`. Не удаляйте и не перегенерируйте этот файл при обновлениях.
+1. Создайте секретный ключ **один раз**: `sudo sh scripts/init-secrets.sh`. Не удаляйте и не перегенерируйте этот файл при обновлениях.
 2. Создайте и настройте `.env`: домен в `ISK_ALLOWED_HOSTS`, точный HTTPS-origin в `ISK_ALLOWED_ORIGINS`, `ISK_SECURE_COOKIE=true`.
 3. Запустите `docker compose up -d --build`.
 4. Создайте первого администратора интерактивно: `docker compose exec isk python -m backend.admin create-admin --username admin`. Пароль вводится скрыто и должен быть не короче 12 символов.
@@ -92,6 +92,7 @@ git clone -b feature/ozon-digitization https://github.com/pereyasl0v/isk_v01.git
 cd isk_v01
 sh scripts/init-secrets.sh
 cp .env.example .env
+chmod 600 .env
 # Обязательно отредактируйте .env: укажите свой домен, HTTPS-origin и ISK_SECURE_COOKIE=true.
 docker compose up -d --build
 # Только при обновлении существующего тома, созданного старым root-контейнером, выполните один раз:
