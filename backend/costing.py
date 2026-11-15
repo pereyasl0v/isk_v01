@@ -146,6 +146,13 @@ def clean_workspace(products: Any, shipments: Any) -> dict:
             raise ValueError("Неизвестный статус товара.")
         item = dict(raw)
         item.update({"id": pid, "name": name, "status": status, "shipmentId": shipment_id})
+        item.setdefault("sku", "")
+        item.setdefault("yuan", 0)
+        item.setdefault("rate", 12)
+        item.setdefault("freight", 0)
+        item.setdefault("quantity", 1)
+        item.setdefault("unitNetWeightG", 0)
+        item.setdefault("deliveryToGuangzhouYuan", 0)
         clean_products.append(item)
     return {"products": clean_products, "shipments": clean_shipments}
 
