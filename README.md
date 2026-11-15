@@ -90,12 +90,12 @@ Frontend уже собран: для запуска не требуются Node
 # Первый запуск. Ветка разработки нужна явно, так как основная ветка репозитория — main.
 git clone -b feature/ozon-digitization https://github.com/pereyasl0v/isk_v01.git
 cd isk_v01
-sh scripts/init-secrets.sh
+sudo sh scripts/init-secrets.sh
 cp .env.example .env
 chmod 600 .env
 # Обязательно отредактируйте .env: укажите свой домен, HTTPS-origin и ISK_SECURE_COOKIE=true.
-docker compose up -d --build
-# Только при обновлении существующего тома, созданного старым root-контейнером, выполните один раз:
+docker compose build
+# Подготовить volume для непривилегированного контейнера (подходит для нового и существующего volume):
 docker compose run --rm --user 0:0 --entrypoint sh isk -c 'chown -R 10001:10001 /data'
 docker compose up -d
 docker compose exec isk python -m backend.admin create-admin --username admin
