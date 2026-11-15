@@ -20,6 +20,7 @@ from .replenishment import calculate as replenishment_calculate
 from .market_search import router as market_router
 from .digitization import summarize as digitization_summarize
 from .digitization_cache import combine_digitization_days, download_digitization_day, requested_days
+from .product_documents import router as product_documents_router
 
 ROOT=Path(__file__).resolve().parents[1]
 DATA=Path(os.environ.get('OZON_FBO_DATA_DIR',str(Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'VKR_Ozon_FBO_Web')))
@@ -70,6 +71,7 @@ def authenticated(request:Request):
 
 
 app.include_router(market_router,dependencies=[Depends(authenticated)])
+app.include_router(product_documents_router)
 
 
 def current(request):
