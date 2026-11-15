@@ -1,3 +1,4 @@
+import base64
 import os
 import secrets
 import sqlite3
@@ -21,6 +22,7 @@ from .market_search import router as market_router
 from .digitization import summarize as digitization_summarize
 from .digitization_cache import combine_digitization_days, download_digitization_day, requested_days
 from .product_documents import router as product_documents_router
+from .costing import clean_workspace, parse_legacy_xlsx, calculate_workspace
 
 ROOT=Path(__file__).resolve().parents[1]
 DATA=Path(os.environ.get('OZON_FBO_DATA_DIR',str(Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'VKR_Ozon_FBO_Web')))
@@ -113,6 +115,17 @@ def public_account(account):
             'expires_at':account['roles'].get('expires_at'),'updated_at':account['updated_at']}
 
 
+class CostingWorkspaceBody(BaseModel):
+    revision:int=Field(ge=0)
+    products:list[dict]=Field(default_factory=list)
+    shipments:list[dict]=Field(default_factory=list)
+
+
+class CostingImportBody(BaseModel):
+    filename:str=Field(default='legacy.xlsx',max_length=200)
+    file_base64:str=Field(min_length=1,max_length=15000000)
+
+
 class Connect(BaseModel):
     client_id:str=Field(pattern=r'^\d+$',max_length=30)
     api_key:SecretStr
@@ -198,6 +211,52 @@ def auth_me(request:Request):
         store.set_session_account(auth['token_hash'],auth['user_id'],active_id)
     return {'user':auth['user'],'accounts':[public_account(a) for a in accounts],
             'active_account_id':active_id,'session_expires_at':auth['expires_at']}
+
+
+@app.get('/api/costing')
+def costing_get(request:Request):
+    auth=authenticated(request)
+    workspace=store.get_costing_workspace(auth['user_id'])
+    return {**workspace,'calculated':calculate_workspace(workspace['products'],workspace['shipments'])}
+
+
+@app.put('/api/costing')
+def costing_save(body:CostingWorkspaceBody,request:Request):
+    auth=authenticated(request)
+    try:
+        workspace=clean_workspace(body.products,body.shipments)
+        saved=store.save_costing_workspace(auth['user_id'],body.revision,workspace)
+    except ValueError as exc:
+        raise HTTPException(409 if 'изменены на другом устройстве' in str(exc) else 422,str(exc)) from None
+    return {**saved,'calculated':calculate_workspace(saved['products'],saved['shipments'])}
+
+
+@app.post('/api/costing/import-xlsx')
+def costing_import_xlsx(body:CostingImportBody,request:Request):
+    auth=authenticated(request)
+    try:
+        raw=base64.b64decode(body.file_base64,validate=True)
+        if len(raw)>10*1024*1024:
+            raise ValueError('Excel-файл больше 10 МБ.')
+        imported=parse_legacy_xlsx(raw)
+        current=store.get_costing_workspace(auth['user_id'])
+        products={str(item['id']):item for item in current['products']}
+        products.update({str(item['id']):item for item in imported['products']})
+        shipments={str(item['id']):item for item in current['shipments']}
+        shipments.update({str(item['id']):item for item in imported['shipments']})
+        workspace=clean_workspace(list(products.values()),list(shipments.values()))
+        saved=store.save_costing_workspace(auth['user_id'],current['revision'],workspace)
+    except (ValueError,TypeError) as exc:
+        raise HTTPException(422,str(exc)) from None
+    except Exception as exc:
+        # Do not expose workbook internals or server paths to the browser.
+        raise HTTPException(422,'Не удалось импортировать Excel-файл.') from exc
+    return {
+        **saved,
+        'importedProducts':imported['importedProducts'],
+        'importedShipments':imported['importedShipments'],
+        'calculated':calculate_workspace(saved['products'],saved['shipments']),
+    }
 
 
 @app.get('/api/admin/users')
