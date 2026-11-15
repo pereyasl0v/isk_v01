@@ -72,6 +72,11 @@ class Store:
                 PRIMARY KEY(ip,username))''')
             c.execute('''CREATE TABLE IF NOT EXISTS legacy_data_migrations (
                 client_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, migrated_at TEXT NOT NULL)''')
+            c.execute('''CREATE TABLE IF NOT EXISTS legacy_database_imports (
+                account_id TEXT PRIMARY KEY, source_client_id TEXT NOT NULL,
+                source_sha256 TEXT NOT NULL UNIQUE, imported_at TEXT NOT NULL,
+                counts_json TEXT NOT NULL,
+                FOREIGN KEY(account_id) REFERENCES ozon_accounts(id) ON DELETE CASCADE)''')
             self._migrate_digitization_periods(c)
         try: os.chmod(self.path,0o600)
         except OSError: pass
@@ -342,7 +347,7 @@ class Store:
 
     def latest(self,client,kind):
         with self.db() as c:
-            row=c.execute('SELECT at,payload FROM snapshots WHERE client=? AND kind=? ORDER BY id DESC LIMIT 1',
+            row=c.execute('SELECT at,payload FROM snapshots WHERE client=? AND kind=? ORDER BY at DESC,id DESC LIMIT 1',
                           (client,kind)).fetchone()
         return {'at':row[0],**self._decode_payload(row[1])} if row else None
 
