@@ -15,7 +15,7 @@ else
   echo "Существующий ключ будет сохранён без изменений."
 fi
 chown root:10001 "$SECRET_DIR" "$SECRET_FILE"
-chmod 0750 "$SECRET_DIR"
+chmod 0711 "$SECRET_DIR"
 chmod 0440 "$SECRET_FILE"
 echo "Ключ доступен контейнеру (root:10001, 0440): $SECRET_FILE"
 echo "Сделайте защищённую резервную копию ключа вне VPS и вне Git."
