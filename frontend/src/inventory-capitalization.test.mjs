@@ -42,6 +42,32 @@ test('capitalization includes warehouse stock, customer delivery and returns', (
   assert.equal(result.sourceAt, inventory.at);
 });
 
+test('matches the TrueStats example with three SKUs and outbound stock', () => {
+  const data = {
+    ...inventory,
+    analytics: [{sku:'sv',outbound_pending_delivery:10},{sku:'sp',outbound_pending_delivery:9,outbound_returns_return_to_seller:1},{sku:'ring',outbound_pending_delivery:12}],
+    aggregated: [
+      {sku:'sv',capitalization_quantity:172},
+      {sku:'sp',capitalization_quantity:92},
+      {sku:'ring',capitalization_quantity:107},
+    ],
+    summary: {
+      available:339,
+      outbound_fields_available:true,
+      outbound_pending_delivery:31,
+      outbound_returns:1,
+      capitalization_quantity:371,
+    },
+  };
+  const result = currentInventoryMetrics(data, {
+    sv:{cost:150,fulfillment:0,vat:0},
+    sp:{cost:50,fulfillment:0,vat:0},
+    ring:{cost:15,fulfillment:0,vat:0},
+  });
+  assert.equal(result.stockQty,371);
+  assert.equal(result.capitalizationCost,32005);
+});
+
 test('current capitalization is independent of the digitization period', () => {
   const costs = {'101': {cost:100, fulfillment:10, vat:5}};
   const sevenDayResult = currentInventoryMetrics(inventory, costs);
