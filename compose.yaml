@@ -1,0 +1,15 @@
+services:
+  isk:
+    build: .
+    image: isk-v01:local
+    ports:
+      # Access only from this computer. Do not expose the local-only API publicly.
+      - "127.0.0.1:8000:8000"
+    environment:
+      OZON_FBO_DATA_DIR: /data
+    volumes:
+      - isk_data:/data
+    restart: unless-stopped
+
+volumes:
+  isk_data:
