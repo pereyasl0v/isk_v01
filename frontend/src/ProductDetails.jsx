@@ -161,7 +161,7 @@ export default function ProductDetails({product,onClose}){
      <button type="button" disabled={busy||documents.length>=40} className="product-attach-button" onClick={()=>fileInput.current?.click()}>
       <Upload size={16}/> Прикрепить файлы
      </button>
-     <small className="product-file-limit">PDF, Office, изображения и другие документы · до 15 МБ за файл</small>
+     
     </div>
    </>}
    {error&&<div className="product-modal-error" role="alert">{error}</div>}
