@@ -6,6 +6,7 @@ import './style.css';
 import Replenishment from './Replenishment';
 import MarketPage from './market';
 import DigitizationCached from './DigitizationCached';
+import ProductDetails from './ProductDetails';
 import {statusLabel,roleLabel,groupStocks} from './presentation';
 
 const Context=createContext(null);
@@ -19,9 +20,9 @@ async function api(path,body){
 function useApp(){return useContext(Context)}
 function Notice({children}){return <div className="notice"><AlertCircle size={18}/><span>{children}</span></div>}
 function Empty({text='Пока нет данных',help='Подключите кабинет и выполните загрузку.'}){return <div className="empty"><Boxes size={34}/><h3>{text}</h3><p>{help}</p></div>}
-function Table({columns,rows,empty='Нет строк для отображения'}){
+function Table({columns,rows,empty='Нет строк для отображения',onRowClick}){
  const [page,setPage]=useState(0);const pages=Math.ceil(rows.length/30);const safe=Math.min(page,Math.max(pages-1,0));
- return <><div className="table-scroll"><table><thead><tr>{columns.map(c=><th key={c[0]}>{c[1]}</th>)}</tr></thead><tbody>{rows.slice(safe*30,safe*30+30).map((r,i)=><tr key={i}>{columns.map(c=><td key={c[0]}>{c[2]?c[2](r[c[0]],r):String(r[c[0]]??'—')}</td>)}</tr>)}</tbody></table></div>{!rows.length?<Empty text={empty} help="Проверьте загрузку и выбранные фильтры."/>:<div className="pagination"><span>{num(rows.length)} строк · страница {safe+1} из {pages}</span><div><button disabled={safe===0} onClick={()=>setPage(safe-1)}>Назад</button><button disabled={safe>=pages-1} onClick={()=>setPage(safe+1)}>Далее</button></div></div>}</>
+ return <><div className="table-scroll"><table><thead><tr>{columns.map(c=><th key={c[0]}>{c[1]}</th>)}</tr></thead><tbody>{rows.slice(safe*30,safe*30+30).map((r,i)=><tr key={i} {...(onRowClick?{className:"product-clickable-row",role:"button",tabIndex:0,onClick:()=>onRowClick(r),onKeyDown:e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onRowClick(r)}}}:{})}>{columns.map(c=><td key={c[0]}>{c[2]?c[2](r[c[0]],r):String(r[c[0]]??'—')}</td>)}</tr>)}</tbody></table></div>{!rows.length?<Empty text={empty} help="Проверьте загрузку и выбранные фильтры."/>:<div className="pagination"><span>{num(rows.length)} строк · страница {safe+1} из {pages}</span><div><button disabled={safe===0} onClick={()=>setPage(safe-1)}>Назад</button><button disabled={safe>=pages-1} onClick={()=>setPage(safe+1)}>Далее</button></div></div>}</>
 }
 function Filter({value,set,placeholder='Поиск по названию, артикулу или SKU'}){return <label className="search"><Search size={17}/><input aria-label="Поиск" value={value} onChange={e=>set(e.target.value)} placeholder={placeholder}/></label>}
 function Card({label,value,note,icon:Icon=Package}){return <div className="metric"><div className="metric-top"><span>{label}</span><Icon size={19}/></div><strong>{num(value)}</strong><small>{note}</small></div>}
@@ -32,7 +33,20 @@ function Overview(){
  {inv?.warning&&<Notice>{inv.warning}</Notice>}
  <div className="mt-5"><ProductCatalog/></div></>
 }
-function ProductCatalog(){const {inv}=useApp();const [q,setQ]=useState('');const rows=(inv?.products||[]).filter(p=>[p.name,p.offer_id,p.id,p.sku].join(' ').toLowerCase().includes(q.toLowerCase()));return <section className="panel"><div className="panel-title"><h3>Каталог товаров</h3><span className="badge">{rows.length} карточек</span></div><Filter value={q} set={setQ}/><Table rows={rows} columns={[["name","Название"],["offer_id","Артикул"],["id","Код товара"],["sku","SKU"]]}/></section>}
+function ProductCatalog(){
+ const {inv,me}=useApp();
+ const [q,setQ]=useState('');
+ const [selected,setSelected]=useState(null);
+ useEffect(()=>setSelected(null),[me?.active_account_id]);
+ const rows=(inv?.products||[]).filter(p=>[p.name,p.offer_id,p.id,p.sku].join(' ').toLowerCase().includes(q.toLowerCase()));
+ return <><section className="panel">
+  <div className="panel-title"><h3>Каталог товаров</h3><span className="badge">{rows.length} карточек</span></div>
+  <Filter value={q} set={setQ}/>
+  <Table rows={rows} onRowClick={setSelected} columns={[["name","Название"],["offer_id","Артикул"],["id","Код товара"],["sku","SKU"]]}/>
+ </section>
+ {selected&&<ProductDetails key={selected.id} product={selected} onClose={()=>setSelected(null)}/>}
+ </>;
+}
 function Stocks(){
  const {inv}=useApp();const [q,setQ]=useState('');const [raw,setRaw]=useState(false);const [only,setOnly]=useState(true);
  const warehouseNames=new Map((inv?.analytics||[]).map(r=>[String(r.warehouse_id),r.warehouse_name]));
