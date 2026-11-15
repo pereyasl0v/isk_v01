@@ -54,10 +54,10 @@ function Stocks(){
  const groups=groupStocks(inv?.products||[],source,raw);
  const shown=groups.map(g=>({...g,visible:g.rows.filter(r=>!only||(raw?r.present>0||r.reserved>0:r.available_stock_count>0))}))
   .filter(g=>g.visible.length&&[g.name,g.offer,...g.skus,...g.visible.map(r=>`${r.warehouse_name||''} ${r.warehouse_id}`)].join(' ').toLowerCase().includes(q.toLowerCase()));
- return <section className="panel"><div className="panel-title"><h3>Остатки FBO</h3><div className="segmented"><button className={!raw?'selected':''} onClick={()=>setRaw(false)}>Доступные остатки</button><button className={raw?'selected':''} onClick={()=>setRaw(true)}>Учёт и резервы</button></div></div>
+ return <div className="flex flex-col gap-5"><section className="panel"><div className="panel-title"><h3>Остатки FBO</h3><div className="segmented"><button className={!raw?'selected':''} onClick={()=>setRaw(false)}>Доступные остатки</button><button className={raw?'selected':''} onClick={()=>setRaw(true)}>Учёт и резервы</button></div></div>
  <div className="filters"><Filter value={q} set={setQ}/><label className="check"><input type="checkbox" checked={only} onChange={e=>setOnly(e.target.checked)}/> Только склады с остатком</label></div>
  {!raw&&inv?.analytics===null?<Empty text="Остатки пока недоступны" help="Обновите данные. Если загрузка не удаётся, проверьте разрешение на чтение аналитики у ключа Ozon."/>:!shown.length?<Empty text="Карточки не найдены" help="Проверьте загрузку, поиск и фильтр остатков."/>:shown.map(g=><details className="stock-card" key={g.key}><summary><div className="stock-title"><strong>{g.name}</strong><span className="sku">SKU {g.skus.join(', ')}</span><small>Артикул: {g.offer}</small></div><div className="stock-total"><strong>{num(g.total)} <small>ед.</small></strong><span>{raw?'На складах':'Доступно к продаже'}</span></div><span className="expand-arrow">⌄</span></summary><div className="stock-details">{raw&&<p className="muted mb-4">Учётное количество и резерв показаны раздельно. Доступное к продаже количество находится на вкладке «Доступные остатки».</p>}<Table rows={g.visible} columns={raw?[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["present","На складе, ед.",num],["reserved","В резерве, ед.",num]]:[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["available_stock_count","Доступно, ед.",num],["valid_stock_count","Готовится к продаже, ед.",num],["transit_stock_count","В пути на Ozon, ед.",num],["requested_stock_count","В заявках, ед.",num]]}/></div></details>)}
- </section>
+ </section><History/></div>
 }
 function History(){const {hist,state,act}=useApp();const [days,setDays]=useState(90);const [q,setQ]=useState('');const [status,setStatus]=useState('');const postings=hist?.postings||[];const rows=postings.filter(p=>p.number.includes(q)&&(!status||p.status===status)).map(p=>({...p,units:p.products.reduce((n,r)=>n+r.quantity,0),items:p.products.map(r=>`${r.offer_id||r.sku} × ${r.quantity}`).join('; ')}));return <><section className="panel"><div className="panel-title"><h3>История FBO</h3><div className="flex gap-2"><select aria-label="Период загрузки" value={days} onChange={e=>setDays(Number(e.target.value))}><option value={30}>30 дней</option><option value={90}>90 дней</option><option value={180}>180 дней</option><option value={365}>365 дней</option></select><button className="primary" disabled={!state||state.job.running} onClick={()=>act('/history/sync',{days})}>Загрузить историю</button></div></div><p className="muted mb-4">Снимок: {date(hist?.at)}{hist?.since&&` · период ${date(hist.since)} — ${date(hist.to)}`}</p><div className="filters"><Filter value={q} set={setQ} placeholder="Номер отправления"/><select aria-label="Статус" value={status} onChange={e=>setStatus(e.target.value)}><option value="">Все статусы</option>{[...new Set(postings.map(p=>p.status))].sort().map(s=><option key={s} value={s}>{statusLabel(s)}</option>)}</select></div><Table rows={rows} columns={[["number","Отправление"],["created_at","Создано",date],["status","Статус",statusLabel],["items","Состав"],["units","Единиц",num]]}/></section></>}
 function LoginScreen({onSuccess}){
@@ -123,7 +123,7 @@ function AdminUsers(){
   </section>
  </div>
 }
-const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/market-calculator','Калькулятор WB / Ozon',Calculator],['/stocks','Остатки FBO',Warehouse],['/history','История отправлений',Truck],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
+const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/market-calculator','Калькулятор WB / Ozon',Calculator],['/stocks','Остатки FBO и история',Warehouse],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
 function RequireAccount({children}){const {me}=useApp();return me?.active_account_id?children:<Navigate to="/connection" replace/>}
 function App(){
  const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);
@@ -165,7 +165,7 @@ function App(){
      <Route path="/market-calculator" element={<RequireAccount><MarketPage userId={me.user.id} isAdmin={me.user.role==='admin'}/></RequireAccount>}/>
      <Route path="/products" element={<Navigate to="/" replace/>}/>
      <Route path="/stocks" element={<RequireAccount><Stocks/></RequireAccount>}/>
-     <Route path="/history" element={<RequireAccount><History/></RequireAccount>}/>
+     <Route path="/history" element={<Navigate to="/stocks" replace/>}/>
      <Route path="/replenishment" element={<RequireAccount><Replenishment inv={inv} hist={hist} api={api}/></RequireAccount>}/>
      <Route path="/plan" element={<Navigate to="/replenishment" replace/>}/><Route path="/forecast" element={<Navigate to="/replenishment" replace/>}/>
      <Route path="/logs" element={<RequireAccount><Logs/></RequireAccount>}/><Route path="*" element={<Navigate to="/" replace/>}/>
