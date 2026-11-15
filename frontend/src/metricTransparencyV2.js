@@ -89,9 +89,10 @@ function details(label,card){
  if(['Логистика','Прочие удержания','Номинальная комиссия','Эквайринг'].includes(label)){const r=operationRows(label);if(r.length)return r}
  return [{label:'Итого за период',value:num(card.querySelector('strong')?.textContent)}];
 }
+function docIcon(){return '<svg width="12" height="12" fill="none" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M10 3v4a1 1 0 0 1-1 1H5m4 8h6m-6-4h6m4-8v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1"></path></svg>'}
 function close(){
  document.querySelectorAll('.isk-metric-popover').forEach(x=>x.remove());
- document.querySelectorAll('.isk-info-trigger').forEach(b=>b.setAttribute('aria-expanded','false'));
+ document.querySelectorAll('.isk-info-trigger,.isk-details-trigger').forEach(b=>b.setAttribute('aria-expanded','false'));
 }
 function combinedPopup(card,label,btn){
  close();
@@ -137,19 +138,25 @@ function enhanceCard(card){
  labelEl.dataset.metricLabel=label;
  card.dataset.transparencyReady='1';
  card.style.position='relative';
- if(!labelEl.querySelector('.isk-info-trigger')){
-  labelEl.classList.add('isk-metric-label');
-  const i=document.createElement('button');i.type='button';i.className='isk-info-trigger';i.textContent='i';
-  i.setAttribute('aria-label','Пояснение и детализация: '+label);
-  i.setAttribute('aria-haspopup','dialog');
-  i.setAttribute('aria-expanded','false');
-  i.addEventListener('click',e=>{e.stopPropagation();combinedPopup(card,label,i)});
-  labelEl.appendChild(i);
+ // Keep the original count/document icon: it now opens the combined explanation
+ // and calculation breakdown in a single popup.
+ labelEl.classList.add('isk-metric-label');
+ let actions=top.querySelector(':scope > .isk-metric-actions');
+ if(!actions){actions=document.createElement('div');actions.className='isk-metric-actions';top.appendChild(actions)}
+ let trigger=actions.querySelector('.isk-details-trigger');
+ if(!trigger){
+  trigger=document.createElement('button');trigger.type='button';trigger.className='isk-details-trigger';
+  trigger.dataset.testid='details-dropdown-trigger';
+  trigger.setAttribute('aria-haspopup','dialog');trigger.setAttribute('aria-expanded','false');
+  trigger.setAttribute('aria-label','Детализация расчёта: '+label);
+  trigger.innerHTML=docIcon()+'<span>0</span>';
+  trigger.addEventListener('click',e=>{e.stopPropagation();combinedPopup(card,label,trigger)});
+  actions.appendChild(trigger);
  }
- // Previously a second icon opened a separate calculation popup. It is no
- // longer needed: both sections are displayed in the same explanation popup.
- top.querySelector(':scope > .isk-metric-actions')?.remove();
+ const count=trigger.querySelector('span');
+ const next=String(details(label,card).length);
+ if(count&&count.textContent!==next)count.textContent=next;
 }
 let scheduled=false;function enhance(){scheduled=false;if(location.pathname!=='/digitization')return;document.querySelectorAll('.metric').forEach(enhanceCard)}function schedule(){if(scheduled)return;scheduled=true;requestAnimationFrame(enhance)}
 new MutationObserver(schedule).observe(document.documentElement,{subtree:true,childList:true,characterData:true});
-document.addEventListener('click',e=>{if(!e.target.closest('.isk-metric-popover,.isk-info-trigger'))close()});window.addEventListener('popstate',schedule);schedule();
+document.addEventListener('click',e=>{if(!e.target.closest('.isk-metric-popover,.isk-info-trigger,.isk-details-trigger'))close()});window.addEventListener('popstate',schedule);schedule();
