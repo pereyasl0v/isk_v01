@@ -25,6 +25,37 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(r['ads'],6)
         self.assertEqual(r['available'],30)
 
+    def test_customer_delivery_and_return_statuses_are_capitalized(self):
+        rows = [
+            row(1,162) | {'sku':1,'outbound_pending_delivery':10},
+            row(2,82) | {'sku':2,'outbound_pending_delivery':9,'outbound_returns_return_to_seller':1},
+            row(3,95) | {'sku':3,'outbound_pending_delivery':12},
+        ]
+        snapshot = {'products':[{'sku':1},{'sku':2},{'sku':3}],
+                    'stocks':[], 'analytics':rows}
+        summary = summarize(snapshot)
+        self.assertEqual(summary['available'],339)
+        self.assertEqual(summary['outbound_pending_delivery'],31)
+        self.assertEqual(summary['outbound_returns'],1)
+        self.assertEqual(summary['capitalization_quantity'],371)
+        by_sku = {r['sku']:r for r in aggregate(snapshot)}
+        self.assertEqual(by_sku['1']['capitalization_quantity'],172)
+        self.assertEqual(by_sku['2']['capitalization_quantity'],92)
+        self.assertEqual(by_sku['3']['capitalization_quantity'],107)
+
+    def test_missing_new_outbound_fields_are_not_mistaken_for_zero(self):
+        snapshot = sample()
+        summary = summarize(snapshot)
+        self.assertFalse(summary['outbound_fields_available'])
+        self.assertIsNone(summary['capitalization_quantity'])
+        self.assertIsNone(aggregate(snapshot)[0]['capitalization_quantity'])
+
+    def test_empty_successful_inventory_has_zero_capitalization_quantity(self):
+        snapshot = {'products':[], 'stocks':[], 'analytics':[]}
+        summary = summarize(snapshot)
+        self.assertTrue(summary['outbound_fields_available'])
+        self.assertEqual(summary['capitalization_quantity'],0)
+
     def test_missing_quantity_not_silently_zero(self):
         s=sample();del s['analytics'][0]['available_stock_count']
         with self.assertRaises(ValueError):summarize(s)
