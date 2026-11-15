@@ -236,7 +236,7 @@ export default function DigitizationCached({state,digi,act}){
         <div className="digitization-calendar-topbar">
          <button type="button" aria-label="Предыдущий месяц" onClick={()=>setCalendarMonth(month=>addMonths(month,-1))}><ChevronLeft size={17}/></button>
          <strong>{monthLabel(calendarMonth)} — {monthLabel(addMonths(calendarMonth,1))}</strong>
-         <button type="button" aria-label="Следующий месяц" disabled={monthStart(addMonths(calendarMonth,1))>=monthStart(parseIso(maxClosedDay))} onClick={()=>setCalendarMonth(month=>addMonths(month,1))}><ChevronRight size={17}/></button>
+         <button type="button" aria-label="Следующий месяц" disabled={monthStart(addMonths(calendarMonth,1))>monthStart(parseIso(maxClosedDay))} onClick={()=>setCalendarMonth(month=>addMonths(month,1))}><ChevronRight size={17}/></button>
         </div>
         <div className="digitization-months">
          <MonthCalendar month={calendarMonth} missingDays={calendarMissing} rangeFrom={rangeFrom} rangeTo={rangeTo} maxDate={maxClosedDay} onSelectDay={selectCalendarDay}/>
