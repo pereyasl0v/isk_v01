@@ -28,7 +28,7 @@ function emptyPeriod(first,last){
  };
 }
 
-function MonthCalendar({month,missingDays,rangeFrom,rangeTo,maxDate,onSelectDay}){
+function MonthCalendar({month,missingDays,rangeFrom,rangeTo,rangePreview,maxDate,onSelectDay,onHoverDay}){
  const first=monthStart(month);
  const offset=(first.getDay()+6)%7;
  const dayCount=monthEnd(month).getDate();
@@ -45,12 +45,16 @@ function MonthCalendar({month,missingDays,rangeFrom,rangeTo,maxDate,onSelectDay}
     const missing=missingDays.has(iso);
     const start=iso===rangeFrom;
     const end=Boolean(rangeTo)&&iso===rangeTo;
-    const inRange=Boolean(rangeFrom&&rangeTo&&iso>rangeFrom&&iso<rangeTo);
+    const previewActive=Boolean(rangePreview?.from&&rangePreview?.to&&rangePreview.from!==rangePreview.to);
+    const activeFrom=previewActive?rangePreview.from:rangeFrom;
+    const activeTo=previewActive?rangePreview.to:rangeTo;
+    const inRange=Boolean(activeFrom&&activeTo&&iso>activeFrom&&iso<activeTo);
+    const previewEdge=previewActive&&(iso===rangePreview.from||iso===rangePreview.to);
     const classes=['digitization-day'];
     if(outside)classes.push('outside');
     if(missing)classes.push('missing');
     if(inRange)classes.push('in-range');
-    if(start||end)classes.push('range-edge');
+    if(start||end||previewEdge)classes.push('range-edge');
     return <button
      type="button"
      key={iso}
@@ -59,6 +63,8 @@ function MonthCalendar({month,missingDays,rangeFrom,rangeTo,maxDate,onSelectDay}
      aria-label={displayDate(iso)+(missing?' — нет данных':'')}
      aria-pressed={start||end||inRange}
      title={missing?'Нет локальных данных за этот день':'Есть локальные данные за этот день'}
+     onMouseEnter={()=>onHoverDay(disabled?null:iso)}
+     onMouseLeave={()=>onHoverDay(null)}
      onClick={()=>onSelectDay(iso)}
     >{day.getDate()}</button>;
    })}
@@ -75,6 +81,7 @@ export default function DigitizationCached({state,digi,act}){
  const [calendarOpen,setCalendarOpen]=useState(false);
  const [calendarMonth,setCalendarMonth]=useState(()=>monthStart(parseIso(defaults.from)));
  const [rangeDraft,setRangeDraft]=useState(null);
+ const [hoveredCalendarDay,setHoveredCalendarDay]=useState(null);
  const [calendarMissing,setCalendarMissing]=useState(new Set());
  const [calendarCoverageLoading,setCalendarCoverageLoading]=useState(false);
 
@@ -87,6 +94,7 @@ export default function DigitizationCached({state,digi,act}){
   setSelectedPreset(preset);
   setCalendarMonth(monthStart(parseIso(range.from)));
   setRangeDraft(null);
+  setHoveredCalendarDay(null);
   setCalendarOpen(false);
  };
 
@@ -182,11 +190,15 @@ export default function DigitizationCached({state,digi,act}){
   setDateTo(to);
   setSelectedPreset(null);
   setRangeDraft(null);
+  setHoveredCalendarDay(null);
   setCalendarOpen(false);
  };
 
  const rangeFrom=rangeDraft?.from||dateFrom;
  const rangeTo=rangeDraft?rangeDraft.to:dateTo;
+ const rangePreview=rangeDraft?.from&&hoveredCalendarDay
+  ? {from:hoveredCalendarDay<rangeDraft.from?hoveredCalendarDay:rangeDraft.from,to:hoveredCalendarDay<rangeDraft.from?rangeDraft.from:hoveredCalendarDay}
+  : null;
  const presetItems=[
   {id:'yesterday',label:'Вчера'},
   {id:7,label:'7 дней'},
@@ -223,6 +235,7 @@ export default function DigitizationCached({state,digi,act}){
         if(!calendarOpen){
          setCalendarMonth(monthStart(parseIso(dateFrom)));
          setRangeDraft(null);
+         setHoveredCalendarDay(null);
         }
         setCalendarOpen(!calendarOpen);
        }}
@@ -239,8 +252,8 @@ export default function DigitizationCached({state,digi,act}){
          <button type="button" aria-label="Следующий месяц" disabled={monthStart(addMonths(calendarMonth,1))>monthStart(parseIso(maxClosedDay))} onClick={()=>setCalendarMonth(month=>addMonths(month,1))}><ChevronRight size={17}/></button>
         </div>
         <div className="digitization-months">
-         <MonthCalendar month={calendarMonth} missingDays={calendarMissing} rangeFrom={rangeFrom} rangeTo={rangeTo} maxDate={maxClosedDay} onSelectDay={selectCalendarDay}/>
-         <MonthCalendar month={addMonths(calendarMonth,1)} missingDays={calendarMissing} rangeFrom={rangeFrom} rangeTo={rangeTo} maxDate={maxClosedDay} onSelectDay={selectCalendarDay}/>
+         <MonthCalendar month={calendarMonth} missingDays={calendarMissing} rangeFrom={rangeFrom} rangeTo={rangeTo} rangePreview={rangePreview} maxDate={maxClosedDay} onSelectDay={selectCalendarDay} onHoverDay={setHoveredCalendarDay}/>
+         <MonthCalendar month={addMonths(calendarMonth,1)} missingDays={calendarMissing} rangeFrom={rangeFrom} rangeTo={rangeTo} rangePreview={rangePreview} maxDate={maxClosedDay} onSelectDay={selectCalendarDay} onHoverDay={setHoveredCalendarDay}/>
         </div>
         <div className="digitization-calendar-legend">
          <span className="digitization-missing-key"/><span>Нет данных</span>
@@ -255,7 +268,7 @@ export default function DigitizationCached({state,digi,act}){
          className={selectedPreset===item.id?'active':''}
          onClick={()=>choosePreset(item.id)}
         >{item.label}</button>)}
-        <button type="button" className="digitization-calendar-close" onClick={()=>{setCalendarOpen(false);setRangeDraft(null)}}><X size={14}/> Закрыть</button>
+        <button type="button" className="digitization-calendar-close" onClick={()=>{setCalendarOpen(false);setRangeDraft(null);setHoveredCalendarDay(null)}}><X size={14}/> Закрыть</button>
        </aside>
       </div>}
      </div>
