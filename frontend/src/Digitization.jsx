@@ -262,20 +262,13 @@ export default function Digitization({state,digi,act}){
    </tbody></table></div>
   </section>
 
-  <section className="panel mb-5"><div className="panel-title"><h3>Контроль расчёта TrueStats → Ozon</h3><span className="badge">Формулы</span></div><div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-4">
-   <Metric label="Реализация" value={realization}/><Metric label="Скидка МП / баллы" value={discount}/><Metric label="Продажи = Реализация − Скидка МП" value={sales}/>
-   <Metric label="Выкупы маркетплейсом" value={c.marketplace_buyout_realization}/><Metric label="Комиссия зарубежных выкупов" value={foreignCommission}/><Metric label="Эквайринг" value={acquiring}/>
-   <Metric label="Реклама" value={advertising} note="Оплата за заказ из Seller API"/><Metric label="Компенсации без баллов" value={compensationWithoutPoints}/>
-  </div></section>
+  
 
   <section className="panel mb-5"><div className="panel-title"><h3>По SKU</h3><span className="badge">Продажи + себестоимость</span></div><SimpleTable rows={productRows.slice(0,200)} empty="Нет товарных строк" columns={[
    ['name','Товар'],['sku','SKU'],['sales_quantity','Продажи, шт',count],['realization','Реализация',money],['sales_amount','Продажи',money],['share','Доля в общей выручке',pct],['unit_cost','СС+ФФ / шт',money],['cogs','Себестоимость продаж',money],
   ]}/></section>
 
-  {(digi?.warnings||[]).length>0&&<section className="panel mb-5"><div className="panel-title"><h3>Что ещё влияет на точность</h3></div>{digi.warnings.filter(w=>!String(w).includes('Чистая прибыль')).map((w,i)=><p className="muted mt-2" key={i}><AlertTriangle size={15}/> {w}</p>)}
-   {averageCapitalization===null&&<p className="muted mt-2"><AlertTriangle size={15}/> Средняя капитализация и GMROI появятся по мере накопления снимков остатков. TrueStats также считает среднее только по дням, когда остатки были собраны.</p>}
-   <p className="muted mt-2"><AlertTriangle size={15}/> Капитализация по рознице требует отдельной загрузки средневзвешенной цены до СПП за прошлую полную календарную неделю; этот источник ещё подключается.</p>
-  </section>}
+
 
   <section className="panel"><div className="panel-title"><h3>Типы начислений Ozon</h3><span className="badge">Диагностика</span></div><SimpleTable rows={operations} empty="Нет начислений" columns={[["name","Тип начисления"],["truestats_metric","Метрика TrueStats"],["count","Строк"],["amount","Сумма итого",money]]}/></section>
  </>
