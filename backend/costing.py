@@ -176,7 +176,11 @@ def parse_legacy_xlsx(raw: bytes) -> dict:
     if not workbook.worksheets:
         raise ValueError("В книге нет листов.")
     sheet = workbook["Китай"] if "Китай" in workbook.sheetnames else workbook.worksheets[0]
-    headers = [str(cell.value or "").strip() for cell in sheet[1]]
+    try:
+        header_row = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True))
+    except StopIteration:
+        header_row = ()
+    headers = [str(value or "").strip() for value in header_row]
     if len(headers) < 30 or headers[3] != "Наименование товара" or headers[13] != "Поставка":
         raise ValueError("Не найден ожидаемый формат таблицы «Китай».")
 
