@@ -59,7 +59,7 @@ async def validation_error(request,exc):
     return JSONResponse({'detail':'Проверьте формат введённых данных.'},status_code=422)
 
 
-def authenticated(request):
+def authenticated(request:Request):
     raw=request.cookies.get('isk_session','')
     if not raw:raise HTTPException(401,'Войдите в систему.')
     digest=token_digest(raw)
