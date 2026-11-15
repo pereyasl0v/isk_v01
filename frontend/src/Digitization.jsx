@@ -1,5 +1,6 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {BarChart3, RefreshCw, WalletCards, ReceiptText, Truck, Boxes, AlertTriangle, Calculator} from 'lucide-react';
+import {currentInventoryMetrics} from './inventory-capitalization.mjs';
 
 const nf=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
 const intf=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0});
@@ -131,13 +132,19 @@ export default function Digitization({state,digi,act}){
  const averageSale=round(divide(sales,salesQty));
  const avgLogistics=round(divide(logistics,salesQty));
 
- const historyEnd=inventoryHistory.length?inventoryHistory[inventoryHistory.length-1]:null;
- const endAggregated=historyEnd?.aggregated||inventory?.aggregated||[];
- const stockQty=historyEnd?.summary?.available??inventory?.summary?.available??null;
- const fbsStockQty=historyEnd?.fbs_stock_quantity??inventory?.fbs_stock_quantity??null;
- const activeStock=endAggregated.filter(r=>n(r.available)>0);
- const allStockCosts=activeStock.length>0&&activeStock.every(r=>hasCost(r.sku));
- const capitalizationCost=allStockCosts?round(activeStock.reduce((sum,row)=>sum+n(row.available)*stockUnitCost(row.sku),0)):null;
+ // Current capitalization always uses the latest successful Ozon inventory sync.
+ // The selected digitization period is used only for average capitalization.
+ const currentStock=currentInventoryMetrics(inventory,costs);
+ const stockQty=currentStock.stockQty;
+ const fbsStockQty=currentStock.fbsStockQty;
+ const capitalizationCost=currentStock.capitalizationCost===null?null:round(currentStock.capitalizationCost);
+ const capitalizationNote=!currentStock.sourceAt
+  ?'Сначала обновите актуальные остатки Ozon'
+  :currentStock.warning
+   ?'Остатки Ozon загружены не полностью — капитализация не рассчитана'
+   :currentStock.missingCostSkus.length
+    ?'Заполните себестоимость для '+currentStock.missingCostSkus.length+' SKU с остатком'
+    :'По актуальным остаткам Ozon на '+dateTime(currentStock.sourceAt);
  const ownStockQty=Object.entries(costs).reduce((sum,[,v])=>sum+n(v?.own_stock),0);
  const ownCapitalization=round(Object.entries(costs).reduce((sum,[sku,v])=>sum+n(v?.own_stock)*stockUnitCost(sku),0));
 
@@ -171,7 +178,7 @@ export default function Digitization({state,digi,act}){
  const operations=digi?.operation_types||[];
 
  return <>
-  <div className="overview-heading"><div><h1>Оцифровка</h1><p className="muted mt-2">Метрики и формулы TrueStats · снимок: {dateTime(digi?.at)}</p></div><div className="flex gap-2 flex-wrap items-center"><input aria-label="Дата начала" type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/><span className="muted">—</span><input aria-label="Дата окончания" type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/><button className="primary" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={()=>act('/digitization/sync',{date_from:dateFrom,date_to:dateTo})}>Обновить <RefreshCw size={16}/></button></div></div>
+  <div className="overview-heading"><div><h1>Оцифровка</h1><p className="muted mt-2">Метрики и формулы TrueStats · данные периода: {dateTime(digi?.at)} · остатки Ozon: {dateTime(currentStock.sourceAt)}</p></div><div className="flex gap-2 flex-wrap items-center"><button className="primary" disabled={!state||state.job.running} onClick={()=>act('/sync',{})}>Обновить актуальные остатки <RefreshCw size={16}/></button><input aria-label="Дата начала" type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/><span className="muted">—</span><input aria-label="Дата окончания" type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/><button className="primary" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={()=>act('/digitization/sync',{date_from:dateFrom,date_to:dateTo})}>Обновить период <RefreshCw size={16}/></button></div></div>
   {invalid&&<div className="notice warning mt-4"><AlertTriangle size={18}/>Дата окончания не может быть раньше даты начала.</div>}
   {digi?.since&&<p className="muted mt-4">Выбранный период: {digi.since} — {digi.to}{digi?.effective_to?` · в расчёт включены данные Ozon по ${digi.effective_to} включительно`:''}</p>}
   {comparisonCutoff&&<div className="notice warning mt-4"><AlertTriangle size={18}/>Текущий день исключён только для сравнения с вашим снимком TrueStats; в нём последняя дневная колонка — 10.10.</div>}
@@ -201,10 +208,10 @@ export default function Digitization({state,digi,act}){
    <Metric label="Реклама/ДРРз" value={advertising} note={pct(drrOrders)} icon={BarChart3}/>
    <Metric label="Средняя прибыль на 1 шт." value={averageProfit}/>
    <Metric label="Ср. стоимость логистики на 1 шт." value={avgLogistics}/>
-   <Metric label="Остатки" value={stockQty} format={count}/>
+   <Metric label="Остатки" value={stockQty} format={count} note={currentStock.sourceAt?'Актуальные на '+dateTime(currentStock.sourceAt):'Обновите остатки Ozon'}/>
    <Metric label="Оборачиваемость по прод." value={turnoverSales} format={daysFmt}/>
    <Metric label="Оборачиваемость по зак." value={turnoverOrders} format={daysFmt}/>
-   <Metric label="Капитализация по себес." value={capitalizationCost} note={capitalizationCost===null?'Нужна СС для всех SKU с остатком':null}/>
+   <Metric label="Капитализация по себес." value={capitalizationCost} note={capitalizationNote}/>
    <Metric label="Средняя капитализация" value={averageCapitalization} note={inventoryHistory.length?`Снимков остатков: ${inventoryHistory.length}`:'Нужна история снимков остатков'}/>
    <Metric label="Капитализация по розн." value={null} note="Нужна цена прошлой полной недели"/>
    <Metric label="Капитализ. на моих складах" value={ownCapitalization}/>
