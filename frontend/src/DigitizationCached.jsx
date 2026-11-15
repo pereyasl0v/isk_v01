@@ -95,7 +95,7 @@ export default function DigitizationCached({state,digi,act}){
   <div className="digitization-cache-header">
    <div className="digitization-cache-title">
     <h1>Оцифровка</h1>
-    <p>Выберите любой интервал внутри уже загруженных дней — показатели пересчитаются локально, без обращения к Ozon.</p>
+    
     {totalLocalDays>0&&<div className="digitization-local-range"><Database size={15}/><span>Локальная база: <b>{firstLocalDay}</b> — <b>{lastLocalDay}</b></span><small>{totalLocalDays} дн.</small></div>}
    </div>
    <section className="digitization-period-card" aria-label="Период отчёта">
@@ -122,7 +122,7 @@ export default function DigitizationCached({state,digi,act}){
      <span>{statusText}</span>
      {cacheState.updatedAt&&<small>обновлено {dateTime(cacheState.updatedAt)}</small>}
     </div>
-    <p className="digitization-period-help">При входе выбран последний завершённый месяц. Кнопки 7 / 14 / 30 дней заканчиваются вчерашним днём и меняют только локальный период в SQLite. Ozon вызывается только по кнопке обновления.</p>
+    
    </section>
   </div>
 
