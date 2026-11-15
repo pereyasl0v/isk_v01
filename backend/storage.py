@@ -77,6 +77,16 @@ class Store:
                 source_sha256 TEXT NOT NULL UNIQUE, imported_at TEXT NOT NULL,
                 counts_json TEXT NOT NULL,
                 FOREIGN KEY(account_id) REFERENCES ozon_accounts(id) ON DELETE CASCADE)''')
+            c.execute('''CREATE TABLE IF NOT EXISTS product_notes (
+                client TEXT NOT NULL, product_id TEXT NOT NULL,
+                payload TEXT NOT NULL, updated_at TEXT NOT NULL,
+                PRIMARY KEY(client,product_id))''')
+            c.execute('''CREATE TABLE IF NOT EXISTS product_documents (
+                id TEXT PRIMARY KEY, client TEXT NOT NULL,
+                product_id TEXT NOT NULL, filename TEXT NOT NULL,
+                byte_size INTEGER NOT NULL, added_at TEXT NOT NULL,
+                ciphertext BLOB NOT NULL)''')
+            c.execute('CREATE INDEX IF NOT EXISTS product_documents_scope ON product_documents(client,product_id,added_at)')
             self._migrate_digitization_periods(c)
         try: os.chmod(self.path,0o600)
         except OSError: pass
