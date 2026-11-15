@@ -180,7 +180,13 @@ export default function Calculator({userId,isAdmin=false}){
   const id=shipmentDraft.id||crypto.randomUUID();
   const row={...defaultShipment(),...shipmentDraft,id,name:shipmentDraft.name.trim()};
   const exists=shipments.some(x=>x.id===id);
-  set({shipments:exists?shipments.map(x=>x.id===id?row:x):[...shipments,row],section:"shipments"});
+  const nextProducts=s.items.map(product=>{
+   if(product.shipmentId!==id||product.status==="archive")return product;
+   if(row.status==="delivered")return {...product,status:"delivered"};
+   if(product.status==="delivered")return {...product,status:"selected"};
+   return product;
+  });
+  set({shipments:exists?shipments.map(x=>x.id===id?row:x):[...shipments,row],items:nextProducts,section:"shipments"});
   setShipmentDraft(null);M("Поставка сохранена.");
  }
  function deleteShipment(id){
@@ -261,7 +267,7 @@ export default function Calculator({userId,isAdmin=false}){
      {costedItems.filter(x=>x.status===s.section).map(product=><tr key={product.id}>
       <td><input aria-label="Название товара" value={product.name} onChange={e=>update(product.id,{name:e.target.value})}/><input aria-label="Артикул" placeholder="Артикул" value={product.sku||""} onChange={e=>update(product.id,{sku:e.target.value})}/></td>
       {["yuan","rate","quantity","unitNetWeightG","deliveryToGuangzhouYuan","freight"].map(key=><td key={key}><input aria-label={key} type="number" min="0" step="any" value={product[key]??0} onChange={e=>update(product.id,{[key]:e.target.value})}/></td>)}
-      <td><select aria-label="Поставка" value={product.shipmentId||""} onChange={e=>update(product.id,{shipmentId:e.target.value})}><option value="">Без поставки</option>{shipments.map(sh=><option key={sh.id} value={sh.id}>{sh.name}</option>)}</select></td>
+      <td><select aria-label="Поставка" value={product.shipmentId||""} onChange={e=>{const selected=shipments.find(sh=>sh.id===e.target.value);update(product.id,{shipmentId:e.target.value,status:selected?.status==="delivered"&&product.status!=="archive"?"delivered":product.status});}}><option value="">Без поставки</option>{shipments.map(sh=><option key={sh.id} value={sh.id}>{sh.name}</option>)}</select></td>
       <td><b>{rub(cost(product))}</b>{product.costBreakdown?.source==="shipment"&&<div className="muted">{product.costBreakdown.shipmentName}</div>}</td>
       <td><select aria-label="Статус товара" value={product.status} onChange={e=>update(product.id,{status:e.target.value})}>{productStatuses.map(([key,label])=><option value={key} key={key}>{label}</option>)}</select><button className="btn secondary" onClick={()=>deleteProduct(product.id)}>Удалить</button></td>
      </tr>)}
