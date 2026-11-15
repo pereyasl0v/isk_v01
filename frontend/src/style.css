@@ -19,3 +19,11 @@
 .account-actions{display:flex;gap:6px;flex-shrink:0}
 .success-note{border:1px solid #b9dfc7;background:#effaf2;color:#23613b;border-radius:9px;padding:12px;font-size:13px}
 @media(max-width:640px){.auth-card{padding:23px}.header-actions{gap:6px}.header-actions .account{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.logout-button{padding:8px}}
+
+/* Keep the combined FBO screen within the viewport; long lists scroll inside their own panels. */
+.fbo-stock-list{max-height:clamp(120px,calc(100vh - 665px),235px);overflow-y:auto;overscroll-behavior:contain;padding-right:4px}
+.fbo-stock-list .stock-card:last-child{margin-bottom:0}
+.fbo-history-table .table-scroll{max-height:clamp(110px,calc(100vh - 650px),250px);overflow:auto;overscroll-behavior:contain}
+.fbo-history-table th{padding:8px 10px}
+.fbo-history-table td{padding:6px 10px}
+.fbo-history-table .pagination{margin-top:10px}
