@@ -35,13 +35,6 @@
 .digitization-month-days .digitization-day.in-range{background:#e8f1eb;color:#365d45;border-radius:0}
 .digitization-month-days .digitization-day.range-edge{background:#245c4b;border-color:#245c4b;color:#fff;font-weight:700}
 .digitization-month-days .digitization-day.missing.range-edge:after{background:#ffd65a;border:1px solid #785d17;width:6px;height:6px;bottom:1px}
-/* Hover/focus mirrors the selected-day treatment, including missing and in-range dates. */
-.digitization-month-days .digitization-day:not(:disabled):not(.outside){transition:background-color .14s ease,border-color .14s ease,color .14s ease,box-shadow .14s ease,transform .14s ease}
-.digitization-month-days .digitization-day:not(:disabled):not(.outside):hover,
-.digitization-month-days .digitization-day:not(:disabled):not(.outside):focus-visible{position:relative;z-index:1;background:#245c4b;border-color:#245c4b;color:#fff;box-shadow:0 2px 7px rgba(36,92,75,.2);transform:translateY(-1px)}
-.digitization-month-days .digitization-day.missing:not(:disabled):not(.outside):hover:after,
-.digitization-month-days .digitization-day.missing:not(:disabled):not(.outside):focus-visible:after{background:#ffd65a;border:1px solid #785d17;width:6px;height:6px;bottom:1px}
-.digitization-month-days .digitization-day:not(:disabled):not(.outside):focus-visible{outline:2px solid #8ab79b;outline-offset:2px}
 
 .digitization-calendar-legend{display:flex;align-items:center;gap:7px;margin-top:12px;color:#78897e;font-size:10px}
 .digitization-missing-key{width:9px;height:9px;border-radius:3px;background:#f5d77c;border:1px solid #e9c55d}
