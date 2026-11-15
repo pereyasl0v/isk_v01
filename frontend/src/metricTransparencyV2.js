@@ -140,6 +140,7 @@ function enhanceCard(card){
  card.style.position='relative';
  // Keep the original count/document icon: it now opens the combined explanation
  // and calculation breakdown in a single popup.
+ labelEl.querySelectorAll('.isk-info-trigger').forEach(el=>el.remove());
  labelEl.classList.add('isk-metric-label');
  let actions=top.querySelector(':scope > .isk-metric-actions');
  if(!actions){actions=document.createElement('div');actions.className='isk-metric-actions';top.appendChild(actions)}
