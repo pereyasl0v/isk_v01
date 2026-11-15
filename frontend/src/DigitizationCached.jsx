@@ -4,7 +4,6 @@ import Digitization from './Digitization';
 import './digitizationCached.css';
 import {getDigitizationPeriod} from './digitization-period.mjs';
 
-const iso=d=>{const local=new Date(d.getTime()-d.getTimezoneOffset()*60000);return local.toISOString().slice(0,10)};
 const dateTime=v=>v?new Date(v).toLocaleString('ru-RU'):'—';
 
 function emptyPeriod(first,last){
@@ -25,9 +24,9 @@ export default function DigitizationCached({state,digi,act}){
   setDateTo(range.to);
   setSelectedPreset(days);
  };
- const [periodDigi,setPeriodDigi]=useState(digi?.metrics?digi:null);
+ const [periodDigi,setPeriodDigi]=useState(null);
  const [cacheState,setCacheState]=useState({
-  loading:false,hit:Boolean(digi?.metrics),daily:false,updatedAt:digi?.at||null,error:'',coverage:{}
+  loading:true,hit:false,daily:false,updatedAt:null,error:'',coverage:{}
  });
  const invalid=Boolean(dateFrom&&dateTo&&dateFrom>dateTo);
 
