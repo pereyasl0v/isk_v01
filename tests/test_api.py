@@ -13,11 +13,12 @@ from backend.ozon import ApiError
 
 HEAD={'Origin':'http://127.0.0.1:8000','X-Local-App':'fbo'}
 class FakeOzon:
-    def __init__(self,c,k):self.client_id=c
+    def __init__(self,c,k,**kwargs):self.client_id=c
     def roles(self):return {'roles':[{'name':'Read only'}],'expires_at':'2027-01-01T00:00:00Z'}
     def download(self,progress):
         return ([{'id':1,'sku':100,'offer_id':'A','name':'Товар'}],
                 [{'product_id':1,'sku':100,'offer_id':'A','warehouse_id':1,'present':12,'reserved':2}])
+    def fbs_stocks(self,products,progress):return {'quantity':0,'rows':[]}
     def analytics(self,p,s,progress):
         return [{'sku':100,'warehouse_id':1,'offer_id':'A','name':'Товар',
           'available_stock_count':10,'valid_stock_count':0,'transit_stock_count':0,
