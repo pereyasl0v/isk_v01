@@ -142,16 +142,21 @@ export default function Digitization({state,digi,act}){
   ?'Сначала обновите актуальные остатки Ozon'
   :currentStock.warning
    ?'Остатки Ozon загружены не полностью — капитализация не рассчитана'
-   :currentStock.missingCostSkus.length
-    ?'Заполните себестоимость для '+currentStock.missingCostSkus.length+' SKU с остатком'
-    :'По актуальным остаткам Ozon на '+dateTime(currentStock.sourceAt);
+   :!currentStock.outboundFieldsAvailable
+    ?'Ozon не вернул статусы доставки и возвратов — обновите остатки'
+    :currentStock.missingCostSkus.length
+     ?'Заполните себестоимость для '+currentStock.missingCostSkus.length+' SKU с остатком'
+     :'Актуальные остатки Ozon, включая доставку и возвраты, на '+dateTime(currentStock.sourceAt);
  const ownStockQty=Object.entries(costs).reduce((sum,[,v])=>sum+n(v?.own_stock),0);
  const ownCapitalization=round(Object.entries(costs).reduce((sum,[sku,v])=>sum+n(v?.own_stock)*stockUnitCost(sku),0));
 
  const dailyCaps=inventoryHistory.map(day=>{
-  const active=(day.aggregated||[]).filter(r=>n(r.available)>0);
+  if(day.summary?.outbound_fields_available!==true)return null;
+  const rows=day.aggregated||[];
+  if(rows.some(row=>row.capitalization_quantity===null||row.capitalization_quantity===undefined))return null;
+  const active=rows.filter(row=>n(row.capitalization_quantity)>0);
   if(active.some(r=>!hasCost(r.sku)))return null;
-  const mp=active.reduce((sum,row)=>sum+n(row.available)*stockUnitCost(row.sku),0);
+  const mp=active.reduce((sum,row)=>sum+n(row.capitalization_quantity)*stockUnitCost(row.sku),0);
   return mp+ownCapitalization;
  }).filter(v=>v!==null);
  const averageCapitalization=dailyCaps.length?round(dailyCaps.reduce((a,b)=>a+b,0)/dailyCaps.length):null;
@@ -208,7 +213,7 @@ export default function Digitization({state,digi,act}){
    <Metric label="Реклама/ДРРз" value={advertising} note={pct(drrOrders)} icon={BarChart3}/>
    <Metric label="Средняя прибыль на 1 шт." value={averageProfit}/>
    <Metric label="Ср. стоимость логистики на 1 шт." value={avgLogistics}/>
-   <Metric label="Остатки" value={stockQty} format={count} note={currentStock.sourceAt?'Актуальные на '+dateTime(currentStock.sourceAt):'Обновите остатки Ozon'}/>
+   <Metric label="Остатки" value={stockQty} format={count} note={currentStock.sourceAt&&currentStock.outboundFieldsAvailable?'Включая товары в пути · на '+dateTime(currentStock.sourceAt):currentStock.sourceAt?'Нет статусов доставки/возвратов':'Обновите остатки Ozon'}/>
    <Metric label="Оборачиваемость по прод." value={turnoverSales} format={daysFmt}/>
    <Metric label="Оборачиваемость по зак." value={turnoverOrders} format={daysFmt}/>
    <Metric label="Капитализация по себес." value={capitalizationCost} note={capitalizationNote}/>
