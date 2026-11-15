@@ -4,7 +4,7 @@ import {
   OZON_DEFAULTS, calculateOzonScenarios, parseOzonCaptureText
 } from "./ozon-calc.mjs";
 
-const KEY = "market-calculate-ozon-v1";
+const LEGACY_KEY = "market-calculate-ozon-v1";
 const empty = {prices:{}, products:{}, inputs:{}, importedSources:{}};
 const n = value => Math.max(0, Number(String(value ?? "").replace(",", ".")) || 0);
 const rub = value => new Intl.NumberFormat("ru-RU", {maximumFractionDigits:0}).format(Number.isFinite(value) ? value : 0) + " ₽";
@@ -17,21 +17,23 @@ function TextField({label,value,onChange}) {
   return <div className="field"><label>{label}</label><input type="text" value={value ?? ""} onChange={e=>onChange(e.target.value)} /></div>;
 }
 
-export default function OzonCalculator({items=[], selectedId="", onSelect=()=>{}}) {
+export default function OzonCalculator({items=[], selectedId="", onSelect=()=>{}, userId, isAdmin=false}) {
+  const storageKey = LEGACY_KEY + ":" + userId;
   const [state,setState] = useState(empty);
   const [ready,setReady] = useState(false);
   const [message,setMessage] = useState("");
 
   useEffect(()=>{
     try {
-      const raw=localStorage.getItem(KEY);
+      let raw=localStorage.getItem(storageKey);
+      if(!raw&&isAdmin){raw=localStorage.getItem(LEGACY_KEY);if(raw){localStorage.setItem(storageKey,raw);localStorage.removeItem(LEGACY_KEY)}}
       if(raw) setState({...empty,...JSON.parse(raw)});
     } catch {}
     setReady(true);
-  },[]);
+  },[storageKey,isAdmin]);
   useEffect(()=>{
-    if(ready) localStorage.setItem(KEY,JSON.stringify(state));
-  },[state,ready]);
+    if(ready) localStorage.setItem(storageKey,JSON.stringify(state));
+  },[state,ready,storageKey]);
 
   const item = items.find(x=>x.id===selectedId) || items[0] || null;
   const itemId = item?.id || "";
