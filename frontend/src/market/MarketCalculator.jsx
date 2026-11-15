@@ -47,8 +47,10 @@ export default function Calculator({userId,isAdmin=false}){
    }catch{}
    try{
     let remote=await request("/costing");
-    if(!remote.products?.length&&!remote.shipments?.length&&local.items.length){
-     remote=await request("/costing","PUT",{revision:remote.revision,products:local.items,shipments:local.shipments});
+    const mergedShipments=[...new Map([...(local.shipments||[]),...(remote.shipments||[])].map(row=>[String(row.id),row])).values()];
+    const mergedProducts=[...new Map([...(local.items||[]),...(remote.products||[])].map(row=>[String(row.id),row])).values()];
+    if(mergedProducts.length!==(remote.products||[]).length||mergedShipments.length!==(remote.shipments||[]).length){
+     remote=await request("/costing","PUT",{revision:remote.revision,products:mergedProducts,shipments:mergedShipments});
     }
     if(!active)return;
     revisionRef.current=remote.revision||0;
