@@ -4,6 +4,7 @@ import os
 import tempfile
 import time
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,6 +15,7 @@ os.environ['ISK_ENCRYPTION_KEY']=base64.urlsafe_b64encode(b'isk-test-key-32-byte
 from fastapi.testclient import TestClient
 from backend import main
 from backend.storage import Store
+from backend.import_legacy import import_legacy_database, LegacyImportError
 from backend.security import hash_password, token_digest
 from backend.ozon import ApiError
 
@@ -171,6 +173,116 @@ class AuthApiTests(unittest.TestCase):
         with main.store.db() as c:
             row=c.execute('SELECT payload FROM snapshots WHERE client=?',(scope,)).fetchone()
         self.assertTrue(row[0].startswith('enc:v1:'))
+
+
+    def test_legacy_database_import_is_atomic_encrypted_and_idempotent(self):
+        account=self.connect(client_id='123')
+        scope='account:'+account['account_id']
+        now=datetime.now(timezone.utc).isoformat()
+        main.store.save(scope,'inventory',{'products':[{'name':'new current snapshot'}]})
+
+        source_path=Path(self.tmp.name)/'legacy.sqlite3'
+        legacy=sqlite3.connect(source_path)
+        legacy.executescript('''
+            CREATE TABLE snapshots (
+                id INTEGER PRIMARY KEY, client TEXT NOT NULL, kind TEXT NOT NULL,
+                at TEXT NOT NULL, payload TEXT NOT NULL);
+            CREATE TABLE api_cache (
+                client TEXT NOT NULL, namespace TEXT NOT NULL, cache_key TEXT NOT NULL,
+                updated_at REAL NOT NULL, payload TEXT NOT NULL,
+                PRIMARY KEY(client,namespace,cache_key));
+            CREATE TABLE digitization_periods (
+                client TEXT NOT NULL, date_from TEXT NOT NULL, date_to TEXT NOT NULL,
+                updated_at TEXT NOT NULL, payload TEXT NOT NULL,
+                PRIMARY KEY(client,date_from,date_to));
+            CREATE TABLE digitization_days (
+                client TEXT NOT NULL, day TEXT NOT NULL, updated_at TEXT NOT NULL,
+                payload TEXT NOT NULL, PRIMARY KEY(client,day));
+        ''')
+        old_at='2026-10-01T10:00:00+00:00'
+        old_digitization={'since':'2026-10-01','to':'2026-10-01',
+                          'effective_to':'2026-10-01','products':[],'postings':[]}
+        legacy.execute('INSERT INTO snapshots(client,kind,at,payload) VALUES (?,?,?,?)',
+                       ('123','inventory',old_at,json.dumps({'products':[{'name':'old'}]})))
+        legacy.execute('INSERT INTO snapshots(client,kind,at,payload) VALUES (?,?,?,?)',
+                       ('123','digitization',old_at,json.dumps(old_digitization)))
+        legacy.execute('INSERT INTO api_cache VALUES (?,?,?,?,?)',
+                       ('123','ozon_api','cache-a',100.0,json.dumps({'cached':'one'})))
+        legacy.execute('INSERT INTO api_cache VALUES (?,?,?,?,?)',
+                       ('123','ozon_api','cache-b',101.0,json.dumps({'cached':'two'})))
+        legacy.execute('INSERT INTO digitization_periods VALUES (?,?,?,?,?)',
+                       ('123','2026-10-01','2026-10-01',old_at,json.dumps(old_digitization)))
+        legacy.execute('INSERT INTO digitization_days VALUES (?,?,?,?)',
+                       ('123','2026-10-01',old_at,json.dumps(old_digitization)))
+        legacy.commit()
+        legacy.close()
+
+        import hashlib
+        original_hash=hashlib.sha256(source_path.read_bytes()).hexdigest()
+        result=import_legacy_database(source_path,main.store,'admin')
+        self.assertEqual(result['status'],'imported')
+        self.assertEqual(result['source_client_id'],'123')
+        self.assertEqual(result['imported_rows'],{
+            'snapshots':2,'api_cache':2,'digitization_periods':1,'digitization_days':1
+        })
+        self.assertEqual(main.store.latest(scope,'inventory')['products'][0]['name'],
+                         'new current snapshot')
+        self.assertEqual(main.store.latest(scope,'digitization')['since'],'2026-10-01')
+        self.assertEqual(main.store.cache_stats(scope,'ozon_api')['entries'],2)
+        self.assertEqual(main.store.digitization_period_count(scope),1)
+        self.assertEqual(main.store.digitization_coverage(scope)['days'],1)
+
+        with main.store.db() as c:
+            for table in ('snapshots','api_cache','digitization_periods','digitization_days'):
+                payloads=[row[0] for row in c.execute(
+                    f'SELECT payload FROM "{table}" WHERE client=?',(scope,)).fetchall()]
+                self.assertTrue(payloads)
+                self.assertTrue(all(value.startswith('enc:v1:') for value in payloads),table)
+
+        second=import_legacy_database(source_path,main.store,'admin')
+        self.assertEqual(second['status'],'already_imported')
+        with main.store.db() as c:
+            self.assertEqual(c.execute(
+                'SELECT COUNT(*) FROM snapshots WHERE client=?',(scope,)).fetchone()[0],3)
+        self.assertEqual(hashlib.sha256(source_path.read_bytes()).hexdigest(),original_hash)
+
+        reopened=Store(Path(self.tmp.name)/'db.sqlite',encryption_key=main.ENCRYPTION_KEY)
+        self.assertEqual(reopened.latest(scope,'inventory')['products'][0]['name'],
+                         'new current snapshot')
+        self.assertEqual(reopened.digitization_coverage(scope)['days'],1)
+
+    def test_legacy_database_import_rejects_wrong_owner_without_writes(self):
+        account=self.connect(client_id='123')
+        source_path=Path(self.tmp.name)/'legacy-wrong-owner.sqlite3'
+        legacy=sqlite3.connect(source_path)
+        legacy.executescript('''
+            CREATE TABLE snapshots (
+                id INTEGER PRIMARY KEY, client TEXT NOT NULL, kind TEXT NOT NULL,
+                at TEXT NOT NULL, payload TEXT NOT NULL);
+            CREATE TABLE api_cache (
+                client TEXT NOT NULL, namespace TEXT NOT NULL, cache_key TEXT NOT NULL,
+                updated_at REAL NOT NULL, payload TEXT NOT NULL,
+                PRIMARY KEY(client,namespace,cache_key));
+            CREATE TABLE digitization_periods (
+                client TEXT NOT NULL, date_from TEXT NOT NULL, date_to TEXT NOT NULL,
+                updated_at TEXT NOT NULL, payload TEXT NOT NULL,
+                PRIMARY KEY(client,date_from,date_to));
+            CREATE TABLE digitization_days (
+                client TEXT NOT NULL, day TEXT NOT NULL, updated_at TEXT NOT NULL,
+                payload TEXT NOT NULL, PRIMARY KEY(client,day));
+        ''')
+        legacy.execute('INSERT INTO snapshots(client,kind,at,payload) VALUES (?,?,?,?)',
+                       ('999','inventory','2026-10-01T00:00:00+00:00','{"products":[]}'))
+        legacy.commit()
+        legacy.close()
+        with self.assertRaises(LegacyImportError):
+            import_legacy_database(source_path,main.store,'admin')
+        with main.store.db() as c:
+            self.assertEqual(c.execute(
+                'SELECT COUNT(*) FROM legacy_database_imports').fetchone()[0],0)
+            self.assertEqual(c.execute(
+                'SELECT COUNT(*) FROM snapshots WHERE client=?',
+                ('account:'+account['account_id'],)).fetchone()[0],0)
 
     def test_expired_session_is_rejected(self):
         cookie=self.client.cookies.get('isk_session')
