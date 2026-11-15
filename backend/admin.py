@@ -3,7 +3,7 @@ import getpass
 import os
 from pathlib import Path
 
-from .security import hash_password, load_encryption_key
+from .security import hash_password, load_encryption_key, valid_username
 from .storage import Store
 
 
@@ -13,6 +13,8 @@ def main():
     create=sub.add_parser('create-admin',help='Создать первого администратора')
     create.add_argument('--username',default='admin')
     args=parser.parse_args()
+    if not valid_username(args.username):
+        raise SystemExit('Логин должен содержать 3–32 символа: латиница, цифры, точка, дефис или подчёркивание.')
 
     data=Path(os.environ.get('OZON_FBO_DATA_DIR',str(Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'VKR_Ozon_FBO_Web')))
     data.mkdir(parents=True,exist_ok=True)
