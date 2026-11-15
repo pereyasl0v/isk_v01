@@ -1,6 +1,6 @@
 import React, {useEffect, useState, createContext, useContext, useRef} from 'react';
 import {createRoot} from 'react-dom/client';
-import {BrowserRouter, NavLink, Routes, Route, Navigate, useNavigate, useLocation} from 'react-router-dom';
+import {BrowserRouter, NavLink, Routes, Route, Navigate, useNavigate} from 'react-router-dom';
 import {Boxes, LayoutDashboard, Package, Warehouse, Truck, Calculator, Plug, ListChecks, RefreshCw, ArrowUpRight, Search, Download, CircleCheck, AlertCircle, ArrowRight, LogOut, BarChart3, Plus, Users, ShieldCheck} from 'lucide-react';
 import './style.css';
 import Replenishment from './Replenishment';
@@ -112,7 +112,7 @@ function AdminUsers(){
 const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/market-calculator','Калькулятор WB / Ozon',Calculator],['/stocks','Остатки FBO',Warehouse],['/history','История отправлений',Truck],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
 function RequireAccount({children}){const {me}=useApp();return me?.active_account_id?children:<Navigate to="/connection" replace/>}
 function App(){
- const location=useLocation();const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);
+ const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);
  const [error,setError]=useState('');const [loading,setLoading]=useState(true);const [authChecked,setAuthChecked]=useState(false);const wasRunning=useRef(false);
  async function loadData(){const [i,h,d]=await Promise.all([api('/inventory'),api('/history'),api('/digitization')]);setInv(i);setHist(h);setDigi(d)}
  function clearData(){setState(null);setInv(null);setHist(null);setDigi(null)}
@@ -140,7 +140,7 @@ function App(){
    <nav>{navItems.map(([path,label,Icon])=><NavLink key={path} to={path} end={path==='/'} className={({isActive})=>'nav-item '+(isActive?'active':'')}><Icon size={19}/>{label}</NavLink>)}</nav>
    <div className="sidebar-footer"><span className="status-dot"/>{me.user.username}</div>
   </aside><main><header><div className="header-actions" style={{marginLeft:"auto"}}><NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink><button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button></div></header>
-   <div className="workspace"><nav className="breadcrumbs" aria-label="Хлебные крошки"><NavLink to="/">ИСК</NavLink><span>/</span><span aria-current="page">{navItems.find(([path])=>path===location.pathname)?.[1]||'Обзор'}</span></nav>
+   <div className="workspace">
     {error&&<div role="alert"><Notice>{error}<button className="ml-3" onClick={()=>setError('')}>Закрыть</button></Notice></div>}
     {state?.job.running&&<div className="progress"><RefreshCw size={17} className="animate-spin"/>{state.job.message}</div>}{state?.job.error&&<Notice>{state.job.error}</Notice>}
     <Routes>
