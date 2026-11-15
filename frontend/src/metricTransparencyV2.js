@@ -89,28 +89,67 @@ function details(label,card){
  if(['Логистика','Прочие удержания','Номинальная комиссия','Эквайринг'].includes(label)){const r=operationRows(label);if(r.length)return r}
  return [{label:'Итого за период',value:num(card.querySelector('strong')?.textContent)}];
 }
-function docIcon(){return '<svg width="12" height="12" fill="none" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M10 3v4a1 1 0 0 1-1 1H5m4 8h6m-6-4h6m4-8v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1"></path></svg>'}
-function close(){document.querySelectorAll('.isk-metric-popover').forEach(x=>x.remove());document.querySelectorAll('.isk-info-trigger,.isk-details-trigger').forEach(b=>b.setAttribute('aria-expanded','false'))}
-function infoPopup(card,label,btn){
- close();const h=H[label]||['Показатель ИСК за выбранный период.','Значение формируется из данных Ozon или связанных расчётных показателей.','ИСК / Ozon'];
- const p=document.createElement('div');p.className='isk-metric-popover isk-info-popover';
- const t=document.createElement('div');t.className='isk-pop-title';t.textContent=label;
- const d=document.createElement('p');d.textContent=h[0];const b1=document.createElement('b');b1.textContent='Как рассчитывается';const pre=document.createElement('pre');pre.textContent=h[1];const b2=document.createElement('b');b2.textContent='Источник';const s=document.createElement('p');s.textContent=h[2];
- p.append(t,d,b1,pre,b2,s);card.appendChild(p);btn.setAttribute('aria-expanded','true');
+function close(){
+ document.querySelectorAll('.isk-metric-popover').forEach(x=>x.remove());
+ document.querySelectorAll('.isk-info-trigger').forEach(b=>b.setAttribute('aria-expanded','false'));
 }
-function detailPopup(card,label,btn){
- close();const r=details(label,card);const base=value('Реализация');const p=document.createElement('div');p.className='isk-metric-popover isk-details-popover';
- const t=document.createElement('div');t.className='isk-pop-title';t.textContent=`${label}: ${r.length}`;p.appendChild(t);const list=document.createElement('div');list.className='isk-detail-list';
- r.forEach(x=>{const row=document.createElement('div');row.className='isk-detail-row';const l=document.createElement('span');l.textContent=x.label;const v=document.createElement('span');v.className='isk-detail-value';if(x.display)v.textContent=x.display;else{const sh=share(x.value,base);v.textContent=sh?`${money(x.value)} / ${sh}`:money(x.value)}row.append(l,v);list.appendChild(row)});p.appendChild(list);
- const total=document.createElement('div');total.className='isk-detail-total';const a=document.createElement('b');a.textContent='Итого';const z=document.createElement('b');z.textContent=card.querySelector('strong')?.textContent||'—';total.append(a,z);p.appendChild(total);card.appendChild(p);btn.setAttribute('aria-expanded','true');
+function combinedPopup(card,label,btn){
+ close();
+ const h=H[label]||['Показатель ИСК за выбранный период.','Значение формируется из данных Ozon или связанных расчётных показателей.','ИСК / Ozon'];
+ const r=details(label,card);
+ const base=value('Реализация');
+ const p=document.createElement('div');p.className='isk-metric-popover isk-info-popover isk-combined-popover';
+ const title=document.createElement('div');title.className='isk-pop-title';title.textContent=label;
+ const description=document.createElement('p');description.textContent=h[0];
+ const formulaTitle=document.createElement('b');formulaTitle.textContent='Как рассчитывается';
+ const formula=document.createElement('pre');formula.textContent=h[1];
+ const sourceTitle=document.createElement('b');sourceTitle.textContent='Источник';
+ const source=document.createElement('p');source.textContent=h[2];
+ const section=document.createElement('section');section.className='isk-pop-detail-section';
+ const sectionTitle=document.createElement('b');sectionTitle.className='isk-pop-detail-heading';
+ sectionTitle.textContent='Детализация: '+r.length;
+ const list=document.createElement('div');list.className='isk-detail-list';
+ r.forEach(x=>{
+  const row=document.createElement('div');row.className='isk-detail-row';
+  const name=document.createElement('span');name.textContent=x.label;
+  const result=document.createElement('span');result.className='isk-detail-value';
+  if(x.display)result.textContent=x.display;
+  else{
+   const sh=share(x.value,base);
+   result.textContent=sh?money(x.value)+' / '+sh:money(x.value);
+  }
+  row.append(name,result);list.appendChild(row);
+ });
+ const total=document.createElement('div');total.className='isk-detail-total';
+ const totalLabel=document.createElement('b');totalLabel.textContent='Итого';
+ const totalValue=document.createElement('b');totalValue.textContent=card.querySelector('strong')?.textContent||'—';
+ total.append(totalLabel,totalValue);
+ section.append(sectionTitle,list,total);
+ p.append(title,description,formulaTitle,formula,sourceTitle,source,section);
+ card.appendChild(p);
+ btn.setAttribute('aria-expanded','true');
 }
 function enhanceCard(card){
- const top=card.querySelector('.metric-top');const labelEl=top?.querySelector(':scope > span');if(!top||!labelEl)return;let label=labelEl.dataset.metricLabel||norm(labelEl.childNodes[0]?.textContent||labelEl.textContent);if(!label)return;labelEl.dataset.metricLabel=label;card.dataset.transparencyReady='1';card.style.position='relative';
- if(!labelEl.querySelector('.isk-info-trigger')){labelEl.classList.add('isk-metric-label');const i=document.createElement('button');i.type='button';i.className='isk-info-trigger';i.textContent='i';i.setAttribute('aria-label',`Как рассчитывается: ${label}`);i.setAttribute('aria-haspopup','dialog');i.setAttribute('aria-expanded','false');i.addEventListener('click',e=>{e.stopPropagation();infoPopup(card,label,i)});labelEl.appendChild(i)}
- let actions=top.querySelector(':scope > .isk-metric-actions');if(!actions){actions=document.createElement('div');actions.className='isk-metric-actions';top.appendChild(actions)}
- let d=actions.querySelector('.isk-details-trigger');if(!d){d=document.createElement('button');d.type='button';d.className='isk-details-trigger';d.dataset.testid='details-dropdown-trigger';d.setAttribute('aria-haspopup','dialog');d.setAttribute('aria-expanded','false');d.setAttribute('aria-label',`Детализация расчёта: ${label}`);d.innerHTML=`${docIcon()}<span>0</span>`;d.addEventListener('click',e=>{e.stopPropagation();detailPopup(card,label,d)});actions.appendChild(d)}
- const span=d.querySelector('span');const next=String(details(label,card).length);if(span&&span.textContent!==next)span.textContent=next;
+ const top=card.querySelector('.metric-top');const labelEl=top?.querySelector(':scope > span');
+ if(!top||!labelEl)return;
+ const label=labelEl.dataset.metricLabel||norm(labelEl.childNodes[0]?.textContent||labelEl.textContent);
+ if(!label)return;
+ labelEl.dataset.metricLabel=label;
+ card.dataset.transparencyReady='1';
+ card.style.position='relative';
+ if(!labelEl.querySelector('.isk-info-trigger')){
+  labelEl.classList.add('isk-metric-label');
+  const i=document.createElement('button');i.type='button';i.className='isk-info-trigger';i.textContent='i';
+  i.setAttribute('aria-label','Пояснение и детализация: '+label);
+  i.setAttribute('aria-haspopup','dialog');
+  i.setAttribute('aria-expanded','false');
+  i.addEventListener('click',e=>{e.stopPropagation();combinedPopup(card,label,i)});
+  labelEl.appendChild(i);
+ }
+ // Previously a second icon opened a separate calculation popup. It is no
+ // longer needed: both sections are displayed in the same explanation popup.
+ top.querySelector(':scope > .isk-metric-actions')?.remove();
 }
 let scheduled=false;function enhance(){scheduled=false;if(location.pathname!=='/digitization')return;document.querySelectorAll('.metric').forEach(enhanceCard)}function schedule(){if(scheduled)return;scheduled=true;requestAnimationFrame(enhance)}
 new MutationObserver(schedule).observe(document.documentElement,{subtree:true,childList:true,characterData:true});
-document.addEventListener('click',e=>{if(!e.target.closest('.isk-metric-popover,.isk-info-trigger,.isk-details-trigger'))close()});window.addEventListener('popstate',schedule);schedule();
+document.addEventListener('click',e=>{if(!e.target.closest('.isk-metric-popover,.isk-info-trigger'))close()});window.addEventListener('popstate',schedule);schedule();
