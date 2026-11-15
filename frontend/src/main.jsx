@@ -1,7 +1,7 @@
 import React, {useEffect, useState, createContext, useContext, useRef} from 'react';
 import {createRoot} from 'react-dom/client';
 import {BrowserRouter, NavLink, Routes, Route, Navigate, useNavigate, useLocation} from 'react-router-dom';
-import {Boxes, LayoutDashboard, Package, Warehouse, Truck, Calculator, Plug, ListChecks, RefreshCw, ArrowUpRight, Search, Download, CircleCheck, AlertCircle, ArrowRight, LogOut, BarChart3} from 'lucide-react';
+import {Boxes, LayoutDashboard, Package, Warehouse, Truck, Calculator, Plug, ListChecks, RefreshCw, ArrowUpRight, Search, Download, CircleCheck, AlertCircle, ArrowRight, LogOut, BarChart3, Plus, Users, ShieldCheck} from 'lucide-react';
 import './style.css';
 import Replenishment from './Replenishment';
 import MarketPage from './market';
@@ -46,18 +46,118 @@ function Stocks(){
  </section>
 }
 function History(){const {hist,state,act}=useApp();const [days,setDays]=useState(90);const [q,setQ]=useState('');const [status,setStatus]=useState('');const postings=hist?.postings||[];const rows=postings.filter(p=>p.number.includes(q)&&(!status||p.status===status)).map(p=>({...p,units:p.products.reduce((n,r)=>n+r.quantity,0),items:p.products.map(r=>`${r.offer_id||r.sku} × ${r.quantity}`).join('; ')}));return <><section className="panel"><div className="panel-title"><h3>История FBO</h3><div className="flex gap-2"><select aria-label="Период загрузки" value={days} onChange={e=>setDays(Number(e.target.value))}><option value={30}>30 дней</option><option value={90}>90 дней</option><option value={180}>180 дней</option><option value={365}>365 дней</option></select><button className="primary" disabled={!state||state.job.running} onClick={()=>act('/history/sync',{days})}>Загрузить историю</button></div></div><p className="muted mb-4">Снимок: {date(hist?.at)}{hist?.since&&` · период ${date(hist.since)} — ${date(hist.to)}`}</p><div className="filters"><Filter value={q} set={setQ} placeholder="Номер отправления"/><select aria-label="Статус" value={status} onChange={e=>setStatus(e.target.value)}><option value="">Все статусы</option>{[...new Set(postings.map(p=>p.status))].sort().map(s=><option key={s} value={s}>{statusLabel(s)}</option>)}</select></div><Table rows={rows} columns={[["number","Отправление"],["created_at","Создано",date],["status","Статус",statusLabel],["items","Состав"],["units","Единиц",num]]}/></section></>}
-function Connection(){const {state,reload,setState,setError}=useApp();const [client,setClient]=useState('');const [key,setKey]=useState('');const [busy,setBusy]=useState(false);const navigate=useNavigate();
- async function connect(e){e.preventDefault();setBusy(true);setError('');try{await api('/connect',{client_id:client.trim(),api_key:key.trim()});setKey('');await reload();navigate('/')}catch(e){setError(e.message)}finally{setBusy(false)}}
- async function disconnect(){setBusy(true);try{await api('/disconnect',{});setState(null);await reload()}catch(e){setError(e.message)}finally{setBusy(false)}}
- return <div className="grid grid-cols-1 lg:grid-cols-2 gap-5"><section className="panel"><div className="panel-title"><h3>{state?'Кабинет подключён':'Подключение кабинета'}</h3><Plug size={20}/></div>{state?<><div className="connected"><CircleCheck size={26}/><strong>Кабинет {state.client_id}</strong></div><p className="muted mt-4">Роли: {state.roles.map(roleLabel).join(', ')}</p><p className="muted mt-2">Срок ключа: {date(state.expires_at)}</p><button className="mt-6" disabled={busy||state.job.running} onClick={disconnect}><LogOut size={16}/> Отключить и забыть ключ</button></>:<form onSubmit={connect}><label className="field">Идентификатор кабинета<input autoComplete="off" inputMode="numeric" pattern="[0-9]+" required value={client} onChange={e=>setClient(e.target.value)}/></label><label className="field mt-4">Ключ API<input autoComplete="off" type="password" required value={key} onChange={e=>setKey(e.target.value)}/></label><button className="primary mt-5" disabled={busy}>{busy?'Проверяем доступ…':'Подключить Ozon'}<ArrowRight size={16}/></button></form>}</section><section className="panel"><h3 className="mt-3">Данные под вашим контролем</h3><ul className="guide"><li>Ключ находится в памяти сервера и удаляется при отключении или перезапуске.</li><li>Загруженные данные сохраняются на вашем компьютере отдельно для каждого кабинета.</li><li>Программа читает данные. Цены, остатки и заявки в Ozon не изменяются.</li><li>После подключения откройте обзор и нажмите «Обновить данные».</li></ul></section></div>
+function LoginScreen({onSuccess}){
+ const [username,setUsername]=useState('');const [password,setPassword]=useState('');
+ const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [initialized,setInitialized]=useState(null);
+ useEffect(()=>{api('/auth/status').then(x=>setInitialized(x.initialized)).catch(()=>setInitialized(null))},[]);
+ async function submit(e){e.preventDefault();setBusy(true);setError('');try{await api('/auth/login',{username:username.trim(),password});setPassword('');await onSuccess()}catch(err){setError(err.message)}finally{setBusy(false)}}
+ return <div className="auth-screen"><form className="auth-card" onSubmit={submit}>
+  <div className="auth-logo"><div className="brand-icon"><Boxes size={26}/></div><div><strong>ИСК</strong><span>Интеллектуальная система контроля</span></div></div>
+  <h1>Вход в систему</h1><p className="muted">Введите учётные данные, выданные администратором.</p>
+  {error&&<div className="notice" role="alert">{error}</div>}
+  <label className="field">Логин<input autoComplete="username" required minLength={3} maxLength={32} value={username} onChange={e=>setUsername(e.target.value)}/></label>
+  <label className="field mt-4">Пароль<input type="password" autoComplete="current-password" required minLength={12} value={password} onChange={e=>setPassword(e.target.value)}/></label>
+  <button className="primary mt-5 w-full" disabled={busy}>{busy?'Входим…':'Войти'}<ArrowRight size={16}/></button>
+  {initialized===false&&<div className="notice mt-4">Первый администратор ещё не создан. На сервере выполните: <code>docker compose exec isk python -m backend.admin create-admin --username admin</code></div>}
+  <p className="auth-foot">Регистрация открыта только администраторам. Сессия действует 30 дней.</p>
+ </form></div>
+}
+function Connection(){
+ const {state,me,reload,setError}=useApp();const [client,setClient]=useState('');const [key,setKey]=useState('');
+ const [busy,setBusy]=useState(false);const navigate=useNavigate();const accounts=me?.accounts||[];
+ async function connect(e){e.preventDefault();setBusy(true);setError('');try{await api('/connect',{client_id:client.trim(),api_key:key.trim()});setKey('');await reload();navigate('/')}catch(err){setError(err.message)}finally{setBusy(false)}}
+ async function select(id){setBusy(true);try{await api('/accounts/select',{account_id:id});await reload();navigate('/')}catch(err){setError(err.message)}finally{setBusy(false)}}
+ async function disconnect(){setBusy(true);try{await api('/disconnect',{});await reload()}catch(err){setError(err.message)}finally{setBusy(false)}}
+ const active=accounts.find(a=>a.id===me?.active_account_id);
+ return <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+  <section className="panel"><div className="panel-title"><h3>Мои кабинеты Ozon</h3><Plug size={20}/></div>
+   {!accounts.length&&<p className="muted">Пока нет подключённых кабинетов. Добавьте первый кабинет — ключ сохранится в зашифрованном виде и не потеряется после перезапуска сервера.</p>}
+   <div className="account-list">{accounts.map(a=><div className="account-row" key={a.id}>
+    <div><strong>Кабинет {a.client_id}</strong><span className={a.connected?'connected-label':'disconnected-label'}>{a.connected?'Подключён':'Ключ удалён'}</span><small>{a.roles?.join(', ')||'Роли не сохранены'}</small></div>
+    <div className="account-actions">{a.connected&&<button className={me.active_account_id===a.id?'primary':''} disabled={busy||me.active_account_id===a.id} onClick={()=>select(a.id)}>{me.active_account_id===a.id?'Выбран':'Выбрать'}</button>}</div>
+   </div>)}</div>
+   {active&&state&&<><div className="connected mt-4"><CircleCheck size={22}/><strong>Активный кабинет {state.client_id}</strong></div><p className="muted mt-2">Срок ключа Ozon: {date(state.expires_at)}</p><button className="mt-4" disabled={busy||state.job.running} onClick={disconnect}><LogOut size={16}/> Удалить сохранённый ключ</button><p className="muted">История и статистика останутся в вашем аккаунте. Для возобновления подключения потребуется ввести ключ заново.</p></>}
+  </section>
+  <section className="panel"><div className="panel-title"><h3>Добавить / обновить кабинет</h3><Plus size={20}/></div>
+   <form onSubmit={connect}><label className="field">Идентификатор кабинета<input autoComplete="off" inputMode="numeric" pattern="[0-9]+" required value={client} onChange={e=>setClient(e.target.value)}/></label>
+    <label className="field mt-4">Ключ API<input autoComplete="new-password" type="password" required minLength={10} value={key} onChange={e=>setKey(e.target.value)}/></label>
+    <button className="primary mt-5" disabled={busy}>{busy?'Проверяем доступ…':'Сохранить подключение'}<ArrowRight size={16}/></button>
+   </form>
+   <h3 className="mt-6">Защита данных</h3><ul className="guide"><li>Ключ API шифруется AES-256-GCM до сохранения в SQLite.</li><li>Данные и кабинеты изолированы по аккаунту пользователя.</li><li>Секрет шифрования хранится отдельно от Git и контейнерного образа.</li><li>Выход из ИСК не отключает кабинет.</li><li>Удаление ключа не удаляет ранее загруженную статистику.</li></ul>
+  </section>
+ </div>
 }
 function Logs(){const {state}=useApp();return <section className="panel"><div className="panel-title"><h3>Журнал текущего подключения</h3><span className="badge">Текущее подключение</span></div><Table rows={[...(state?.logs||[])].reverse()} columns={[["at","Время"],["message","Событие"]]}/></section>}
-const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/market-calculator','Калькулятор WB / Ozon',Calculator],['/products','Товары',Package],['/stocks','Остатки FBO',Warehouse],['/history','История отправлений',Truck],['/replenishment','Прогноз пополнения',Calculator],['/connection','Подключение',Plug],['/logs','Журнал',ListChecks]];
-function App(){const location=useLocation();const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);const [error,setError]=useState('');const [loading,setLoading]=useState(true);const wasRunning=useRef(false);
+function AdminUsers(){
+ const [users,setUsers]=useState([]);const [username,setUsername]=useState('');const [password,setPassword]=useState('');
+ const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [message,setMessage]=useState('');
+ async function load(){try{const data=await api('/admin/users');setUsers(data.users||[])}catch(e){setError(e.message)}}
+ useEffect(()=>{load()},[]);
+ async function create(e){e.preventDefault();setBusy(true);setError('');setMessage('');try{await api('/admin/users',{username:username.trim(),password});setUsername('');setPassword('');setMessage('Пользователь создан. Передайте ему логин и пароль безопасным способом.');await load()}catch(e){setError(e.message)}finally{setBusy(false)}}
+ async function toggle(user){setBusy(true);setError('');try{await api('/admin/users/'+user.id+'/status',{active:!user.is_active});await load()}catch(e){setError(e.message)}finally{setBusy(false)}}
+ return <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+  <section className="panel"><div className="panel-title"><h3>Создать пользователя</h3><Users size={20}/></div>
+   <form onSubmit={create}><label className="field">Логин<input required minLength={3} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,31}" value={username} onChange={e=>setUsername(e.target.value)}/></label>
+    <label className="field mt-4">Временный пароль (от 12 символов)<input type="password" autoComplete="new-password" required minLength={12} maxLength={256} value={password} onChange={e=>setPassword(e.target.value)}/></label>
+    <button className="primary mt-5" disabled={busy}>{busy?'Создаём…':'Создать пользователя'}<Plus size={16}/></button>
+   </form>
+   {error&&<div className="notice mt-4">{error}</div>}{message&&<div className="success-note mt-4">{message}</div>}
+   <p className="muted mt-4">Новые пользователи получают обычные права. Администратор создаётся только через серверную команду.</p>
+  </section>
+  <section className="panel"><div className="panel-title"><h3>Пользователи ИСК</h3><ShieldCheck size={20}/></div>
+   <div className="admin-user-list">{users.map(u=><div className="admin-user-row" key={u.id}><div><strong>{u.username}</strong><small>{u.role==='admin'?'Администратор':'Пользователь'} · {u.is_active?'Активен':'Отключён'}</small></div>{u.role!=='admin'&&<button disabled={busy} onClick={()=>toggle(u)}>{u.is_active?'Отключить':'Включить'}</button>}</div>)}</div>
+  </section>
+ </div>
+}
+const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/market-calculator','Калькулятор WB / Ozon',Calculator],['/products','Товары',Package],['/stocks','Остатки FBO',Warehouse],['/history','История отправлений',Truck],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
+function RequireAccount({children}){const {me}=useApp();return me?.active_account_id?children:<Navigate to="/connection" replace/>}
+function App(){
+ const location=useLocation();const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);
+ const [error,setError]=useState('');const [loading,setLoading]=useState(true);const [authChecked,setAuthChecked]=useState(false);const wasRunning=useRef(false);
  async function loadData(){const [i,h,d]=await Promise.all([api('/inventory'),api('/history'),api('/digitization')]);setInv(i);setHist(h);setDigi(d)}
- async function reload(){try{const s=await api('/state');setState(s);await loadData()}catch(e){if(e.status===401){setState(null);setInv(null);setHist(null);setDigi(null)}else setError(e.message)}finally{setLoading(false)}}
- useEffect(()=>{reload();const timer=setInterval(async()=>{try{const s=await api('/state');setState(s);if(wasRunning.current&&!s.job.running)await loadData();wasRunning.current=s.job.running}catch(e){if(e.status===401){setState(null);setInv(null);setHist(null);setDigi(null)}else setError(e.message)}},1500);return()=>clearInterval(timer)},[]);
+ function clearData(){setState(null);setInv(null);setHist(null);setDigi(null)}
+ async function reload(){
+  try{const auth=await api('/auth/me');setMe(auth);
+   if(auth.active_account_id){const [s,i,h,d]=await Promise.all([api('/state'),api('/inventory'),api('/history'),api('/digitization')]);setState(s);setInv(i);setHist(h);setDigi(d)}
+   else clearData();
+  }catch(e){if(e.status===401){setMe(null);clearData()}else if(e.status!==409)setError(e.message)}
+  finally{setAuthChecked(true);setLoading(false)}
+ }
+ useEffect(()=>{reload()},[]);
+ useEffect(()=>{
+  if(!me?.active_account_id)return;
+  const timer=setInterval(async()=>{try{const s=await api('/state');setState(s);if(wasRunning.current&&!s.job.running)await loadData();wasRunning.current=s.job.running}
+   catch(e){if(e.status===401){setMe(null);clearData()}else if(e.status===409)await reload();else setError(e.message)}},1500);
+  return()=>clearInterval(timer);
+ },[me?.active_account_id]);
  async function act(path,body){setError('');try{await api(path,body);wasRunning.current=true;setState(s=>({...s,job:{...s.job,running:true,message:'Запускаем загрузку…',error:null}}))}catch(e){setError(e.message)}}
- return <Context.Provider value={{state,setState,inv,hist,digi,reload,act,setError}}><div className="shell"><aside className="sidebar"><div className="brand"><div className="brand-icon"><Boxes size={25}/></div><div className="isk-brand">ИСК<span>Интелектуальная система контроля</span></div></div><nav>{nav.map(([path,label,Icon])=><NavLink key={path} to={path} end={path==='/'} className={({isActive})=>'nav-item '+(isActive?'active':'')}><Icon size={19}/>{label}</NavLink>)}</nav><div className="sidebar-footer"><span className="status-dot"/>{state?'Ozon подключён':'Ожидает подключения'}<small>Версия 0.1 ·</small></div></aside><main><header><span className="header-name">Интелектуальная система контроля</span><NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?`Кабинет ${state.client_id}`:'Подключить кабинет'}</NavLink></header><div className="workspace"><nav className="breadcrumbs" aria-label="Хлебные крошки"><NavLink to="/">ИСК</NavLink><span>/</span><span aria-current="page">{nav.find(([path])=>path===location.pathname)?.[1]||'Обзор'}</span></nav>{error&&<div role="alert"><Notice>{error}<button className="ml-3" onClick={()=>setError('')}>Закрыть</button></Notice></div>}{state?.job.running&&<div className="progress"><RefreshCw size={17} className="animate-spin"/>{state.job.message}</div>}{state?.job.error&&<Notice>{state.job.error}</Notice>}{loading?<Empty text="Загружаем приложение…" help="Проверяем локальное подключение"/>:<Routes><Route path="/" element={<Overview/>}/><Route path="/digitization" element={<DigitizationCached state={state} digi={digi} act={act}/>}/><Route path="/market-calculator" element={<MarketPage/>}/><Route path="/products" element={<Products/>}/><Route path="/stocks" element={<Stocks/>}/><Route path="/history" element={<History/>}/><Route path="/replenishment" element={<Replenishment inv={inv} hist={hist} api={api}/>}/><Route path="/plan" element={<Navigate to="/replenishment" replace/>}/><Route path="/forecast" element={<Navigate to="/replenishment" replace/>}/><Route path="/connection" element={<Connection/>}/><Route path="/logs" element={<Logs/>}/><Route path="*" element={<Navigate to="/" replace/>}/></Routes>}</div></main></div></Context.Provider>
+ async function logout(){try{await api('/auth/logout',{})}finally{setMe(null);clearData()}}
+ if(!authChecked||loading)return <div className="auth-screen"><div className="auth-card">Загружаем ИСК…</div></div>;
+ if(!me)return <LoginScreen onSuccess={reload}/>;
+ const navItems=me.user.role==='admin'?[...nav,['/admin/users','Пользователи',Users]]:nav;
+ return <Context.Provider value={{me,state,setState,inv,hist,digi,reload,act,setError}}>
+  <div className="shell"><aside className="sidebar"><div className="brand"><div className="brand-icon"><Boxes size={25}/></div><div className="isk-brand">ИСК<span>Интеллектуальная система контроля</span></div></div>
+   <nav>{navItems.map(([path,label,Icon])=><NavLink key={path} to={path} end={path==='/'} className={({isActive})=>'nav-item '+(isActive?'active':'')}><Icon size={19}/>{label}</NavLink>)}</nav>
+   <div className="sidebar-footer"><span className="status-dot"/>{me.user.username}<small>{me.user.role==='admin'?'Администратор':'Пользователь'} · сессия 30 дней</small></div>
+  </aside><main><header><span className="header-name">Интеллектуальная система контроля</span><div className="header-actions"><NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink><button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button></div></header>
+   <div className="workspace"><nav className="breadcrumbs" aria-label="Хлебные крошки"><NavLink to="/">ИСК</NavLink><span>/</span><span aria-current="page">{navItems.find(([path])=>path===location.pathname)?.[1]||'Обзор'}</span></nav>
+    {error&&<div role="alert"><Notice>{error}<button className="ml-3" onClick={()=>setError('')}>Закрыть</button></Notice></div>}
+    {state?.job.running&&<div className="progress"><RefreshCw size={17} className="animate-spin"/>{state.job.message}</div>}{state?.job.error&&<Notice>{state.job.error}</Notice>}
+    <Routes>
+     <Route path="/connection" element={<Connection/>}/>
+     <Route path="/admin/users" element={me.user.role==='admin'?<AdminUsers/>:<Navigate to="/" replace/>}/>
+     <Route path="/" element={<RequireAccount><Overview/></RequireAccount>}/>
+     <Route path="/digitization" element={<RequireAccount><DigitizationCached state={state} digi={digi} act={act}/></RequireAccount>}/>
+     <Route path="/market-calculator" element={<RequireAccount><MarketPage userId={me.user.id} isAdmin={me.user.role==='admin'}/></RequireAccount>}/>
+     <Route path="/products" element={<RequireAccount><Products/></RequireAccount>}/>
+     <Route path="/stocks" element={<RequireAccount><Stocks/></RequireAccount>}/>
+     <Route path="/history" element={<RequireAccount><History/></RequireAccount>}/>
+     <Route path="/replenishment" element={<RequireAccount><Replenishment inv={inv} hist={hist} api={api}/></RequireAccount>}/>
+     <Route path="/plan" element={<Navigate to="/replenishment" replace/>}/><Route path="/forecast" element={<Navigate to="/replenishment" replace/>}/>
+     <Route path="/logs" element={<RequireAccount><Logs/></RequireAccount>}/><Route path="*" element={<Navigate to="/" replace/>}/>
+    </Routes>
+   </div></main>
+  </div>
+ </Context.Provider>
 }
 createRoot(document.getElementById('root')).render(<BrowserRouter><App/></BrowserRouter>);
