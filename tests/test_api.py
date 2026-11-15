@@ -86,7 +86,7 @@ class AuthApiTests(unittest.TestCase):
         anonymous=TestClient(main.app)
         self.assertEqual(anonymous.get('/api/auth/me').status_code,401)
         self.assertEqual(anonymous.get('/api/inventory').status_code,401)
-        self.assertEqual(anonymous.get('/api/wb/search?query=кружка').status_code,401)
+        self.assertEqual(anonymous.get('/api/wb/search?query=mug').status_code,401)
         self.assertEqual(anonymous.post('/api/auth/login',json={
             'username':'admin','password':ADMIN_PASSWORD
         }).status_code,403)
