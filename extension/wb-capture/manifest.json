@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Market Calculate — WB Top 10",
+  "version": "0.1.0",
+  "description": "Сохраняет первые 10 товаров из поисковой выдачи Wildberries в JSON для Market Calculate.",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.wildberries.ru/*"
+      ],
+      "js": [
+        "wb-capture.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ]
+}

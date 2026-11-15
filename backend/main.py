@@ -14,6 +14,7 @@ from .ozon import Ozon, ApiError, MOSCOW_TZ
 from .storage import Store
 from .inventory import summarize, aggregate
 from .replenishment import calculate as replenishment_calculate
+from .market_search import router as market_router
 from .digitization import summarize as digitization_summarize
 from .digitization_cache import combine_digitization_days, download_digitization_day, requested_days
 
@@ -21,12 +22,15 @@ ROOT=Path(__file__).resolve().parents[1]
 DATA=Path(os.environ.get('OZON_FBO_DATA_DIR',str(Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'VKR_Ozon_FBO_Web')))
 DATA.mkdir(parents=True,exist_ok=True)
 store=Store(DATA/'inventory.sqlite3')
-app=FastAPI(title='Интелектуальная система контроля (ИСК)',version='0.1.0',docs_url=None,redoc_url=None)
-app.add_middleware(TrustedHostMiddleware,allowed_hosts=['127.0.0.1','localhost','testserver'])
+app=FastAPI(title='Интелектуальная система контроля (ИСК)',version='0.2.0',docs_url=None,redoc_url=None)
+# Defaults stay loopback-only. Configure explicit public hostnames behind HTTPS if deployed remotely.
+ALLOWED_HOSTS=[v.strip() for v in os.getenv('ISK_ALLOWED_HOSTS','127.0.0.1,localhost,testserver').split(',') if v.strip()]
+app.add_middleware(TrustedHostMiddleware,allowed_hosts=ALLOWED_HOSTS)
+app.include_router(market_router)
 sessions={}
 lock=threading.RLock()
-ALLOWED_ORIGINS={'http://127.0.0.1:8000','http://localhost:8000',
-                 'http://127.0.0.1:5173','http://localhost:5173'}
+ALLOWED_ORIGINS={v.strip() for v in os.getenv('ISK_ALLOWED_ORIGINS',
+    'http://127.0.0.1:8000,http://localhost:8000,http://127.0.0.1:5173,http://localhost:5173').split(',') if v.strip()}
 
 @app.middleware('http')
 async def local_guard(request,call_next):
@@ -90,7 +94,8 @@ def connect(body:Connect,request:Request,response:Response):
         token=secrets.token_urlsafe(32)
         sessions[token]={'client':client_id,'api':api,'roles':roles,'used':time.time(),
             'job':{'running':False,'message':'Кабинет подключён','error':None},'logs':[]}
-    response.set_cookie('fbo_session',token,httponly=True,samesite='strict',max_age=8*3600)
+    response.set_cookie('fbo_session',token,httponly=True,samesite='strict',max_age=8*3600,
+                        secure=os.getenv('ISK_SECURE_COOKIE','false').lower() in ('true','1','yes'))
     return {'client_id':client_id,'expires_at':roles.get('expires_at')}
 
 @app.post('/api/disconnect')

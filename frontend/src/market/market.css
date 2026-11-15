@@ -1,0 +1,35 @@
+/* Scoped styles for Market Calculate: does not replace ISK's global design system. */
+.mc{font-size:14px;color:#26352f}
+.mc .wrap{width:100%;max-width:100%;margin:0;padding:0}
+.mc .tabs,.mc .actions{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 15px}
+.mc .btn,.mc label.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid #d8e0dc;border-radius:8px;background:#174f40;color:white;padding:10px 15px;font-size:13px;font-weight:650;text-decoration:none;cursor:pointer}
+.mc .btn:hover,.mc label.btn:hover{background:#0f3d31}
+.mc .btn.secondary{background:#edf3ef;border-color:#d8e0dc;color:#284b3c}
+.mc .btn.selected{background:#174f40;color:white}
+.mc .panel{display:block;padding:20px;margin:14px 0;border-radius:12px;background:white;border:1px solid #e0e7e3;box-shadow:0 2px 8px #14352509}
+.mc h2{font-size:19px;font-weight:700;margin:0 0 16px}
+.mc h3{font-size:16px;font-weight:650;margin:14px 0}
+.mc .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.mc .field{min-width:0}
+.mc .field label{display:block;color:#596b62;font-size:12px;font-weight:650;margin:0 0 6px}
+.mc .field input,.mc .field select{width:100%;max-width:100%;min-width:0;border:1px solid #d8e0dc;background:#fff;border-radius:8px;padding:10px 12px}
+.mc .field input[type=range]{padding:0;accent-color:#174f40}
+.mc .muted{display:block;color:#6b8075;font-size:12px;line-height:1.55;margin:10px 0}
+.mc .notice{margin:12px 0;background:#fff8e7;border:1px solid #ead9ab;color:#715521;border-radius:9px;padding:12px;line-height:1.5}
+.mc .scroll{overflow-x:auto;width:100%}
+.mc table{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
+.mc th,.mc td{padding:11px 10px;border-bottom:1px solid #e5ebe7;text-align:left;vertical-align:middle}
+.mc th{background:#f6faf7;color:#5c6f63;font-size:12px;font-weight:700}
+.mc td input{min-width:95px;width:100%}
+.mc .flex{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.mc .flex.space{justify-content:space-between}
+.mc .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:13px}
+.mc .stat{background:#f6faf7;border:1px solid #e0e8e1;padding:17px;border-radius:12px}
+.mc .stat b{display:block;font-size:24px;margin:9px 0}
+.mc .stat .muted{line-height:1.7}
+.mc .green{color:#16845d}
+.mc .red{color:#c32929}
+.mc hr{border:0;border-top:1px solid #e0e9e4;margin:12px 0}
+.mc a{color:#1d694b}
+.mc .btn:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:640px){.mc .panel{padding:12px}.mc .grid{grid-template-columns:repeat(auto-fit,minmax(135px,1fr))}.mc th,.mc td{padding:8px}.mc .stats{grid-template-columns:1fr}}
