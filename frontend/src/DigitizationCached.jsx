@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useState} from 'react';
 import {CalendarDays, Database, RefreshCw, AlertTriangle, CircleCheck} from 'lucide-react';
 import Digitization from './Digitization';
 import './digitizationCached.css';
+import {getDigitizationPeriod} from './digitization-period.mjs';
 
 const iso=d=>{const local=new Date(d.getTime()-d.getTimezoneOffset()*60000);return local.toISOString().slice(0,10)};
 const dateTime=v=>v?new Date(v).toLocaleString('ru-RU'):'—';
@@ -14,14 +15,16 @@ function emptyPeriod(first,last){
 }
 
 export default function DigitizationCached({state,digi,act}){
- const defaults=useMemo(()=>{
-  const end=new Date();
-  const start=new Date(end);
-  start.setDate(start.getDate()-29);
-  return {from:digi?.since||iso(start),to:digi?.to||iso(end)};
- },[]);
+ const defaults=useMemo(()=>getDigitizationPeriod(30),[]);
  const [dateFrom,setDateFrom]=useState(defaults.from);
  const [dateTo,setDateTo]=useState(defaults.to);
+ const [selectedPreset,setSelectedPreset]=useState(30);
+ const choosePreset=days=>{
+  const range=getDigitizationPeriod(days);
+  setDateFrom(range.from);
+  setDateTo(range.to);
+  setSelectedPreset(days);
+ };
  const [periodDigi,setPeriodDigi]=useState(digi?.metrics?digi:null);
  const [cacheState,setCacheState]=useState({
   loading:false,hit:Boolean(digi?.metrics),daily:false,updatedAt:digi?.at||null,error:'',coverage:{}
@@ -98,10 +101,19 @@ export default function DigitizationCached({state,digi,act}){
    </div>
    <section className="digitization-period-card" aria-label="Период отчёта">
     <div className="digitization-period-caption"><CalendarDays size={16}/><span>Период отчёта</span></div>
+    <div className="digitization-period-presets" role="group" aria-label="Быстрый выбор периода">
+     {[7,14,30].map(days=><button
+      type="button"
+      key={days}
+      className={`digitization-period-preset ${selectedPreset===days?'active':''}`}
+      aria-pressed={selectedPreset===days}
+      onClick={()=>choosePreset(days)}
+     >{days} дней</button>)}
+    </div>
     <div className="digitization-period-row">
-     <label><span>С</span><input aria-label="Дата начала" type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></label>
+     <label><span>С</span><input aria-label="Дата начала" type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setSelectedPreset(null)}}/></label>
      <span className="digitization-period-arrow">→</span>
-     <label><span>По</span><input aria-label="Дата окончания" type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/></label>
+     <label><span>По</span><input aria-label="Дата окончания" type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setSelectedPreset(null)}}/></label>
      <button className="primary digitization-refresh" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={refresh}>
       <RefreshCw size={15} className={state?.job.running?'animate-spin':''}/>{buttonText}
      </button>
@@ -111,7 +123,7 @@ export default function DigitizationCached({state,digi,act}){
      <span>{statusText}</span>
      {cacheState.updatedAt&&<small>обновлено {dateTime(cacheState.updatedAt)}</small>}
     </div>
-    <p className="digitization-period-help">Смена дат читает только SQLite. Ozon вызывается только по кнопке: для нового диапазона догружаются отсутствующие дни, а для уже сохранённого диапазона выполняется явное обновление.</p>
+    <p className="digitization-period-help">При входе выбран последний завершённый месяц. Кнопки 7 / 14 / 30 дней заканчиваются вчерашним днём и меняют только локальный период в SQLite. Ozon вызывается только по кнопке обновления.</p>
    </section>
   </div>
 
