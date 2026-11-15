@@ -33,3 +33,14 @@
 .mc a{color:#1d694b}
 .mc .btn:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:640px){.mc .panel{padding:12px}.mc .grid{grid-template-columns:repeat(auto-fit,minmax(135px,1fr))}.mc th,.mc td{padding:8px}.mc .stats{grid-template-columns:1fr}}
+
+.mc .mc-editor{background:#fbfdfb;border-style:dashed}
+.mc .mc-editor h3{margin:0}
+.mc .mc-editor .actions{margin:14px 0 0}
+.mc .actions .muted{margin:0}
+.mc td input[aria-label="Название товара"],.mc td input[aria-label="Артикул"]{display:block;min-width:150px;margin:0 0 5px}
+.mc td input[aria-label="Артикул"]{font-size:12px;color:#596b62}
+.mc td select{min-width:150px;border:1px solid #d8e0dc;border-radius:8px;background:#fff;padding:9px}
+.mc .btn.secondary{white-space:nowrap}
+.mc .panel .panel{margin:14px 0 0;box-shadow:none}
+@media(max-width:640px){.mc .mc-editor .grid{grid-template-columns:repeat(auto-fit,minmax(145px,1fr))}.mc .actions .muted{width:100%}}
