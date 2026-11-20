@@ -37,3 +37,24 @@
 .stock-history-svg-wrap{width:100%;overflow:hidden}
 .stock-history-svg{display:block;width:100%;height:auto;min-height:180px}
 @media(max-width:720px){.stock-history-chart .panel-title{align-items:flex-start}.stock-history-chart .panel-title select{max-width:48%;font-size:11px;padding:8px}.stock-history-legend{gap:10px}.stock-history-legend span{font-size:10px}.stock-history-svg{min-height:150px}}
+
+.sales-chart{margin-top:18px}
+.sales-chart .panel-title{align-items:center;margin-bottom:12px}
+.sales-chart-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sales-chart-controls .segmented button{min-width:48px}
+.sales-chart-legend{display:flex;align-items:center;gap:22px;margin:8px 0 10px;color:#627487;font-size:11px}
+.sales-chart-legend span,.sales-chart-tooltip span{display:inline-flex;align-items:center;gap:7px}
+.sales-chart-legend i,.sales-chart-tooltip i{display:inline-block;width:17px;height:3px;border-radius:4px}
+.sales-chart-legend i.ordered,.sales-chart-tooltip i.ordered{background:#168cf0}
+.sales-chart-legend i.delivered,.sales-chart-tooltip i.delivered{background:#9bd4ff}
+.sales-chart-wrap{position:relative;width:100%;overflow:hidden}
+.sales-chart-svg{display:block;width:100%;height:auto;min-height:180px;overflow:visible}
+.sales-chart-svg g[role=button]{cursor:crosshair;outline:none}
+.sales-chart-svg g[role=button]:focus circle{stroke-width:4}
+.sales-chart-tooltip{position:absolute;z-index:3;top:8px;transform:translateX(-50%);min-width:185px;padding:13px 16px;background:#263747;color:#fff;border-radius:10px;box-shadow:0 8px 24px #172b3b2b;font-size:12px;pointer-events:none}
+.sales-chart-tooltip strong{display:block;margin-bottom:9px;font-size:12px;font-weight:600}
+.sales-chart-tooltip>div{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:5px 0}
+.sales-chart-tooltip>div+div{border-top:1px solid #ffffff20}
+.sales-chart-tooltip span{color:#d9e5ee}
+.sales-chart-tooltip b{white-space:nowrap;font-weight:650}
+@media(max-width:720px){.sales-chart .panel-title{align-items:flex-start}.sales-chart-controls{width:100%;justify-content:space-between}.sales-chart-controls .segmented{flex:1;justify-content:space-between}.sales-chart-controls .segmented button{min-width:0;padding:7px 8px}.sales-chart-svg{min-height:150px}.sales-chart-tooltip{min-width:155px;padding:10px 12px;font-size:11px}}
