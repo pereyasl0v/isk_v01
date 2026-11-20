@@ -263,6 +263,6 @@ export default function Digitization({state,digi,act}){
 
 
 
-  <section className="panel"><div className="panel-title"><h3>Типы начислений Ozon</h3><span className="badge">Диагностика</span></div><SimpleTable rows={operations} empty="Нет начислений" columns={[["name","Тип начисления"],["truestats_metric","Метрика TrueStats"],["count","Строк"],["amount","Сумма итого",money]]}/></section>
+  <section className="panel"><div className="panel-title"><h3>Начисления Ozon по типам операций</h3></div><SimpleTable rows={operations} empty="Нет начислений" columns={[["name","Официальное название операции"],["count","Строк"],["amount","Сумма итого",money]]}/></section>
  </>
 }
