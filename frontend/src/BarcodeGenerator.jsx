@@ -453,10 +453,12 @@ export default function BarcodeGenerator(){
  const updateValue = (key,value) => {
   setValues(current=>({...current,[key]:value}));
   setExportSuccess(false);
+  setArchiveNotice('');
  };
  const updateEnabled = (key,value) => {
   setEnabled(current=>({...current,[key]:value}));
   setExportSuccess(false);
+  setArchiveNotice('');
  };
  const reset = () => {
   setValues(INITIAL_VALUES);
@@ -550,9 +552,9 @@ export default function BarcodeGenerator(){
 
     <section className="barcode-card barcode-code-card">
      <div className="barcode-card-heading"><div><h3>Штрихкод EAN-13</h3><p>Введите 12 цифр — контрольная цифра рассчитается автоматически, либо укажите все 13 цифр.</p></div></div>
-     <label className="barcode-print-toggle"><input type="checkbox" checked={barcodeEnabled} onChange={event=>{setBarcodeEnabled(event.target.checked);setExportError('');setExportSuccess(false)}}/><span>Печатать штрихкод на этикетке</span></label>
+     <label className="barcode-print-toggle"><input type="checkbox" checked={barcodeEnabled} onChange={event=>{setBarcodeEnabled(event.target.checked);setExportError('');setExportSuccess(false);setArchiveNotice('')}}/><span>Печатать штрихкод на этикетке</span></label>
      <label className="barcode-code-label" htmlFor="barcode-ean-input">Код EAN-13</label>
-     <input id="barcode-ean-input" className="barcode-code-input" inputMode="numeric" autoComplete="off" maxLength={13} value={code} onChange={event=>{setCode(event.target.value.replace(/\D/g,'').slice(0,13));setExportError('');setExportSuccess(false)}} placeholder="Введите 12 или 13 цифр" disabled={!barcodeEnabled}/>
+     <input id="barcode-ean-input" className="barcode-code-input" inputMode="numeric" autoComplete="off" maxLength={13} value={code} onChange={event=>{setCode(event.target.value.replace(/\D/g,'').slice(0,13));setExportError('');setExportSuccess(false);setArchiveNotice('')}} placeholder="Введите 12 или 13 цифр" disabled={!barcodeEnabled}/>
      {codeStatus&&<div className={'barcode-code-status '+codeStatus.kind}>{codeStatus.kind==='valid'?<CheckCircle2 size={16}/>:<AlertCircle size={16}/>}<span>{codeStatus.text}</span></div>}
      <p className="barcode-code-note"><AlertCircle size={14}/> Проверка контрольной цифры не регистрирует и не выдаёт номер GS1. Используйте код, присвоенный вашему товару. Данные этикетки обрабатываются в браузере и не отправляются на сервер.</p>
     </section>
@@ -563,7 +565,7 @@ export default function BarcodeGenerator(){
     <div className="barcode-size-settings">
      <span>Размер этикетки, мм</span>
      <div className="barcode-size-buttons" role="group" aria-label="Размер этикетки">
-      {SIZE_OPTIONS.map(option=><button key={option.key} type="button" className={sizeKey===option.key?'selected':''} aria-pressed={sizeKey===option.key} onClick={()=>setSizeKey(option.key)}>{option.label}</button>)}
+      {SIZE_OPTIONS.map(option=><button key={option.key} type="button" className={sizeKey===option.key?'selected':''} aria-pressed={sizeKey===option.key} onClick={()=>{setSizeKey(option.key);setArchiveNotice('')}}>{option.label}</button>)}
      </div>
     </div>
     <div className="barcode-preview-stage">
@@ -573,13 +575,13 @@ export default function BarcodeGenerator(){
     <div className="barcode-print-settings">
      <div className="barcode-setting-row">
       <label htmlFor="barcode-text-size">Размер текста</label>
-      <div className="barcode-range-control"><input id="barcode-text-size" type="range" min="0.85" max="2.4" step="0.05" value={textSize} onChange={event=>setTextSize(Number(event.target.value))}/><output>{renderMeta.effectiveFontMm.toFixed(2)} мм</output></div>
+      <div className="barcode-range-control"><input id="barcode-text-size" type="range" min="0.85" max="2.4" step="0.05" value={textSize} onChange={event=>{setTextSize(Number(event.target.value));setArchiveNotice('')}}/><output>{renderMeta.effectiveFontMm.toFixed(2)} мм</output></div>
      </div>
      <div className="barcode-setting-row barcode-marks-row">
       <span>Маркировка</span>
       <div className="barcode-mark-options">
-       <label><input type="checkbox" checked={showEac} onChange={event=>setShowEac(event.target.checked)}/> EAC</label>
-       <label><input type="checkbox" checked={showRst} onChange={event=>setShowRst(event.target.checked)}/> РСТ</label>
+       <label><input type="checkbox" checked={showEac} onChange={event=>{setShowEac(event.target.checked);setArchiveNotice('')}}/> EAC</label>
+       <label><input type="checkbox" checked={showRst} onChange={event=>{setShowRst(event.target.checked);setArchiveNotice('')}}/> РСТ</label>
       </div>
      </div>
     </div>
@@ -606,7 +608,7 @@ export default function BarcodeGenerator(){
     </div>
     <label className="barcode-archive-search">
      <Search size={18}/>
-     <input type="search" value={archiveQuery} onChange={event=>setArchiveQuery(event.target.value)} placeholder="Поиск по наименованию товара…" autoFocus/>
+     <input type="search" value={archiveQuery} onChange={event=>setArchiveQuery(event.target.value)} placeholder="Поиск по наименованию товара…" maxLength={100} autoFocus/>
     </label>
     <div className="barcode-archive-list" aria-live="polite">
      {archiveLoading&&<div className="barcode-archive-state">Загружаем архив…</div>}
