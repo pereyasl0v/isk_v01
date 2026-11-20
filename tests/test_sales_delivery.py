@@ -53,10 +53,21 @@ class DeliveryAccountingTests(unittest.TestCase):
         data=checked()
         data['2026-11-19']['FBS']={'ok':False,'postings':[],'error':'403'}
         result=build_sales_with_deliveries(ordered(),data)
-        self.assertIsNone(result['rows'][0]['delivered_units'])
+        self.assertEqual(result['rows'][0]['delivered_units'],2)
+        self.assertTrue(result['rows'][0]['delivery_partial'])
         self.assertEqual(result['rows'][1]['delivered_units'],4)
         self.assertIn('FBS',result['delivered_error'])
         self.assertEqual(result['delivery_incomplete_days'],['2026-11-19'])
+        self.assertEqual(result['delivery_label'],'Доставлено')
+
+    def test_two_failed_schemes_leave_unknown_not_zero(self):
+        data=checked()
+        data['2026-11-19']['FBO']={'ok':False,'postings':[],'error':'403'}
+        data['2026-11-19']['FBS']={'ok':False,'postings':[],'error':'403'}
+        result=build_sales_with_deliveries(ordered(),data)
+        self.assertIsNone(result['rows'][0]['delivered_units'])
+        self.assertFalse(result['rows'][0]['delivery_partial'])
+        self.assertEqual(result['rows'][1]['delivered_units'],4)
 
     def test_verified_webhook_date_moves_posting_without_duplication(self):
         data=checked()
