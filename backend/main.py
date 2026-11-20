@@ -481,6 +481,7 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
             else:
                 history_data=s['api'].postings(days,progress)
                 saved_history=store.save_history(s['client'],history_data)
+                refresh_delivery_from_events(s['client'])
                 for error in history_data.get('errors') or []:
                     progress('Часть истории не обновлена: '+str(error))
                 progress(
@@ -512,8 +513,19 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
 def sync(request:Request):
     return launch(current(request),'inventory')
 
+def refresh_delivery_from_events(client):
+    previous=store.latest(client,'sales_analytics')
+    if previous and previous.get('rows') and previous.get('delivery_days'):
+        updated=build_sales_with_deliveries(
+            previous,previous['delivery_days'],store.delivery_events(client),
+            store.latest(client,'history'),
+        )
+        store.save(client,'sales_analytics',updated)
+
+
 def _ozon_webhook_signature(account_id):
-    if not ENCRYPTION_KEY:
+    import re
+    if not ENCRYPTION_KEY or not re.fullmatch('[0-9a-f]{32}',str(account_id)):
         return None
     return hmac.new(
         ENCRYPTION_KEY, b'isk-ozon-push-fbo-v1:'+str(account_id).encode('ascii'),
@@ -525,6 +537,10 @@ def _ozon_webhook_signature(account_id):
 def ozon_push_info(request:Request):
     s=current(request)
     public_url=os.getenv('ISK_PUBLIC_URL','').strip().rstrip('/')
+    if not public_url:
+        candidates=[origin for origin in ALLOWED_ORIGINS if origin.startswith('https://')]
+        if len(candidates)==1:
+            public_url=candidates[0].rstrip('/')
     available=public_url.startswith('https://') and ENCRYPTION_KEY is not None
     return {
         'available':available,
@@ -577,9 +593,12 @@ async def ozon_fbo_webhook(account_id:str,signature:str,request:Request):
         delivered_at=delivery_at.astimezone(timezone.utc).isoformat()
     except (ValueError,TypeError):
         raise HTTPException(422,'У события отсутствует корректная дата доставки.') from None
-    store.save_delivery_event('account:'+account_id,uid,posting,delivered_at)
-    # The durable event is reconciled with SKU quantities from posting history
-    # at the next explicit/automatic sync; never fabricate a product quantity.
+    client='account:'+account_id
+    inserted=store.save_delivery_event(client,uid,posting,delivered_at)
+    if inserted:
+        refresh_delivery_from_events(client)
+    # Product quantities still come from trusted posting API data. If they
+    # have not yet been loaded, the event stays durable until history sync.
     return {'ok':True}
 
 
