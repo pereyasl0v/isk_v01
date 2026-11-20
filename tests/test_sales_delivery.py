@@ -130,6 +130,7 @@ class DeliveryAccountingTests(unittest.TestCase):
         })
         self.assertIsNone(result['rows'][0]['delivered_units'])
         self.assertIsNone(result['rows'][1]['delivered_units'])
+        self.assertTrue(all(row['delivered_units'] is None for row in result['by_sku']))
         self.assertFalse(result['delivered_available'])
 
     def test_successful_older_days_are_not_fetched_again(self):

@@ -53,7 +53,7 @@ function SalesHistoryChart({data,state,act,inv}){
   const selected=selectedDays.get(day.date);
   return {date:day.date,ordered_units:selected?.ordered_units??0,
    ordered_revenue:selected?.ordered_revenue??0,
-   delivered_units:day.delivered_units===null?null:(selected?.delivered_units??0),
+   delivered_units:day.delivered_units===null||(day.delivery_partial&&selected?.delivered_units==null)?null:(selected?.delivered_units??0),
    delivery_partial:Boolean(day.delivery_partial)};
  });
  const values=points.flatMap(p=>[Number(p.ordered_units||0),...(data?.delivered_available&&p.delivered_units!==null?[Number(p.delivered_units)]:[])]);
@@ -112,7 +112,7 @@ function SalesHistoryChart({data,state,act,inv}){
      <div><span><i className="ordered"/>Заказано</span><b>{num(hoveredPoint.ordered_units)} шт. · {num(hoveredPoint.ordered_revenue)} ₽</b></div>
      {data?.delivered_available&&<div><span><i className="delivered"/>{data.delivery_label||'Доставлено'}</span><b>{hoveredPoint.delivered_units===null?'Нет данных':num(hoveredPoint.delivered_units)+' шт.'}{hoveredPoint.delivery_partial?' · неполные данные':''}</b></div>}
     </div>}
-    <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Количество заказанных и проданных товаров по дням">
+    <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Количество заказанных и доставленных товаров по дням">
      {[min,(min+max)/2,max].map(value=><g key={value}><line x1={left} x2={width-right} y1={y(value)} y2={y(value)} stroke="#d8e2ed" strokeDasharray="2 5" strokeWidth="1"/>{(value!==0||min<0)&&<text x={width-right+8} y={y(value)+4} textAnchor="start" fontSize="12" fill="#8192a4">{Math.round(value)}</text>}</g>)}
      <defs><linearGradient id="ozon-delivery-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9bd7ff" stopOpacity=".52"/><stop offset="100%" stopColor="#cceaff" stopOpacity=".20"/></linearGradient></defs>
      {data?.delivered_available&&deliveredPaths.map((segment,index)=><g key={index}><path d={segment.area} fill="url(#ozon-delivery-fill)"/><path d={segment.line} fill="none" stroke="#a2d8ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></g>)}
@@ -127,7 +127,7 @@ function SalesHistoryChart({data,state,act,inv}){
     </svg>
    </div>
   </>}
-  <p className="muted mt-3">«Доставлено» — количество единиц в отправлениях со статусом доставки. FBS берётся из API отправлений, FBO — из подтверждённых событий Ozon Push. Это не финансовый выкуп; неполный охват схем отмечается отдельно.</p>
+  <p className="muted mt-3">«Доставлено» — количество единиц в отправлениях со статусом доставки. Для FBS используется фильтр статуса delivered (фактическая дата учитывается, если Ozon её вернул); для FBO — подтверждённые события Ozon Push. Это не финансовый выкуп; неполный охват схем отмечается отдельно.</p>
   <p className="muted mt-1">Обновлено: {date(data?.at)}{data?.date_from&&` · период ${fmtDay(data.date_from)}–${fmtDay(data.date_to)}`}</p>
  </section>
 }

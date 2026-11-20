@@ -1,8 +1,9 @@
 """Combine daily Ozon orders with delivery events from FBS API and FBO Push.
 
-The delivered series counts product units, not postings. FBS dates are sourced
-from the delivered-status API filter; FBO delivery dates are accepted only from
-verified Ozon Push events. Missing scheme coverage is explicitly marked partial.
+The delivered series counts product units, not postings. FBS uses the current
+'delivered' status and last-status-change filter, checking fact_delivery_date
+when Ozon returns it; otherwise the day is a historical proxy. FBO dates come
+only from verified Ozon Push events. Missing scheme coverage is marked partial.
 """
 from datetime import date, datetime, timedelta, timezone
 
