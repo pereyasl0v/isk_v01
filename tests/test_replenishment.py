@@ -45,6 +45,12 @@ class ReplenishmentTests(unittest.TestCase):
   r=calculate(i,h,7)
   self.assertTrue(r['warnings'])
   self.assertEqual(r['items'][0]['warehouses'][0]['state'],'unknown_rate')
+ def test_fbs_postings_do_not_reduce_fbo_stock_forecast(self):
+  i,h=sample()
+  h['postings'].append(posting('fbs-order',1,70,'delivered') | {'scheme':'FBS'})
+  p=calculate(i,h,7)['items'][0]
+  self.assertEqual(p['total']['rate'],3)
+  self.assertEqual([w['rate'] for w in p['warehouses']],[2,1])
  def test_cancelled_and_duplicates_not_counted(self):
   i,h=sample();h['postings']+=[posting('c',1,100,'cancelled'),posting('a',1,14)]
   self.assertEqual(calculate(i,h,7)['items'][0]['total']['rate'],3)
