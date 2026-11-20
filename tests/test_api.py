@@ -130,6 +130,35 @@ class AuthApiTests(unittest.TestCase):
         missing=dict(event,changed_state_date='missing')
         self.assertEqual(self.client.post(path,json=missing).status_code,422)
 
+    def test_sales_api_uses_saved_financial_days_not_premium_delivery(self):
+        self.connect()
+        auth=self.client.get('/api/auth/me').json()
+        scope='account:'+auth['active_account_id']
+        main.store.save(scope,'sales_analytics',{
+            'date_from':'2026-11-18','date_to':'2026-11-19',
+            'rows':[
+                {'date':'2026-11-18','ordered_units':2,'ordered_revenue':200.0},
+                {'date':'2026-11-19','ordered_units':3,'ordered_revenue':300.0},
+            ],
+            'by_sku':[
+                {'date':'2026-11-19','sku':'100','ordered_units':3,'ordered_revenue':300.0},
+            ],
+        })
+        main.store.save_digitization_day(scope,'2026-11-19',{'from':'test'})
+        financial={
+            'metrics':{'sales_quantity':2,'sales_amount':150},
+            'products':[{'sku':'100','sales_quantity':2,'sales_amount':150}],
+        }
+        with patch('backend.sales_finance.summarize_digitization',return_value=financial):
+            res=self.client.get('/api/sales')
+        self.assertEqual(res.status_code,200,res.text)
+        data=res.json()
+        self.assertEqual(data['rows'][1]['sold_units'],2)
+        self.assertEqual(data['by_sku'][0]['sold_units'],2)
+        self.assertIsNone(data['rows'][0]['sold_units'])
+        self.assertEqual(data['financial_sales_missing_days'],['2026-11-18'])
+        self.assertNotIn('delivered_units',data['rows'][1])
+
     def test_session_is_persistent_and_30_days(self):
         cookie=self.client.cookies.get('isk_session')
         self.assertTrue(cookie)
