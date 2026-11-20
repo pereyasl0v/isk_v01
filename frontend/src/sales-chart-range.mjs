@@ -1,3 +1,5 @@
+import {getDigitizationPeriod} from './digitization-period.mjs';
+
 /**
  * Visible, evenly spaced dates on the Ozon order chart.
  * Reserve a full step before the final tick so the last two labels never overlap.
@@ -46,5 +48,25 @@ export function salesRangeTotals(points, first, last) {
     deliveredUnits,
     deliveredKnownDays,
     deliveryComplete: !deliveryPartial && deliveredKnownDays === selected.length
+  };
+}
+
+/**
+ * Show the same completed Moscow reporting days as Digitization, plus today.
+ * A chart labeled "90 дн." therefore contains 91 daily points.
+ * Do not silently accept a stale 90-point cache as a complete window.
+ */
+export function salesChartWindow(rows, days, now = new Date()) {
+  const {from, to: lastClosed} = getDigitizationPeriod(days, now);
+  const current = new Date(lastClosed + 'T00:00:00Z');
+  current.setUTCDate(current.getUTCDate() + 1);
+  const to = current.toISOString().slice(0, 10);
+  const points = Array.isArray(rows)
+    ? rows.filter(row => typeof row?.date === 'string' && row.date >= from && row.date <= to)
+    : [];
+  const uniqueDays = new Set(points.map(row => row.date));
+  return {
+    from, to, points,
+    complete: points.length === days + 1 && uniqueDays.size === days + 1
   };
 }
