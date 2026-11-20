@@ -126,6 +126,11 @@ class PreliminaryCostCalculationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             clean_preliminary_cost(draft)
 
+        draft = sample_draft()
+        draft["products"][0]["volumeM3"] = 0.05
+        with self.assertRaises(ValueError):
+            clean_preliminary_cost(draft)
+
 
 class PreliminaryCostArchiveApiTests(unittest.TestCase):
     def setUp(self):
