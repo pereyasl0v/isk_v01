@@ -1,12 +1,13 @@
 import React, {useEffect, useState, createContext, useContext, useRef} from 'react';
 import {createRoot} from 'react-dom/client';
 import {BrowserRouter, NavLink, Routes, Route, Navigate, useNavigate} from 'react-router-dom';
-import {Boxes, LayoutDashboard, Package, Warehouse, Truck, Calculator, Plug, ListChecks, RefreshCw, ArrowUpRight, Search, Download, CircleCheck, AlertCircle, ArrowRight, LogOut, BarChart3, Plus, Users, ShieldCheck} from 'lucide-react';
+import {Boxes, LayoutDashboard, Package, Warehouse, Truck, Calculator, Plug, ListChecks, RefreshCw, ArrowUpRight, Search, Download, CircleCheck, AlertCircle, ArrowRight, LogOut, BarChart3, Plus, Users, ShieldCheck, Barcode} from 'lucide-react';
 import './style.css';
 import Replenishment from './Replenishment';
 import MarketPage from './market';
 import DigitizationCached from './DigitizationCached';
 import ProductDetails from './ProductDetails';
+import BarcodeGenerator from './BarcodeGenerator';
 import {statusLabel,roleLabel,groupStocks} from './presentation';
 import {salesChartWindow,salesRangeTotals,salesTickIndexes} from './sales-chart-range.mjs';
 import {getDigitizationPeriod} from './digitization-period.mjs';
@@ -386,7 +387,7 @@ function AdminUsers(){
   </section>
  </div>
 }
-const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/market-calculator','Калькулятор WB / Ozon',Calculator],['/stocks','Остатки и история Ozon',Warehouse],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
+const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/barcodes','Штрихкоды',Barcode],['/market-calculator','Калькулятор WB / Ozon',Calculator],['/stocks','Остатки и история Ozon',Warehouse],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
 function RequireAccount({children}){const {me}=useApp();return me?.active_account_id?children:<Navigate to="/connection" replace/>}
 function App(){
  const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);const [stockHistory,setStockHistory]=useState(null);const [sales,setSales]=useState(null);
@@ -425,6 +426,7 @@ function App(){
      <Route path="/admin/users" element={me.user.role==='admin'?<AdminUsers/>:<Navigate to="/" replace/>}/>
      <Route path="/" element={<RequireAccount><Overview/></RequireAccount>}/>
      <Route path="/digitization" element={<RequireAccount><DigitizationCached state={state} digi={digi} act={act}/></RequireAccount>}/>
+     <Route path="/barcodes" element={<BarcodeGenerator/>}/>
      <Route path="/market-calculator" element={<RequireAccount><MarketPage userId={me.user.id} isAdmin={me.user.role==='admin'}/></RequireAccount>}/>
      <Route path="/products" element={<Navigate to="/" replace/>}/>
      <Route path="/stocks" element={<RequireAccount><Stocks/></RequireAccount>}/>
