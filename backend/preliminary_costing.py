@@ -93,6 +93,8 @@ def clean_preliminary_cost(raw: Any) -> dict:
         }
         for field in PRODUCT_NUMBER_FIELDS:
             clean[field] = _number(item.get(field), field)
+        if 0 < clean["volumeM3"] < 0.1:
+            raise ValueError(f"Объём товара «{name}» в файле «2» указан минимум 0,1 м³.")
         if clean["dutyPercent"] > 100:
             raise ValueError(f"Пошлина для товара «{name}» не может быть больше 100%.")
         products.append(clean)
