@@ -1,9 +1,9 @@
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
-from backend.sales_delivery import build_sales_with_deliveries, delivered_snapshot, local_day
+from backend.sales_delivery import MOSCOW, build_sales_with_deliveries, delivered_snapshot, local_day
 from backend.storage import Store
 
 
@@ -48,6 +48,8 @@ class DeliveryAccountingTests(unittest.TestCase):
         self.assertEqual(by_sku[('102','2026-11-19')]['delivered_units'],1)
         self.assertEqual(by_sku[('101','2026-11-20')]['delivered_units'],4)
         self.assertEqual(result['delivery_incomplete_days'],[])
+        self.assertTrue(result['delivery_complete'])
+        self.assertTrue(result['delivered_available'])
 
     def test_failed_scheme_marks_missing_day_not_zero(self):
         data=checked()
@@ -58,7 +60,9 @@ class DeliveryAccountingTests(unittest.TestCase):
         self.assertEqual(result['rows'][1]['delivered_units'],4)
         self.assertIn('FBS',result['delivered_error'])
         self.assertEqual(result['delivery_incomplete_days'],['2026-11-19'])
-        self.assertEqual(result['delivery_label'],'Доставлено')
+        self.assertFalse(result['delivery_complete'])
+        self.assertEqual(result['delivery_label'],'Доставлено · неполные данные')
+        self.assertFalse(result['delivery_complete'])
 
     def test_two_failed_schemes_leave_unknown_not_zero(self):
         data=checked()
@@ -95,6 +99,39 @@ class DeliveryAccountingTests(unittest.TestCase):
     def test_moscow_day_uses_time_zone_instead_of_utc_date(self):
         self.assertEqual(local_day('2026-11-19T22:30:00Z'),'2026-11-20')
         self.assertIsNone(local_day('2026-11-19T22:30:00'))
+
+    def test_historical_fbo_is_not_queried_through_unsupported_posting_filter(self):
+        class API:
+            def __init__(self):
+                self.calls=[]
+            def delivered_postings_for_day(self,day,scheme):
+                self.calls.append(scheme)
+                if scheme=='FBO':
+                    raise AssertionError('FBO must use Push, not posting date filters')
+                return []
+
+        api=API()
+        today=datetime.now(MOSCOW).date()
+        result=delivered_snapshot(api,today,today,None,lambda _:None)
+        self.assertEqual(api.calls,['FBS'])
+        self.assertFalse(result[today.isoformat()]['FBO']['ok'])
+        self.assertTrue(result[today.isoformat()]['FBS']['ok'])
+        self.assertIn('Ozon Push',result[today.isoformat()]['FBO']['error'])
+
+    def test_partial_day_with_zero_available_units_is_unknown_not_zero(self):
+        result=build_sales_with_deliveries(ordered(),{
+            '2026-11-19':{
+                'FBO':{'ok':False,'postings':[],'error':'Push not configured'},
+                'FBS':{'ok':True,'postings':[]},
+            },
+            '2026-11-20':{
+                'FBO':{'ok':False,'postings':[],'error':'Push not configured'},
+                'FBS':{'ok':True,'postings':[]},
+            },
+        })
+        self.assertIsNone(result['rows'][0]['delivered_units'])
+        self.assertIsNone(result['rows'][1]['delivered_units'])
+        self.assertFalse(result['delivered_available'])
 
     def test_successful_older_days_are_not_fetched_again(self):
         class API:

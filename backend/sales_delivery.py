@@ -1,14 +1,12 @@
-"""Combine free daily Ozon order analytics and shipment delivery events.
+"""Combine daily Ozon orders with delivery events from FBS API and FBO Push.
 
-The delivered series counts *units*, not postings. It uses the last-status-change
-date filter only when Ozon confirms the current status is delivered. These are
-historical approximations when later status transitions could have occurred;
-verified push event timestamps take precedence where known.
+The delivered series counts product units, not postings. FBS dates are sourced
+from the delivered-status API filter; FBO delivery dates are accepted only from
+verified Ozon Push events. Missing scheme coverage is explicitly marked partial.
 """
 from datetime import date, datetime, timedelta, timezone
 
-# Moscow stays at UTC+03:00 for the 2026 Ozon reporting periods. Avoid
-# dependency on OS tzdata in the read-only slim Docker container.
+# Moscow stays at UTC+03:00 for Ozon reporting periods. Avoid OS tzdata.
 MOSCOW=timezone(timedelta(hours=3))
 SCHEMES=('FBO','FBS')
 
@@ -33,16 +31,28 @@ def iter_days(first,last):
 
 
 def delivered_snapshot(api,first,last,previous,progress):
-    """Refresh today/previous 2 days, reuse successfully checked older days."""
+    """Load FBS delivered postings by day; FBO history is Push-only."""
     cached=(previous or {}).get('delivery_days') or {}
     today=datetime.now(MOSCOW).date()
     result={}
+    total=(last-first).days+1
     for index,day in enumerate(iter_days(first,last),1):
         old=cached.get(day) or {}
         current_date=date.fromisoformat(day)
         result[day]={}
         for scheme in SCHEMES:
             record=old.get(scheme) or {}
+            if scheme=='FBO':
+                # FBO posting-list filters use creation dates, not delivery
+                # dates. Never fabricate a delivery date from those filters.
+                result[day][scheme]=record if record.get('ok') else {
+                    'ok':False,'postings':[],
+                    'error':(
+                        'Исторические доставки FBO недоступны через список API; '
+                        'новые подтверждённые события поступают через Ozon Push.'
+                    ),
+                }
+                continue
             if record.get('ok') and current_date < today-timedelta(days=2):
                 result[day][scheme]=record
                 continue
@@ -50,12 +60,10 @@ def delivered_snapshot(api,first,last,previous,progress):
                 postings=api.delivered_postings_for_day(current_date,scheme)
                 record={'ok':True,'postings':postings}
             except Exception as exc:
-                # Preserve the most recent valid data if a refresh fails,
-                # but explicitly mark the failed date as unverified.
                 record={'ok':False,'postings':[],'error':str(exc)[:400]}
             result[day][scheme]=record
-        if index==1 or index%5==0 or index==(last-first).days+1:
-            progress(f'Доставки Ozon: проверено {index} дней из {(last-first).days+1}.')
+        if index==1 or index%5==0 or index==total:
+            progress(f'Доставки Ozon: проверено {index} дней из {total}.')
     return result
 
 
@@ -68,7 +76,7 @@ def _products_by_posting(history):
 
 
 def build_sales_with_deliveries(orders,delivery_days,events=(),history=None):
-    """Count only confirmed shipment units; identify partial FBO/FBS coverage."""
+    """Count delivered product units and expose incomplete FBO/FBS coverage."""
     dates=[item['date'] for item in orders.get('rows') or []]
     date_set=set(dates)
     post_products=_products_by_posting(history)
@@ -77,6 +85,7 @@ def build_sales_with_deliveries(orders,delivery_days,events=(),history=None):
     missing=set()
     partial=set()
     scope=set()
+
     for day in dates:
         slot=(delivery_days or {}).get(day) or {}
         schemes={scheme for scheme in SCHEMES if (slot.get(scheme) or {}).get('ok')}
@@ -98,6 +107,8 @@ def build_sales_with_deliveries(orders,delivery_days,events=(),history=None):
                 post_products.setdefault(key,products)
         fetched[day]=collected
 
+    # FBO Push gives the status-transition timestamp. Product rows come from
+    # webhook enrichment or the already saved posting history.
     verified={}
     for event in events or ():
         key=(str(event.get('scheme') or 'FBO').upper(),
@@ -107,8 +118,7 @@ def build_sales_with_deliveries(orders,delivery_days,events=(),history=None):
         if delivered_day and delivered_day in date_set and products:
             verified[key]={'date':delivered_day,'products':products}
             scope.add(key[0])
-            # Receiving one event does not establish the *total* for a day.
-            if delivered_day not in covered or not covered[delivered_day]:
+            if not covered.get(delivered_day):
                 partial.add(delivered_day)
                 missing.discard(delivered_day)
 
@@ -126,12 +136,18 @@ def build_sales_with_deliveries(orders,delivery_days,events=(),history=None):
         add(item['date'],item['products'])
 
     rows=[]
+    unknown=set(missing)
     for row in orders.get('rows') or []:
         day=row['date']
-        delivered=(None if day in missing else
-                   sum(value for (d,_),value in units.items() if d==day))
+        count=sum(value for (d,_),value in units.items() if d==day)
+        # A partial scheme returning zero does not prove that nothing was
+        # delivered through the unavailable scheme.
+        delivered=None if day in missing or (day in partial and count==0) else count
+        if delivered is None:
+            unknown.add(day)
         rows.append({**row,'delivered_units':delivered,
                      'delivery_partial':day in partial})
+
     sku_values={(str(row['sku']),row['date']):dict(row)
                 for row in orders.get('by_sku') or []}
     for (day,sku),value in units.items():
@@ -140,9 +156,10 @@ def build_sales_with_deliveries(orders,delivery_days,events=(),history=None):
         })
     by_sku=[]
     for (sku,day),row in sorted(sku_values.items()):
+        count=units.get((day,sku),0)
+        delivered=None if day in missing or (day in partial and count==0) else count
         by_sku.append({
-            **row,
-            'delivered_units':None if day in missing else units.get((day,sku),0),
+            **row,'delivered_units':delivered,
             'delivery_partial':day in partial,
         })
 
@@ -155,14 +172,19 @@ def build_sales_with_deliveries(orders,delivery_days,events=(),history=None):
                 f'{scheme}: неполные данные за {len(failures)} дн. '
                 f'({record.get("error") or "данных ещё нет"})'
             )
-    label=('Доставлено' if scope==set(SCHEMES)
-           else 'Доставлено '+('/'.join(sorted(scope))) if scope else 'Доставлено')
+
+    incomplete=sorted(missing|partial)
+    complete=bool(dates) and not incomplete
+    available=any(row['delivered_units'] is not None for row in rows)
     return {
         **orders,
         'rows':rows,'by_sku':by_sku,'delivery_days':delivery_days,
-        'delivered_available':len(missing)<len(dates),
-        'delivered_error':'; '.join(errors) if errors else None,
-        'delivery_source':'postings_last_status_change_and_verified_push',
-        'delivery_incomplete_days':sorted(missing|partial),
-        'delivery_scope':sorted(scope),'delivery_label':label,
+        'delivered_available':available,
+        'delivery_complete':complete,
+        'delivery_error':'; '.join(errors) if errors else None,
+        'delivery_source':'fbs_delivered_status_and_verified_fbo_push',
+        'delivery_incomplete_days':incomplete,
+        'delivery_unknown_days':sorted(unknown),
+        'delivery_scope':sorted(scope),
+        'delivery_label':'Доставлено' if complete else 'Доставлено · неполные данные',
     }
