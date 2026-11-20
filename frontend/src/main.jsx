@@ -53,16 +53,38 @@ function SalesHistoryChart({data,state,act,inv}){
   const selected=selectedDays.get(day.date);
   return {date:day.date,ordered_units:selected?.ordered_units??0,
    ordered_revenue:selected?.ordered_revenue??0,
-   delivered_units:data?.delivered_available?(selected?.delivered_units??0):null};
+   delivered_units:data?.delivered_available?(allPoints.find(p=>p.date===day.date)?.delivered_units===null?null:(selected?.delivered_units??0)):null};
  });
  const maxValue=Math.max(1,...points.flatMap(p=>[Number(p.ordered_units||0),...(data?.delivered_available?[Number(p.delivered_units||0)]:[])]));
  const max=Math.max(4,Math.ceil(maxValue/4)*4);
- const width=960,height=290,left=58,right=22,top=20,bottom=42,plotWidth=width-left-right,plotHeight=height-top-bottom;
+ const width=960,height=235,left=14,right=37,top=24,bottom=38,plotWidth=width-left-right,plotHeight=height-top-bottom;
  const x=index=>left+(points.length<=1?plotWidth/2:index*plotWidth/(points.length-1));
  const y=value=>top+plotHeight-(Number(value||0)/max)*plotHeight;
- const orderedPath=points.map((p,i)=>(i?'L':'M')+` ${x(i)} ${y(p.ordered_units)}`).join(' ');
- const deliveredPath=points.map((p,i)=>(i?'L':'M')+` ${x(i)} ${y(p.delivered_units)}`).join(' ');
- const deliveredArea=points.length?`${deliveredPath} L ${x(points.length-1)} ${top+plotHeight} L ${x(0)} ${top+plotHeight} Z`:'';
+ const smoothPath=items=>{
+  if(!items.length)return '';
+  const coords=items.map(({index,value})=>({x:x(index),y:y(value)}));
+  let result='M '+coords[0].x+' '+coords[0].y;
+  for(let i=0;i<coords.length-1;i++){
+   const prev=coords[Math.max(0,i-1)],a=coords[i],b=coords[i+1],next=coords[Math.min(coords.length-1,i+2)];
+   const c1x=a.x+(b.x-prev.x)/6,c1y=a.y+(b.y-prev.y)/6;
+   const c2x=b.x-(next.x-a.x)/6,c2y=b.y-(next.y-a.y)/6;
+   result+=' C '+c1x+' '+c1y+' '+c2x+' '+c2y+' '+b.x+' '+b.y;
+  }
+  return result;
+ };
+ const orderedPath=smoothPath(points.map((point,index)=>({index,value:point.ordered_units})));
+ const deliveredSegments=[];let continuous=[];
+ points.forEach((point,index)=>{
+  if(point.delivered_units===null||point.delivered_units===undefined){
+   if(continuous.length)deliveredSegments.push(continuous);
+   continuous=[];
+  }else continuous.push({index,value:point.delivered_units});
+ });
+ if(continuous.length)deliveredSegments.push(continuous);
+ const deliveredPaths=deliveredSegments.map(segment=>{
+  const line=smoothPath(segment),a=x(segment[0].index),b=x(segment[segment.length-1].index);
+  return {line,area:line+' L '+b+' '+(top+plotHeight)+' L '+a+' '+(top+plotHeight)+' Z'};
+ });
  const tickStep=points.length<=16?1:Math.ceil(points.length/12);
  const tickIndexes=points.map((_,i)=>i).filter(i=>i===0||i===points.length-1||i%tickStep===0);
  const months=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
@@ -71,36 +93,37 @@ function SalesHistoryChart({data,state,act,inv}){
  const hoveredPoint=hovered===null?null:points[hovered];
  const busy=Boolean(state?.job?.running);
  return <section className="panel sales-chart">
-  <div className="panel-title"><div><h3>Заказано товаров</h3><p className="muted mt-2">Заказы и доставленные товары по дням</p></div>
+  <div className="panel-title"><div><h3>Заказано товаров <span className="sales-price-pill">По цене реализации</span></h3><p className="muted mt-2">В штуках за {period} дней</p></div>
    <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null);if(value>(data?.rows||[]).length&&!busy)act('/sales/sync',{days:value})}}>{value} дн.</button>)}</div>
     <button disabled={busy||!state} onClick={()=>act('/sales/sync',{days:Math.max(period,(data?.rows||[]).length||14)})}>{busy?'Загружаем…':'Обновить'}</button>
    </div>
   </div>
   {data?.error&&<Notice>{data.error}</Notice>}
-  {data?.delivered_error&&<Notice>{data.delivered_error}</Notice>}
-  {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает количество заказанных товаров и доступную метрику доставок из аналитики Ozon Seller."/>:<>
+  {data?.delivered_error&&<p className="sales-chart-caveat">Некоторые дни доставки недоступны: {data.delivered_error}</p>}
+  {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает заказы из аналитики Ozon, а доставки — из истории статусов FBO/FBS."/>:<>
    <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.delivered_available&&<span><i className="delivered"/>Доставлено</span>}</div>
    <div className="sales-chart-wrap">
     {hoveredPoint&&<div className="sales-chart-tooltip" style={{left:`${Math.max(16,Math.min(84,x(hovered)/width*100))}%`}}>
      <strong>{fmtDay(hoveredPoint.date)}</strong>
      <div><span><i className="ordered"/>Заказано</span><b>{num(hoveredPoint.ordered_units)} шт. · {num(hoveredPoint.ordered_revenue)} ₽</b></div>
-     {data?.delivered_available&&<div><span><i className="delivered"/>Доставлено</span><b>{num(hoveredPoint.delivered_units)} шт.</b></div>}
+     {data?.delivered_available&&<div><span><i className="delivered"/>Доставлено</span><b>{hoveredPoint.delivered_units===null?'Нет данных':num(hoveredPoint.delivered_units)+' шт.'}</b></div>}
     </div>}
     <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Количество заказанных и доставленных товаров по дням">
-     {[0,.25,.5,.75,1].map(f=><g key={f}><line x1={left} x2={width-right} y1={top+plotHeight*(1-f)} y2={top+plotHeight*(1-f)} stroke="#e8eef3" strokeWidth="1"/><text x={left-10} y={top+plotHeight*(1-f)+4} textAnchor="end" fontSize="11" fill="#8796a3">{Math.round(max*f)}</text></g>)}
-     {data?.delivered_available&&<path d={deliveredArea} fill="#bfe4ff" opacity=".55"/>}
-     {data?.delivered_available&&<path d={deliveredPath} fill="none" stroke="#9bd4ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>}
-     <path d={orderedPath} fill="none" stroke="#168cf0" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+     {[0,.25,.5,.75,1].map(f=><g key={f}><line x1={left} x2={width-right} y1={top+plotHeight*(1-f)} y2={top+plotHeight*(1-f)} stroke="#d8e2ed" strokeDasharray="2 5" strokeWidth="1"/><text x={width-right+8} y={top+plotHeight*(1-f)+4} textAnchor="start" fontSize="12" fill="#8192a4">{Math.round(max*f)}</text></g>)}
+     <defs><linearGradient id="ozon-delivery-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9bd7ff" stopOpacity=".52"/><stop offset="100%" stopColor="#cceaff" stopOpacity=".20"/></linearGradient></defs>
+     {data?.delivered_available&&deliveredPaths.map((segment,index)=><g key={index}><path d={segment.area} fill="url(#ozon-delivery-fill)"/><path d={segment.line} fill="none" stroke="#a2d8ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></g>)}
+     <path d={orderedPath} fill="none" stroke="#168cf0" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
      {points.map((p,i)=><g key={p.date} onMouseEnter={()=>setHovered(i)} onMouseLeave={()=>setHovered(null)} onFocus={()=>setHovered(i)} onBlur={()=>setHovered(null)} tabIndex={0} role="button" aria-label={`${fmtDay(p.date)}: заказано ${p.ordered_units}, доставлено ${p.delivered_units??'нет данных'}`}>
-      {hovered===i&&<line x1={x(i)} x2={x(i)} y1={top} y2={top+plotHeight} stroke="#9aa9b6" strokeDasharray="3 4"/>}
+      <rect x={x(i)-plotWidth/Math.max(1,points.length-1)/2} y={top} width={plotWidth/Math.max(1,points.length-1)} height={plotHeight+12} fill="transparent"/>
+      {hovered===i&&<line x1={x(i)} x2={x(i)} y1={top} y2={top+plotHeight} stroke="#abc8df" strokeDasharray="3 4"/>}
       <circle cx={x(i)} cy={y(p.ordered_units)} r={hovered===i?5:4} fill="#fff" stroke="#168cf0" strokeWidth="2.5"/>
-      {data?.delivered_available&&<circle cx={x(i)} cy={y(p.delivered_units)} r={hovered===i?4:3} fill="#9bd4ff" stroke="#fff" strokeWidth="1.5"/>}
+      {p.delivered_units!==null&&p.delivered_units!==undefined&&<circle cx={x(i)} cy={y(p.delivered_units)} r={hovered===i?4:2.5} fill="#a2d8ff" stroke="#fff" strokeWidth="1.5"/>}
      </g>)}
      {tickIndexes.map(i=><text key={i} x={x(i)} y={height-12} textAnchor={i===0?'start':i===points.length-1?'end':'middle'} fontSize="11" fill="#8796a3">{fmtTick(points[i]?.date)}</text>)}
     </svg>
    </div>
   </>}
-  <p className="muted mt-3">«Заказано» — количество и сумма заказов. «Доставлено» — отдельная метрика Ozon Seller, доступная через API при подписке Premium Plus / Premium Pro; она не равна финансовому выкупу.</p>
+  <p className="muted mt-3">Доставлено — по последнему изменению статуса отправлений FBO/FBS; для новых FBO-событий может использоваться точная дата из push-уведомления. Это не финансовые выкупы.</p>
   <p className="muted mt-1">Обновлено: {date(data?.at)}{data?.date_from&&` · период ${fmtDay(data.date_from)}–${fmtDay(data.date_to)}`}</p>
  </section>
 }
