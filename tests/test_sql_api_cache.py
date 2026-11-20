@@ -11,6 +11,7 @@ class SqlApiCacheTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory()
         self.store=Store(Path(self.temp.name)/'cache.sqlite3')
         ALLOWED.add('/v1/finance/accrual/by-day')
+        ALLOWED.add('/v1/analytics/data')
         ALLOWED.update({'/v3/posting/fbo/list','/v4/posting/fbs/list'})
 
     def tearDown(self):
@@ -66,6 +67,26 @@ class SqlApiCacheTests(unittest.TestCase):
             self.api('123',transport).call(path,payload)
             self.api('123',transport).call(path,payload)
             self.assertEqual(len(calls),2,path)
+
+    def test_daily_sales_analytics_is_reused_from_persistent_cache(self):
+        calls=[]
+        payload={
+            'date_from':'2026-11-01','date_to':'2026-11-20',
+            'dimension':['day'],'filters':[],
+            'metrics':['ordered_units','delivered_units','revenue'],
+            'limit':1000,'offset':0,
+        }
+        def transport(path,body):
+            calls.append((path,body))
+            return {'result':{'data':[]}}
+
+        first=self.api('123',transport)
+        first.call('/v1/analytics/data',payload)
+        second=self.api('123',transport)
+        second.call('/v1/analytics/data',payload)
+        self.assertEqual(len(calls),1)
+        self.assertEqual(second.cache_counters()['hits'],1)
+        self.assertEqual(second.cache_counters()['api_requests'],0)
 
     def test_live_stock_is_not_persistently_cached(self):
         calls=[]
