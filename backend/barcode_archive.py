@@ -1,7 +1,7 @@
 """Private, user-scoped archive for printable barcode labels."""
 import re
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 router = APIRouter()
@@ -89,11 +89,17 @@ def _clean(body: BarcodeLabelBody):
     return name, code, cleaned
 
 
-@router.get("/api/barcodes")
-def list_barcodes(q: str = Query(default="", max_length=100)):
+def _auth(request: Request):
     from . import main
 
-    auth = main.authenticated_from_dependency
+    return main.authenticated(request)
+
+
+@router.get("/api/barcodes")
+def list_barcodes(request: Request, q: str = Query(default="", max_length=100)):
+    from . import main
+
+    auth = _auth(request)
     return {"items": main.store.list_barcode_labels(auth["user_id"], q)}
 
 
@@ -107,27 +113,25 @@ def _record_or_404(user_id: str, label_id: str):
 
 
 @router.get("/api/barcodes/{label_id}")
-def get_barcode(label_id: str, request=None):
-    from . import main
-
-    auth = main.authenticated_from_dependency
+def get_barcode(label_id: str, request: Request):
+    auth = _auth(request)
     return _record_or_404(auth["user_id"], label_id)
 
 
 @router.post("/api/barcodes", status_code=201)
-def create_barcode(body: BarcodeLabelBody):
+def create_barcode(body: BarcodeLabelBody, request: Request):
     from . import main
 
-    auth = main.authenticated_from_dependency
+    auth = _auth(request)
     name, code, data = _clean(body)
     return main.store.save_barcode_label(auth["user_id"], None, name, code, data)
 
 
 @router.put("/api/barcodes/{label_id}")
-def update_barcode(label_id: str, body: BarcodeLabelBody):
+def update_barcode(label_id: str, body: BarcodeLabelBody, request: Request):
     from . import main
 
-    auth = main.authenticated_from_dependency
+    auth = _auth(request)
     name, code, data = _clean(body)
     saved = main.store.save_barcode_label(auth["user_id"], label_id, name, code, data)
     if not saved:
@@ -136,10 +140,10 @@ def update_barcode(label_id: str, body: BarcodeLabelBody):
 
 
 @router.delete("/api/barcodes/{label_id}")
-def delete_barcode(label_id: str):
+def delete_barcode(label_id: str, request: Request):
     from . import main
 
-    auth = main.authenticated_from_dependency
+    auth = _auth(request)
     if not main.store.delete_barcode_label(auth["user_id"], label_id):
         raise HTTPException(404, "Этикетка не найдена в архиве.")
     return {"ok": True}
