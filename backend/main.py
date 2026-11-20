@@ -4,7 +4,7 @@ import secrets
 import sqlite3
 import threading
 import time
-from datetime import date, datetime, time as dt_time, timezone
+from datetime import date, datetime, time as dt_time, timedelta, timezone
 from pathlib import Path
 from fastapi import FastAPI, Request, Response, HTTPException, Depends
 from fastapi.responses import FileResponse, JSONResponse
@@ -157,6 +157,10 @@ class DigitizationParams(BaseModel):
     date_from:date
     date_to:date
     refresh:bool=False
+
+
+class SalesParams(BaseModel):
+    days:int=Field(default=90,ge=7,le=90)
 
 
 @app.get('/api/auth/status')
@@ -393,6 +397,33 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
                             'analytics':analytics,'warning':warning,
                             'fbs_stock_quantity':fbs_stock_quantity,'fbs_stocks':fbs_stocks,
                             'fbs_stock_error':fbs_stock_error})
+            elif kind=='sales':
+                today=datetime.now(MOSCOW_TZ).date()
+                first=today-timedelta(days=days-1)
+                last=today
+                progress(f'Загружаем продажи Ozon за {first.isoformat()} — {last.isoformat()}…')
+                try:
+                    sales_data=s['api'].daily_sales(first,last,progress)
+                except ApiError as exc:
+                    # Save a first-attempt error so the dashboard does not
+                    # consume the strict analytics quota on every page load.
+                    if not store.latest(s['client'],'sales_analytics'):
+                        store.save(s['client'],'sales_analytics',{
+                            'date_from':first.isoformat(),'date_to':last.isoformat(),
+                            'rows':[],'delivered_available':False,
+                            'delivered_error':None,'error':str(exc),
+                        })
+                    raise
+                store.save(s['client'],'sales_analytics',sales_data)
+                delivered_note=(
+                    'Метрика «Доставлено» доступна.'
+                    if sales_data.get('delivered_available')
+                    else 'Метрика «Доставлено» недоступна; сохранены заказы.'
+                )
+                progress(
+                    f"Дневная аналитика сохранена: {len(sales_data.get('rows') or [])} дней. "
+                    f"{delivered_note}"
+                )
             elif kind=='digitization':
                 first=s['api']._as_date(date_from)
                 requested_last=s['api']._as_date(date_to)
@@ -477,6 +508,18 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
 @app.post('/api/sync')
 def sync(request:Request):
     return launch(current(request),'inventory')
+
+@app.post('/api/sales/sync')
+def sync_sales(body:SalesParams,request:Request):
+    return launch(current(request),'sales',body.days)
+
+@app.get('/api/sales')
+def sales(request:Request):
+    data=store.latest(current(request)['client'],'sales_analytics')
+    if not data:
+        return {'at':None,'date_from':None,'date_to':None,'rows':[],
+                'delivered_available':None,'delivered_error':None,'error':None}
+    return data
 
 @app.post('/api/history/sync')
 def sync_history(body:History,request:Request):
