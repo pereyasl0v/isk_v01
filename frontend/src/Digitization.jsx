@@ -65,7 +65,6 @@ export default function Digitization({state,digi,act}){
  const [comparisonDigi,setComparisonDigi]=useState(null);
  const [comparisonInventoryHistory,setComparisonInventoryHistory]=useState([]);
  const [comparisonState,setComparisonState]=useState({loading:true,available:false,error:'',coverage:{}});
- const client=state?.client_id||'local';
  const costKey=`isk-digitization-costs-${client}`;
  const settingsKey=`isk-digitization-settings-${client}`;
  const [costs,setCosts]=useState({});
