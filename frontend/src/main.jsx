@@ -8,6 +8,7 @@ import MarketPage from './market';
 import DigitizationCached from './DigitizationCached';
 import ProductDetails from './ProductDetails';
 import {statusLabel,roleLabel,groupStocks} from './presentation';
+import {salesRangeTotals,salesTickIndexes} from './sales-chart-range.mjs';
 
 const Context=createContext(null);
 const nf=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
@@ -43,7 +44,11 @@ function Overview(){
  <div className="mt-5"><ProductCatalog/></div></>
 }
 function SalesHistoryChart({data,state,act,inv}){
- const [period,setPeriod]=useState(14);const [hovered,setHovered]=useState(null);const [sku,setSku]=useState('all');
+ const [period,setPeriod]=useState(14);
+ const [hovered,setHovered]=useState(null);
+ const [sku,setSku]=useState('all');
+ const [selectedRange,setSelectedRange]=useState(null);
+ const selectionStart=useRef(null);
  const allPoints=(data?.rows||[]).slice(-period);
  const skuNames=new Map((inv?.products||[]).filter(p=>p.sku).map(p=>[String(p.sku),p.name||String(p.sku)]));
  const skuRows=data?.by_sku||[];
@@ -87,35 +92,82 @@ function SalesHistoryChart({data,state,act,inv}){
   const line=smoothPath(segment),a=x(segment[0].index),b=x(segment[segment.length-1].index);
   return {line,area:line+' L '+b+' '+y(0)+' L '+a+' '+y(0)+' Z'};
  });
- const tickStep=points.length<=16?1:Math.ceil(points.length/12);
- const tickIndexes=points.map((_,i)=>i).filter(i=>i===0||i===points.length-1||i%tickStep===0);
+ const tickIndexes=salesTickIndexes(points.length);
  const months=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
  const fmtDay=value=>value?Number(value.slice(8,10))+' '+months[Number(value.slice(5,7))-1]:'—';
  const fmtTick=value=>value?value.slice(8,10):'—';
  const fmtWeekday=value=>{const day=new Date(value+'T12:00:00Z').getUTCDay();return day===6?'сб':day===0?'вс':''};
  const hoveredPoint=hovered===null?null:points[hovered];
+ const selectionIndexes=selectedRange?.map(day=>points.findIndex(point=>point.date===day))||[];
+ const selectedTotal=selectionIndexes.length===2&&selectionIndexes.every(index=>index>=0)
+  ?salesRangeTotals(points,selectionIndexes[0],selectionIndexes[1]):null;
+ const rangeBandStep=plotWidth/Math.max(1,points.length-1);
+ const rangeBandLeft=selectedTotal?Math.max(left,x(selectedTotal.startIndex)-rangeBandStep/2):0;
+ const rangeBandRight=selectedTotal?Math.min(width-right,x(selectedTotal.endIndex)+rangeBandStep/2):0;
+ const fmtRangeDate=value=>value?.split('-').reverse().join('.')||'—';
+ const pointerIndex=event=>{
+  const bounds=event.currentTarget.getBoundingClientRect();
+  if(!bounds.width)return 0;
+  const px=(event.clientX-bounds.left)/bounds.width*width;
+  return Math.max(0,Math.min(points.length-1,Math.round((px-left)/plotWidth*(points.length-1))));
+ };
+ const startSelection=event=>{
+  if(!points.length||(event.pointerType==='mouse'&&event.button!==0))return;
+  const bounds=event.currentTarget.getBoundingClientRect();
+  if(!bounds.height)return;
+  const py=(event.clientY-bounds.top)/bounds.height*height;
+  if(py<top-8||py>top+plotHeight+12)return;
+  const index=pointerIndex(event);
+  selectionStart.current=index;
+  setSelectedRange([points[index].date,points[index].date]);
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+ };
+ const moveSelection=event=>{
+  if(selectionStart.current===null)return;
+  const index=pointerIndex(event);
+  const start=points[selectionStart.current]?.date;
+  if(start)setSelectedRange([start,points[index].date]);
+  setHovered(index);
+ };
+ const finishSelection=event=>{
+  if(selectionStart.current===null)return;
+  const index=pointerIndex(event);
+  const start=points[selectionStart.current]?.date;
+  if(start)setSelectedRange([start,points[index].date]);
+  selectionStart.current=null;
+  setHovered(null);
+  if(event.currentTarget.hasPointerCapture?.(event.pointerId)){
+   event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+ };
  const busy=Boolean(state?.job?.running);
  return <section className="panel sales-chart">
   <div className="panel-title"><div><h3>Заказано товаров</h3></div>
-   <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null);if(value>(data?.rows||[]).length&&!busy)act('/sales/sync',{days:value})}}>{value} дн.</button>)}</div>
+   <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null);setSelectedRange(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null);setSelectedRange(null);if(value>(data?.rows||[]).length&&!busy)act('/sales/sync',{days:value})}}>{value} дн.</button>)}</div>
     <button disabled={busy||!state} onClick={()=>act('/sales/sync',{days:Math.max(period,(data?.rows||[]).length||14)})}>{busy?'Загружаем…':'Обновить'}</button>
    </div>
   </div>
   {data?.error&&<Notice>{data.error}</Notice>}
   {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает заказы и историю доставок из Ozon Seller API и Ozon Push."/>:<>
-   <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.delivered_available&&<span><i className="delivered"/>{data.delivery_label||'Доставлено'}</span>}</div>
+    <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.delivered_available&&<span><i className="delivered"/>{data.delivery_label||'Доставлено'}</span>}<span className="sales-range-hint">Выделите период на графике для подсчёта итогов</span></div>
    <div className="sales-chart-wrap">
     {hoveredPoint&&<div className="sales-chart-tooltip" style={{left:`${Math.max(16,Math.min(84,x(hovered)/width*100))}%`}}>
      <strong>{fmtDay(hoveredPoint.date)}</strong>
      <div><span><i className="ordered"/>Заказано</span><b>{num(hoveredPoint.ordered_units)} шт. · {num(hoveredPoint.ordered_revenue)} ₽</b></div>
      {data?.delivered_available&&<div><span><i className="delivered"/>{data.delivery_label||'Доставлено'}</span><b>{hoveredPoint.delivered_units===null?'Нет данных':num(hoveredPoint.delivered_units)+' шт.'}{hoveredPoint.delivery_partial?' · неполные данные':''}</b></div>}
     </div>}
-    <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Количество заказанных и доставленных товаров по дням">
+    <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img"
+     aria-label="График заказов по дням: проведите по графику для выбора диапазона"
+     onPointerDown={startSelection} onPointerMove={moveSelection}
+     onPointerUp={finishSelection} onPointerCancel={()=>{selectionStart.current=null;setHovered(null)}}>
      {[min,(min+max)/2,max].map(value=><g key={value}><line x1={left} x2={width-right} y1={y(value)} y2={y(value)} stroke="#d8e2ed" strokeDasharray="2 5" strokeWidth="1"/>{(value!==0||min<0)&&<text x={width-right+8} y={y(value)+4} textAnchor="start" fontSize="12" fill="#8192a4">{Math.round(value)}</text>}</g>)}
+     {selectedTotal&&<rect x={rangeBandLeft} y={top} width={Math.max(2,rangeBandRight-rangeBandLeft)} height={plotHeight} rx="4" fill="#168cf0" fillOpacity=".1" stroke="#168cf0" strokeOpacity=".45" strokeDasharray="4 4" pointerEvents="none"/>}
      <defs><linearGradient id="ozon-delivery-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9bd7ff" stopOpacity=".52"/><stop offset="100%" stopColor="#cceaff" stopOpacity=".20"/></linearGradient></defs>
      {data?.delivered_available&&deliveredPaths.map((segment,index)=><g key={index}><path d={segment.area} fill="url(#ozon-delivery-fill)"/><path d={segment.line} fill="none" stroke="#a2d8ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></g>)}
      <path d={orderedPath} fill="none" stroke="#168cf0" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
-     {points.map((p,i)=><g key={p.date} onMouseEnter={()=>setHovered(i)} onMouseLeave={()=>setHovered(null)} onFocus={()=>setHovered(i)} onBlur={()=>setHovered(null)} tabIndex={0} role="button" aria-label={`${fmtDay(p.date)}: заказано ${p.ordered_units}, доставлено ${p.delivered_units??'нет данных'}`}>
+     {points.map((p,i)=><g key={p.date} onMouseEnter={()=>setHovered(i)} onMouseLeave={()=>setHovered(null)} onFocus={()=>setHovered(i)} onBlur={()=>setHovered(null)}
+       onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelectedRange(old=>old&&old[0]===old[1]?[old[0],p.date]:[p.date,p.date]);}}}
+       tabIndex={0} role="button" aria-label={`${fmtDay(p.date)}: заказано ${p.ordered_units}, доставлено ${p.delivered_units??'нет данных'}. Нажмите Enter для выбора даты или окончания диапазона.`}>
       <rect x={x(i)-plotWidth/Math.max(1,points.length-1)/2} y={top} width={plotWidth/Math.max(1,points.length-1)} height={plotHeight+12} fill="transparent"/>
       {hovered===i&&<line x1={x(i)} x2={x(i)} y1={top} y2={top+plotHeight} stroke="#abc8df" strokeDasharray="3 4"/>}
       <circle cx={x(i)} cy={y(p.ordered_units)} r={hovered===i?5:4} fill="#fff" stroke="#168cf0" strokeWidth="2.5"/>
@@ -124,6 +176,13 @@ function SalesHistoryChart({data,state,act,inv}){
      {tickIndexes.map(i=><g key={i}><text x={x(i)} y={height-17} textAnchor={i===0?'start':i===points.length-1?'end':'middle'} fontSize="11" fill="#53667d">{fmtTick(points[i]?.date)}</text>{fmtWeekday(points[i].date)&&<text x={x(i)} y={height-3} textAnchor="middle" fontSize="9" fill="#9daabb">{fmtWeekday(points[i].date)}</text>}</g>)}
     </svg>
    </div>
+    {selectedTotal&&<div className="sales-range-summary" role="status" aria-live="polite">
+     <span className="sales-range-dates">{fmtRangeDate(selectedTotal.from)} — {fmtRangeDate(selectedTotal.to)} · {selectedTotal.days} дн.</span>
+     <span>Заказано: <strong>{num(selectedTotal.orderedUnits)} шт.</strong></span>
+     <span>На сумму: <strong>{num(selectedTotal.orderedAmount)} ₽</strong></span>
+     {selectedTotal.deliveredKnownDays>0&&<span>Доставлено: <strong>{num(selectedTotal.deliveredUnits)} шт.</strong>{!selectedTotal.deliveryComplete&&<small> (неполные данные)</small>}</span>}
+     <button type="button" onClick={()=>setSelectedRange(null)}>Сбросить выделение</button>
+    </div>}
   </>}
  </section>
 }
