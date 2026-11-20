@@ -1,6 +1,7 @@
 import React, {useEffect, useMemo, useState} from 'react';
-import {BarChart3, RefreshCw, WalletCards, ReceiptText, Truck, Boxes, AlertTriangle, Calculator} from 'lucide-react';
+import {BarChart3, RefreshCw, WalletCards, ReceiptText, Truck, Boxes, AlertTriangle, Calculator, ArrowUpRight, ArrowDownRight, Minus} from 'lucide-react';
 import {currentInventoryMetrics} from './inventory-capitalization.mjs';
+import {previousPeriodRange, compareMetric, comparisonTone, calculateDigitizationPeriodMetrics} from './digitization-comparison.mjs';
 
 const nf=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
 const intf=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0});
@@ -15,8 +16,18 @@ const divide=(a,b)=>n(b)?n(a)/n(b):null;
 const percent=(a,b)=>n(b)?n(a)/n(b)*100:null;
 const round=(v,d=2)=>v===null||v===undefined?null:Number(n(v).toFixed(d));
 
-function Metric({label,value,note,icon:Icon=WalletCards,format=money}){
- return <div className="metric"><div className="metric-top"><span>{label}</span><Icon size={19}/></div><strong>{format(value)}</strong>{note!==undefined&&note!==null&&note!==''&&<small>{note}</small>}</div>
+function Metric({label,value,note,icon:Icon=WalletCards,format=money,comparison,direction='higher'}){
+ const tone=comparisonTone(comparison,direction);
+ return <div className="metric"><div className="metric-top"><span>{label}</span><Icon size={19}/></div><strong>{format(value)}</strong>{note!==undefined&&note!==null&&note!==''&&<small>{note}</small>}
+  {comparison&&<div className={'metric-comparison '+tone}>
+   <span className="metric-comparison-previous">Пред.: {format(comparison.previous)}</span>
+   <span className="metric-comparison-change">
+    {comparison.delta>0?'+':''}{format(comparison.delta)}
+    {comparison.changePercent===null?(comparison.fromZero?'(с нуля)':''):`(${comparison.changePercent>0?'+':''}${nf.format(comparison.changePercent)}%)`}
+    {comparison.trend==='up'?<ArrowUpRight size={13}/>:comparison.trend==='down'?<ArrowDownRight size={13}/>:<Minus size={12}/>}
+   </span>
+  </div>}
+ </div>
 }
 
 function SimpleTable({rows,columns,empty}){
@@ -40,11 +51,17 @@ export default function Digitization({state,digi,act}){
  const [dateTo,setDateTo]=useState(defaults.to);
  const [inventory,setInventory]=useState(null);
  const [inventoryHistory,setInventoryHistory]=useState([]);
+ const [comparisonDigi,setComparisonDigi]=useState(null);
+ const [comparisonInventoryHistory,setComparisonInventoryHistory]=useState([]);
+ const [comparisonState,setComparisonState]=useState({loading:true,available:false,error:'',coverage:{}});
  const client=state?.client_id||'local';
  const costKey=`isk-digitization-costs-${client}`;
  const settingsKey=`isk-digitization-settings-${client}`;
  const [costs,setCosts]=useState({});
  const [settings,setSettings]=useState({taxRate:6,vatRate:0,operationalExpenses:0,operationalIncome:0});
+ const periodEnd=digi?.effective_to||digi?.to;
+ const comparisonRange=useMemo(()=>previousPeriodRange(digi?.since,periodEnd),[digi?.since,periodEnd]);
+ const selectedPeriodDays=periodDays(digi?.since,periodEnd);
 
  useEffect(()=>{
   setCosts(localRead(costKey,{}));
@@ -69,6 +86,62 @@ export default function Digitization({state,digi,act}){
   return()=>{live=false};
  },[state,digi?.since,digi?.effective_to,digi?.to,digi?.at]);
 
+ // Read the immediately preceding equal-length period from SQLite. No Ozon
+ // requests are made automatically; missing days can be loaded on demand.
+ useEffect(()=>{
+  if(!state){
+   setComparisonDigi(null);
+   setComparisonInventoryHistory([]);
+   setComparisonState({loading:false,available:false,error:'',coverage:{}});
+   return;
+  }
+  if(!comparisonRange){
+   setComparisonDigi(null);
+   setComparisonInventoryHistory([]);
+   setComparisonState({loading:false,available:false,error:'',coverage:{}});
+   return;
+  }
+  if(state?.job?.running)return;
+  let live=true;
+  setComparisonDigi(null);
+  setComparisonInventoryHistory([]);
+  setComparisonState({loading:true,available:false,error:'',coverage:{}});
+  const q=new URLSearchParams({date_from:comparisonRange.from,date_to:comparisonRange.to});
+  fetch('/api/digitization?'+q,{credentials:'same-origin'})
+   .then(async response=>{
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.detail||'Не удалось получить предыдущий период.');
+    if(!live)return;
+    if(!data.available){
+     setComparisonDigi(null);
+     setComparisonInventoryHistory([]);
+     setComparisonState({loading:false,available:false,error:'',coverage:data.cache||{}});
+     return;
+    }
+    let history=[];
+    try{
+     const historyQuery=new URLSearchParams({date_from:comparisonRange.from,date_to:comparisonRange.to});
+     const historyResponse=await fetch('/api/inventory/history?'+historyQuery,{credentials:'same-origin'});
+     if(historyResponse.ok){
+      const historyData=await historyResponse.json();
+      history=historyData?.days||[];
+     }
+    }catch{}
+    if(!live)return;
+    setComparisonDigi(data);
+    setComparisonInventoryHistory(history);
+    setComparisonState({loading:false,available:true,error:'',coverage:data.cache||{}});
+   })
+   .catch(error=>{
+    if(live){
+     setComparisonDigi(null);
+     setComparisonInventoryHistory([]);
+     setComparisonState({loading:false,available:false,error:error.message||'Ошибка сравнения.',coverage:{}});
+    }
+   });
+  return()=>{live=false};
+ },[state?.client_id,state?.job?.running,comparisonRange?.from,comparisonRange?.to,digi?.at]);
+
  const saveCost=(sku,field,value)=>{
   setCosts(prev=>{
    const old=prev[sku]||{};
@@ -83,6 +156,7 @@ export default function Digitization({state,digi,act}){
 
  const m=digi?.metrics||{};
  const c=digi?.components||{};
+ const previousMetrics=useMemo(()=>calculateDigitizationPeriodMetrics(comparisonDigi,costs,settings),[comparisonDigi,costs,settings]);
  const invalid=dateFrom&&dateTo&&dateFrom>dateTo;
  const comparisonCutoff=digi?.effective_to&&digi?.to&&digi.effective_to!==digi.to;
  const discount=n(m.discount_points);
@@ -150,7 +224,7 @@ export default function Digitization({state,digi,act}){
  const ownStockQty=Object.entries(costs).reduce((sum,[,v])=>sum+n(v?.own_stock),0);
  const ownCapitalization=round(Object.entries(costs).reduce((sum,[sku,v])=>sum+n(v?.own_stock)*stockUnitCost(sku),0));
 
- const dailyCaps=inventoryHistory.map(day=>{
+ const capitalizationValues=history=>history.map(day=>{
   if(day.summary?.outbound_fields_available!==true)return null;
   const rows=day.aggregated||[];
   if(rows.some(row=>row.capitalization_quantity===null||row.capitalization_quantity===undefined))return null;
@@ -159,12 +233,20 @@ export default function Digitization({state,digi,act}){
   const mp=active.reduce((sum,row)=>sum+n(row.capitalization_quantity)*stockUnitCost(row.sku),0);
   return mp+ownCapitalization;
  }).filter(v=>v!==null);
+ const dailyCaps=capitalizationValues(inventoryHistory);
  const averageCapitalization=dailyCaps.length?round(dailyCaps.reduce((a,b)=>a+b,0)/dailyCaps.length):null;
+ const comparisonDailyCaps=capitalizationValues(comparisonInventoryHistory);
+ const comparisonAverageCapitalization=comparisonDailyCaps.length?round(comparisonDailyCaps.reduce((a,b)=>a+b,0)/comparisonDailyCaps.length):null;
  const days=periodDays(digi?.since,digi?.effective_to||digi?.to);
  const gmroi=cleanProfit!==null&&n(averageCapitalization)>0?round(percent(cleanProfit,averageCapitalization)):null;
  const annualGmroi=gmroi!==null&&days?round(gmroi*365/days):null;
  const turnoverSales=stockQty!==null&&days&&n(salesQty)>0?round(n(stockQty)/(n(salesQty)/days)):null;
  const turnoverOrders=stockQty!==null&&days&&n(ordersQty)>0?round(n(stockQty)/(n(ordersQty)/days)):null;
+ const comparisonGmroi=previousMetrics?.cleanProfit!==null&&previousMetrics?.cleanProfit!==undefined&&n(comparisonAverageCapitalization)>0?round(percent(previousMetrics.cleanProfit,comparisonAverageCapitalization)):null;
+ const comparisonAnnualGmroi=comparisonGmroi!==null&&comparisonRange?.days?round(comparisonGmroi*365/comparisonRange.days):null;
+ const comparisonTurnoverSales=stockQty!==null&&comparisonRange?.days&&n(previousMetrics?.salesQuantity)>0?round(n(stockQty)/(n(previousMetrics.salesQuantity)/comparisonRange.days)):null;
+ const comparisonTurnoverOrders=stockQty!==null&&comparisonRange?.days&&n(previousMetrics?.ordersQuantity)>0?round(n(stockQty)/(n(previousMetrics.ordersQuantity)/comparisonRange.days)):null;
+ const dateLabel=value=>value?new Date(value+'T00:00:00Z').toLocaleDateString('ru-RU',{timeZone:'UTC',day:'2-digit',month:'2-digit',year:'numeric'}):'—';
 
  const catalogBySku=new Map((inventory?.products||[]).map(p=>[String(p.sku),p]));
  const costRows=[...new Map([
@@ -187,47 +269,54 @@ export default function Digitization({state,digi,act}){
   {invalid&&<div className="notice warning mt-4"><AlertTriangle size={18}/>Дата окончания не может быть раньше даты начала.</div>}
   {digi?.since&&<p className="muted mt-4">Выбранный период: {digi.since} — {digi.to}{digi?.effective_to?` · в расчёт включены данные Ozon по ${digi.effective_to} включительно`:''}</p>}
   {comparisonCutoff&&<div className="notice warning mt-4"><AlertTriangle size={18}/>Текущий день исключён только для сравнения с вашим снимком TrueStats; в нём последняя дневная колонка — 10.10.</div>}
+  {comparisonRange&&comparisonState.available&&<div className="digitization-comparison-status ready"><span>Сравнение с предыдущими {comparisonRange.days} днями: {dateLabel(comparisonRange.from)} — {dateLabel(comparisonRange.to)}</span></div>}
+  {comparisonRange&&(comparisonState.loading||state?.job?.running)&&<div className="digitization-comparison-status loading"><RefreshCw size={15} className="animate-spin"/><span>{state?.job?.running?'Ожидаем завершения загрузки…':'Проверяем данные предыдущего периода…'}</span></div>}
+  {comparisonRange&&!comparisonState.available&&!comparisonState.loading&&!state?.job?.running&&<div className="digitization-comparison-status missing">
+   <span>{comparisonState.error||('Для сравнения нужны данные за '+dateLabel(comparisonRange.from)+' — '+dateLabel(comparisonRange.to)+'. '+(comparisonState.coverage?.missing_days?.length?'Не хватает дней: '+comparisonState.coverage.missing_days.length+'.':''))}</span>
+   <button type="button" disabled={!state||state.job.running} onClick={()=>act('/digitization/sync',{date_from:comparisonRange.from,date_to:comparisonRange.to})}>Загрузить предыдущий период</button>
+  </div>}
+  {!comparisonRange&&selectedPeriodDays>31&&<div className="digitization-comparison-status limited"><span>Сравнение доступно для периодов до одного месяца (31 дня). Выбрано: {selectedPeriodDays} дн.</span></div>}
 
   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6">
-   <Metric label="Чистая прибыль/Марж-сть" value={cleanProfit} note={pct(margin)} icon={Boxes}/>
-   <Metric label="Прибыль без опер. расх./Марж. без опер." value={cleanWithoutOps} note={pct(marginWithoutOps)} icon={Boxes}/>
-   <Metric label="Продажи" value={sales} note={count(salesQty)}/>
-   <Metric label="Реализация" value={realization}/>
-   <Metric label="Заказы" value={orders} note={count(ordersQty)}/>
-   <Metric label="Процент выкупа" value={m.buyout_percent} format={pct} note={m.refusals_returns_quantity!==null&&m.refusals_returns_quantity!==undefined?`Отказы + возвраты: ${count(m.refusals_returns_quantity)}`:'—'}/>
-   <Metric label="Логистика" value={logistics} note={pct(percent(logistics,realization))} icon={Truck}/>
-   <Metric label="Реклама/ДРР" value={advertising} note={pct(drr)} icon={BarChart3}/>
-   <Metric label="Хранение" value={storage} note={pct(percent(storage,realization))} icon={Boxes}/>
-   <Metric label="Плат. приемка" value={paidAcceptance} note={pct(percent(paidAcceptance,realization))}/>
-   <Metric label="Прочие удержания" value={other} note={pct(percent(other,realization))}/>
-   <Metric label="Себестоимость продаж" value={cogs} note={cogs===null?`Заполните СС для ${missingProfitCosts} SKU`:pct(percent(cogs,realization))} icon={Calculator}/>
-   <Metric label="Операционные расходы" value={settings.operationalExpenses} note={pct(percent(settings.operationalExpenses,realization))}/>
-   <Metric label="Налоги" value={taxes} note={pct(percent(taxes,realization))} icon={ReceiptText}/>
-   <Metric label="Налоговая База" value={taxBase}/>
-   <Metric label="Номинальная комиссия" value={commission} note={pct(percent(commission,realization))} icon={ReceiptText}/>
-   <Metric label="Эквайринг" value={acquiring} note={pct(percent(acquiring,realization))}/>
-   <Metric label="ROI" value={roi} format={pct} icon={BarChart3}/>
-   <Metric label="Средняя себестоимость" value={averageCogs}/>
-   <Metric label="Цена до СПП" value={priceBefore}/>
-   <Metric label="Сред. цена продажи" value={averageSale}/>
-   <Metric label="Реклама/ДРРз" value={advertising} note={pct(drrOrders)} icon={BarChart3}/>
-   <Metric label="Средняя прибыль на 1 шт." value={averageProfit}/>
-   <Metric label="Ср. стоимость логистики на 1 шт." value={avgLogistics}/>
+   <Metric label="Чистая прибыль/Марж-сть" value={cleanProfit} note={pct(margin)} icon={Boxes} comparison={compareMetric(cleanProfit,previousMetrics?.cleanProfit)} direction="higher"/>
+   <Metric label="Прибыль без опер. расх./Марж. без опер." value={cleanWithoutOps} note={pct(marginWithoutOps)} icon={Boxes} comparison={compareMetric(cleanWithoutOps,previousMetrics?.cleanWithoutOps)} direction="higher"/>
+   <Metric label="Продажи" value={sales} note={count(salesQty)} comparison={compareMetric(sales,previousMetrics?.sales)} direction="higher"/>
+   <Metric label="Реализация" value={realization} comparison={compareMetric(realization,previousMetrics?.realization)} direction="higher"/>
+   <Metric label="Заказы" value={orders} note={count(ordersQty)} comparison={compareMetric(orders,previousMetrics?.orders)} direction="higher"/>
+   <Metric label="Процент выкупа" value={m.buyout_percent} format={pct} note={m.refusals_returns_quantity!==null&&m.refusals_returns_quantity!==undefined?`Отказы + возвраты: ${count(m.refusals_returns_quantity)}`:'—'} comparison={compareMetric(m.buyout_percent,previousMetrics?.buyoutPercent)} direction="higher"/>
+   <Metric label="Логистика" value={logistics} note={pct(percent(logistics,realization))} icon={Truck} comparison={compareMetric(logistics,previousMetrics?.logistics)} direction="lower"/>
+   <Metric label="Реклама/ДРР" value={advertising} note={pct(drr)} icon={BarChart3} comparison={compareMetric(advertising,previousMetrics?.advertising)} direction="lower"/>
+   <Metric label="Хранение" value={storage} note={pct(percent(storage,realization))} icon={Boxes} comparison={compareMetric(storage,previousMetrics?.storage)} direction="lower"/>
+   <Metric label="Плат. приемка" value={paidAcceptance} note={pct(percent(paidAcceptance,realization))} comparison={compareMetric(paidAcceptance,previousMetrics?.paidAcceptance)} direction="lower"/>
+   <Metric label="Прочие удержания" value={other} note={pct(percent(other,realization))} comparison={compareMetric(other,previousMetrics?.other)} direction="lower"/>
+   <Metric label="Себестоимость продаж" value={cogs} note={cogs===null?`Заполните СС для ${missingProfitCosts} SKU`:pct(percent(cogs,realization))} icon={Calculator} comparison={compareMetric(cogs,previousMetrics?.cogs)} direction="lower"/>
+   <Metric label="Операционные расходы" value={settings.operationalExpenses} note={pct(percent(settings.operationalExpenses,realization))} comparison={compareMetric(settings.operationalExpenses,previousMetrics?.operationalExpenses)} direction="lower"/>
+   <Metric label="Налоги" value={taxes} note={pct(percent(taxes,realization))} icon={ReceiptText} comparison={compareMetric(taxes,previousMetrics?.taxes)} direction="lower"/>
+   <Metric label="Налоговая База" value={taxBase} comparison={compareMetric(taxBase,previousMetrics?.taxBase)} direction="higher"/>
+   <Metric label="Номинальная комиссия" value={commission} note={pct(percent(commission,realization))} icon={ReceiptText} comparison={compareMetric(commission,previousMetrics?.commission)} direction="lower"/>
+   <Metric label="Эквайринг" value={acquiring} note={pct(percent(acquiring,realization))} comparison={compareMetric(acquiring,previousMetrics?.acquiring)} direction="lower"/>
+   <Metric label="ROI" value={roi} format={pct} icon={BarChart3} comparison={compareMetric(roi,previousMetrics?.roi)} direction="higher"/>
+   <Metric label="Средняя себестоимость" value={averageCogs} comparison={compareMetric(averageCogs,previousMetrics?.averageCogs)} direction="lower"/>
+   <Metric label="Цена до СПП" value={priceBefore} comparison={compareMetric(priceBefore,previousMetrics?.priceBefore)} direction="higher"/>
+   <Metric label="Сред. цена продажи" value={averageSale} comparison={compareMetric(averageSale,previousMetrics?.averageSale)} direction="higher"/>
+   <Metric label="Реклама/ДРРз" value={advertising} note={pct(drrOrders)} icon={BarChart3} comparison={compareMetric(advertising,previousMetrics?.advertising)} direction="lower"/>
+   <Metric label="Средняя прибыль на 1 шт." value={averageProfit} comparison={compareMetric(averageProfit,previousMetrics?.averageProfit)} direction="higher"/>
+   <Metric label="Ср. стоимость логистики на 1 шт." value={avgLogistics} comparison={compareMetric(avgLogistics,previousMetrics?.averageLogistics)} direction="lower"/>
    <Metric label="Остатки" value={stockQty} format={count} note={currentStock.sourceAt&&currentStock.outboundFieldsAvailable?'Включая товары в пути · на '+dateTime(currentStock.sourceAt):currentStock.sourceAt?'Нет статусов доставки/возвратов':'Обновите остатки Ozon'}/>
-   <Metric label="Оборачиваемость по прод." value={turnoverSales} format={daysFmt}/>
-   <Metric label="Оборачиваемость по зак." value={turnoverOrders} format={daysFmt}/>
+   <Metric label="Оборачиваемость по прод." value={turnoverSales} format={daysFmt} comparison={compareMetric(turnoverSales,comparisonTurnoverSales)} direction="lower"/>
+   <Metric label="Оборачиваемость по зак." value={turnoverOrders} format={daysFmt} comparison={compareMetric(turnoverOrders,comparisonTurnoverOrders)} direction="lower"/>
    <Metric label="Капитализация по себес." value={capitalizationCost} note={capitalizationNote}/>
-   <Metric label="Средняя капитализация" value={averageCapitalization} note={inventoryHistory.length?`Снимков остатков: ${inventoryHistory.length}`:'Нужна история снимков остатков'}/>
+   <Metric label="Средняя капитализация" value={averageCapitalization} note={inventoryHistory.length?`Снимков остатков: ${inventoryHistory.length}`:'Нужна история снимков остатков'} comparison={compareMetric(averageCapitalization,comparisonAverageCapitalization)} direction="higher"/>
    <Metric label="Капитализация по розн." value={null} note="Нужна цена прошлой полной недели"/>
    <Metric label="Капитализ. на моих складах" value={ownCapitalization}/>
    <Metric label="Остатки на моих складах" value={ownStockQty} format={count}/>
    <Metric label="FBS-остатки, шт" value={fbsStockQty} format={count} note={inventory?.fbs_stock_error||undefined}/>
-   <Metric label="GMROI" value={gmroi} format={pct}/>
-   <Metric label="Годовой GMROI" value={annualGmroi} format={pct}/>
-   <Metric label="Штрафы" value={penalties} note={pct(percent(penalties,realization))}/>
-   <Metric label="Скидка МП" value={discount} note={pct(percent(discount,realization))}/>
-   <Metric label="Компенсация с баллами" value={compensationWithPoints} note={pct(percent(compensationWithPoints,realization))}/>
-   <Metric label="Компенсация без баллов" value={compensationWithoutPoints} note={pct(percent(compensationWithoutPoints,realization))}/>
+   <Metric label="GMROI" value={gmroi} format={pct} comparison={compareMetric(gmroi,comparisonGmroi)} direction="higher"/>
+   <Metric label="Годовой GMROI" value={annualGmroi} format={pct} comparison={compareMetric(annualGmroi,comparisonAnnualGmroi)} direction="higher"/>
+   <Metric label="Штрафы" value={penalties} note={pct(percent(penalties,realization))} comparison={compareMetric(penalties,previousMetrics?.penalties)} direction="lower"/>
+   <Metric label="Скидка МП" value={discount} note={pct(percent(discount,realization))} comparison={compareMetric(discount,previousMetrics?.discount)} direction="higher"/>
+   <Metric label="Компенсация с баллами" value={compensationWithPoints} note={pct(percent(compensationWithPoints,realization))} comparison={compareMetric(compensationWithPoints,previousMetrics?.compensationWithPoints)} direction="higher"/>
+   <Metric label="Компенсация без баллов" value={compensationWithoutPoints} note={pct(percent(compensationWithoutPoints,realization))} comparison={compareMetric(compensationWithoutPoints,previousMetrics?.compensationWithoutPoints)} direction="higher"/>
    <Metric label="Самовыкупы, шт." value={0} format={count}/>
    <Metric label="Самовыкупы, ₽" value={0}/>
    <Metric label="Затраты на самовыкупы (кешбэк)" value={0}/>

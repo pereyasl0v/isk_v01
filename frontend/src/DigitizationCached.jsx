@@ -202,6 +202,7 @@ export default function DigitizationCached({state,digi,act}){
  const presetItems=[
   {id:'yesterday',label:'Вчера'},
   {id:7,label:'7 дней'},
+  {id:14,label:'14 дней'},
   {id:30,label:'30 дней'},
   {id:'month',label:'Текущий месяц'},
   {id:90,label:'90 дней'}
