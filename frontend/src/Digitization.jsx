@@ -292,7 +292,7 @@ export default function Digitization({state,digi,act}){
    <Metric label="Себестоимость продаж" value={cogs} note={cogs===null?`Заполните СС для ${missingProfitCosts} SKU`:pct(percent(cogs,realization))} icon={Calculator} comparison={compareMetric(cogs,previousMetrics?.cogs)} direction="lower"/>
    <Metric label="Операционные расходы" value={settings.operationalExpenses} note={pct(percent(settings.operationalExpenses,realization))} comparison={compareMetric(settings.operationalExpenses,previousMetrics?.operationalExpenses)} direction="lower"/>
    <Metric label="Налоги" value={taxes} note={pct(percent(taxes,realization))} icon={ReceiptText} comparison={compareMetric(taxes,previousMetrics?.taxes)} direction="lower"/>
-   <Metric label="Налоговая База" value={taxBase} comparison={compareMetric(taxBase,previousMetrics?.taxBase)} direction="higher"/>
+   <Metric label="Налоговая База" value={taxBase} comparison={compareMetric(taxBase,previousMetrics?.taxBase)} direction="neutral"/>
    <Metric label="Номинальная комиссия" value={commission} note={pct(percent(commission,realization))} icon={ReceiptText} comparison={compareMetric(commission,previousMetrics?.commission)} direction="lower"/>
    <Metric label="Эквайринг" value={acquiring} note={pct(percent(acquiring,realization))} comparison={compareMetric(acquiring,previousMetrics?.acquiring)} direction="lower"/>
    <Metric label="ROI" value={roi} format={pct} icon={BarChart3} comparison={compareMetric(roi,previousMetrics?.roi)} direction="higher"/>
@@ -306,7 +306,7 @@ export default function Digitization({state,digi,act}){
    <Metric label="Оборачиваемость по прод." value={turnoverSales} format={daysFmt} comparison={compareMetric(turnoverSales,comparisonTurnoverSales)} direction="lower"/>
    <Metric label="Оборачиваемость по зак." value={turnoverOrders} format={daysFmt} comparison={compareMetric(turnoverOrders,comparisonTurnoverOrders)} direction="lower"/>
    <Metric label="Капитализация по себес." value={capitalizationCost} note={capitalizationNote}/>
-   <Metric label="Средняя капитализация" value={averageCapitalization} note={inventoryHistory.length?`Снимков остатков: ${inventoryHistory.length}`:'Нужна история снимков остатков'} comparison={compareMetric(averageCapitalization,comparisonAverageCapitalization)} direction="higher"/>
+   <Metric label="Средняя капитализация" value={averageCapitalization} note={inventoryHistory.length?`Снимков остатков: ${inventoryHistory.length}`:'Нужна история снимков остатков'} comparison={compareMetric(averageCapitalization,comparisonAverageCapitalization)} direction="neutral"/>
    <Metric label="Капитализация по розн." value={null} note="Нужна цена прошлой полной недели"/>
    <Metric label="Капитализ. на моих складах" value={ownCapitalization}/>
    <Metric label="Остатки на моих складах" value={ownStockQty} format={count}/>
@@ -314,7 +314,7 @@ export default function Digitization({state,digi,act}){
    <Metric label="GMROI" value={gmroi} format={pct} comparison={compareMetric(gmroi,comparisonGmroi)} direction="higher"/>
    <Metric label="Годовой GMROI" value={annualGmroi} format={pct} comparison={compareMetric(annualGmroi,comparisonAnnualGmroi)} direction="higher"/>
    <Metric label="Штрафы" value={penalties} note={pct(percent(penalties,realization))} comparison={compareMetric(penalties,previousMetrics?.penalties)} direction="lower"/>
-   <Metric label="Скидка МП" value={discount} note={pct(percent(discount,realization))} comparison={compareMetric(discount,previousMetrics?.discount)} direction="lower"/>
+   <Metric label="Скидка МП" value={discount} note={pct(percent(discount,realization))} comparison={compareMetric(discount,previousMetrics?.discount)} direction="higher"/>
    <Metric label="Компенсация с баллами" value={compensationWithPoints} note={pct(percent(compensationWithPoints,realization))} comparison={compareMetric(compensationWithPoints,previousMetrics?.compensationWithPoints)} direction="higher"/>
    <Metric label="Компенсация без баллов" value={compensationWithoutPoints} note={pct(percent(compensationWithoutPoints,realization))} comparison={compareMetric(compensationWithoutPoints,previousMetrics?.compensationWithoutPoints)} direction="higher"/>
    <Metric label="Самовыкупы, шт." value={0} format={count}/>
