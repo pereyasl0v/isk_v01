@@ -58,7 +58,10 @@ def _clean(body: BarcodeLabelBody):
     if not isinstance(barcode_enabled, bool):
         raise HTTPException(422, "Проверьте настройку печати штрихкода.")
 
-    code = re.sub(r"\D", "", body.code)
+    raw_code = body.code.strip()
+    if raw_code and not raw_code.isdigit():
+        raise HTTPException(422, "Код EAN-13 должен содержать только цифры.")
+    code = raw_code
     if barcode_enabled:
         if len(code) != 13 or code[-1] != _check_digit(code[:12]):
             raise HTTPException(422, "Укажите корректный код EAN-13.")
@@ -66,7 +69,7 @@ def _clean(body: BarcodeLabelBody):
         code = ""
 
     size_key = body.data.get("sizeKey", "58x40")
-    if size_key not in SIZE_KEYS:
+    if not isinstance(size_key, str) or size_key not in SIZE_KEYS:
         raise HTTPException(422, "Недопустимый размер этикетки.")
 
     try:
