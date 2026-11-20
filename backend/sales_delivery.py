@@ -67,77 +67,101 @@ def _products_by_posting(history):
 
 
 def build_sales_with_deliveries(orders,delivery_days,events=(),history=None):
-    """Produce daily totals and per-SKU rows, keeping unknown values as None."""
+    """Count only confirmed shipment units; identify partial FBO/FBS coverage."""
     dates=[item['date'] for item in orders.get('rows') or []]
+    date_set=set(dates)
     post_products=_products_by_posting(history)
-    events_by_post={}
-    for event in events or ():
-        key=(event.get('scheme') or 'FBO',str(event.get('posting_number')))
-        date_value=local_day(event.get('delivered_at'))
-        products=event.get('products') or post_products.get(key) or []
-        if date_value and products:
-            events_by_post[key]={'date':date_value,'products':products}
-    units_by_day={}
+    fetched={}
+    covered={}
     missing=set()
-    seen_events=set()
+    partial=set()
+    scope=set()
     for day in dates:
         slot=(delivery_days or {}).get(day) or {}
-        if not all((slot.get(scheme) or {}).get('ok') for scheme in SCHEMES):
+        schemes={scheme for scheme in SCHEMES if (slot.get(scheme) or {}).get('ok')}
+        covered[day]=schemes
+        scope.update(schemes)
+        if not schemes:
             missing.add(day)
-            continue
-        postings={}
-        for scheme in SCHEMES:
+        elif len(schemes)<len(SCHEMES):
+            partial.add(day)
+        collected={}
+        for scheme in schemes:
             for item in slot[scheme].get('postings') or []:
                 number=str(item.get('number') or '').strip()
-                if number:
-                    postings[(scheme,number)]=item.get('products') or []
+                if not number:
+                    continue
+                key=(scheme,number)
+                products=item.get('products') or []
+                collected[key]=products
+                post_products.setdefault(key,products)
+        fetched[day]=collected
+
+    verified={}
+    for event in events or ():
+        key=(str(event.get('scheme') or 'FBO').upper(),
+             str(event.get('posting_number') or ''))
+        delivered_day=local_day(event.get('delivered_at'))
+        products=event.get('products') or post_products.get(key) or []
+        if delivered_day and delivered_day in date_set and products:
+            verified[key]={'date':delivered_day,'products':products}
+            scope.add(key[0])
+            # Receiving one event does not establish the *total* for a day.
+            if delivered_day not in covered or not covered[delivered_day]:
+                partial.add(delivered_day)
+                missing.discard(delivered_day)
+
+    units={}
+    def add(day,products):
+        for product in products:
+            key=(day,str(product['sku']))
+            units[key]=units.get(key,0)+int(product['quantity'])
+
+    for day,postings in fetched.items():
         for key,products in postings.items():
-            if key in events_by_post:
-                continue
-            for p in products:
-                k=(day,str(p['sku']))
-                units_by_day[k]=units_by_day.get(k,0)+int(p['quantity'])
-    for key,entry in events_by_post.items():
-        if key in seen_events:
-            continue
-        seen_events.add(key)
-        day=entry['date']
-        if day not in dates or day in missing:
-            continue
-        for p in entry['products']:
-            k=(day,str(p['sku']))
-            units_by_day[k]=units_by_day.get(k,0)+int(p['quantity'])
+            if key not in verified:
+                add(day,products)
+    for item in verified.values():
+        add(item['date'],item['products'])
 
     rows=[]
-    for item in orders.get('rows') or []:
-        day=item['date']
-        delivered=(sum(value for (d,_),value in units_by_day.items() if d==day)
-                   if day not in missing else None)
-        rows.append({**item,'delivered_units':delivered})
-    sku_values={(str(item['sku']),item['date']):dict(item)
-                for item in orders.get('by_sku') or []}
-    for (day,sku),quantity in units_by_day.items():
-        row=sku_values.setdefault((sku,day),{
+    for row in orders.get('rows') or []:
+        day=row['date']
+        delivered=(None if day in missing else
+                   sum(value for (d,_),value in units.items() if d==day))
+        rows.append({**row,'delivered_units':delivered,
+                     'delivery_partial':day in partial})
+    sku_values={(str(row['sku']),row['date']):dict(row)
+                for row in orders.get('by_sku') or []}
+    for (day,sku),value in units.items():
+        sku_values.setdefault((sku,day),{
             'date':day,'sku':sku,'ordered_units':0,'ordered_revenue':0.0,
         })
-        row['delivered_units']=quantity
     by_sku=[]
     for (sku,day),row in sorted(sku_values.items()):
-        row={**row,'delivered_units':(
-            None if day in missing else units_by_day.get((day,sku),0)
-        )}
-        by_sku.append(row)
+        by_sku.append({
+            **row,
+            'delivered_units':None if day in missing else units.get((day,sku),0),
+            'delivery_partial':day in partial,
+        })
+
     errors=[]
     for scheme in SCHEMES:
-        failures=[day for day in dates if not ((delivery_days or {}).get(day) or {}).get(scheme,{}).get('ok')]
+        failures=[day for day in dates if scheme not in covered.get(day,set())]
         if failures:
-            example=((delivery_days or {}).get(failures[0]) or {}).get(scheme) or {}
-            errors.append(f'{scheme}: нет подтверждённых данных за {len(failures)} дн. ({example.get("error") or "загрузка не выполнялась"})')
+            record=((delivery_days or {}).get(failures[0]) or {}).get(scheme) or {}
+            errors.append(
+                f'{scheme}: неполные данные за {len(failures)} дн. '
+                f'({record.get("error") or "данных ещё нет"})'
+            )
+    label=('Доставлено' if scope==set(SCHEMES)
+           else 'Доставлено '+('/'.join(sorted(scope))) if scope else 'Доставлено')
     return {
         **orders,
         'rows':rows,'by_sku':by_sku,'delivery_days':delivery_days,
         'delivered_available':len(missing)<len(dates),
         'delivered_error':'; '.join(errors) if errors else None,
         'delivery_source':'postings_last_status_change_and_verified_push',
-        'delivery_incomplete_days':sorted(missing),
+        'delivery_incomplete_days':sorted(missing|partial),
+        'delivery_scope':sorted(scope),'delivery_label':label,
     }
