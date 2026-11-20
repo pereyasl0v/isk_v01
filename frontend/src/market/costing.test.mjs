@@ -36,7 +36,7 @@ test("supports quantity and equal distribution methods",()=>{
 
 test("keeps the legacy manual unit-cost formula for products without a shipment",()=>{
   const row=calculateProductCost({id:"x",yuan:3.6,rate:11.8,freight:12,quantity:10},null,[]);
-  assert.equal(row.costPerUnit,54.48);
+  assert.ok(Math.abs(row.costPerUnit-54.48)<1e-10);
   assert.equal(row.source,"manual");
 });
 
