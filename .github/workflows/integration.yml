@@ -28,6 +28,8 @@ jobs:
       - run: npm ci
         working-directory: frontend
       - run: node --test src/market/*.test.mjs
+      - run: node --test src/sales-chart-range.test.mjs
+        working-directory: frontend
       - run: node --test src/digitization-period.test.mjs
         working-directory: frontend
       - run: node --test src/inventory-capitalization.test.mjs
