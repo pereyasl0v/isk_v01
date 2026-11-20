@@ -116,7 +116,6 @@ export default function ProductDetails({product,onClose}){
    </div>
    <div className="product-modal-meta">
     <span>Артикул: <strong>{product.offer_id||'—'}</strong></span>
-    <span>SKU: <strong>{product.sku||'—'}</strong></span>
     <span>Код Ozon: <strong>{product.id}</strong></span>
    </div>
    {loading?<div className="product-modal-loading">Загружаем карточку товара…</div>:<>
