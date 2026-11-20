@@ -521,7 +521,11 @@ def history(request:Request):
     data=store.latest(current(request)['client'],'history')
     if not data:
         return {'at':None,'postings':[]}
-    postings=sorted(data.get('postings') or [],key=lambda row:str(row.get('created_at') or ''),reverse=True)
+    postings=sorted(
+        data.get('postings') or [],
+        key=lambda row:str(row.get('created_at') or row.get('in_process_at') or ''),
+        reverse=True,
+    )
     return {**data,'postings':postings}
 
 @app.get('/api/digitization')
