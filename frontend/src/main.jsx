@@ -53,11 +53,10 @@ function SalesHistoryChart({data,state,act,inv}){
   const selected=selectedDays.get(day.date);
   return {date:day.date,ordered_units:selected?.ordered_units??0,
    ordered_revenue:selected?.ordered_revenue??0,
-   sold_units:day.sold_units===null?null:(selected?.sold_units??0),
-   sold_amount:day.sold_units===null?null:(selected?.sold_amount??0),
-   sales_partial:Boolean(day.sales_partial)};
+   delivered_units:day.delivered_units===null||(day.delivery_partial&&selected?.delivered_units==null)?null:(selected?.delivered_units??0),
+   delivery_partial:Boolean(day.delivery_partial)};
  });
- const values=points.flatMap(p=>[Number(p.ordered_units||0),...(data?.financial_sales_available&&p.sold_units!==null?[Number(p.sold_units)]:[])]);
+ const values=points.flatMap(p=>[Number(p.ordered_units||0),...(data?.delivered_available&&p.delivered_units!==null?[Number(p.delivered_units)]:[])]);
  const max=Math.max(5,Math.ceil(Math.max(1,...values)/5)*5);
  const min=Math.min(0,Math.floor(Math.min(0,...values)/5)*5);
  const width=960,height=235,left=14,right=37,top=24,bottom=38,plotWidth=width-left-right,plotHeight=height-top-bottom;
@@ -78,10 +77,10 @@ function SalesHistoryChart({data,state,act,inv}){
  const orderedPath=smoothPath(points.map((point,index)=>({index,value:point.ordered_units})));
  const deliveredSegments=[];let continuous=[];
  points.forEach((point,index)=>{
-  if(point.sold_units===null||point.sold_units===undefined){
+  if(point.delivered_units===null||point.delivered_units===undefined){
    if(continuous.length)deliveredSegments.push(continuous);
    continuous=[];
-  }else continuous.push({index,value:point.sold_units});
+  }else continuous.push({index,value:point.delivered_units});
  });
  if(continuous.length)deliveredSegments.push(continuous);
  const deliveredPaths=deliveredSegments.map(segment=>{
@@ -103,32 +102,32 @@ function SalesHistoryChart({data,state,act,inv}){
    </div>
   </div>
   {data?.error&&<Notice>{data.error}</Notice>}
-  {data?.financial_sales_missing_days?.length>0&&<p className="sales-chart-caveat">Нет финансовой истории за {data.financial_sales_missing_days.length} дней. Пропуски не считаются нулевыми продажами.</p>}
-  {data?.financial_sales_incomplete_days?.length>0&&<p className="sales-chart-caveat">За {data.financial_sales_incomplete_days.length} дней финансовые данные частичные: возможны уточнения после загрузки отчётов Ozon.</p>}
-  {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает заказы из аналитики Ozon, а продажи — из финансовой истории по дням."/>:<>
-   <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.financial_sales_available&&<span><i className="delivered"/>Продано</span>}</div>
+  {data?.delivery_incomplete_days?.length>0&&<p className="sales-chart-caveat">Данные о доставках неполные за {data.delivery_incomplete_days.length} дней. В эти даты показано количество только по доступным схемам FBO/FBS; итог может быть выше.</p>}
+  {data?.delivered_error&&<p className="sales-chart-caveat">{data.delivered_error}</p>}
+  {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает заказы и историю доставок из Ozon Seller API и Ozon Push."/>:<>
+   <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.delivered_available&&<span><i className="delivered"/>{data.delivery_label||'Доставлено'}</span>}</div>
    <div className="sales-chart-wrap">
     {hoveredPoint&&<div className="sales-chart-tooltip" style={{left:`${Math.max(16,Math.min(84,x(hovered)/width*100))}%`}}>
      <strong>{fmtDay(hoveredPoint.date)}</strong>
      <div><span><i className="ordered"/>Заказано</span><b>{num(hoveredPoint.ordered_units)} шт. · {num(hoveredPoint.ordered_revenue)} ₽</b></div>
-     {data?.financial_sales_available&&<div><span><i className="delivered"/>Продано</span><b>{hoveredPoint.sold_units===null?'Нет данных':num(hoveredPoint.sold_units)+' шт. · '+num(hoveredPoint.sold_amount)+' ₽'}</b></div>}
+     {data?.delivered_available&&<div><span><i className="delivered"/>{data.delivery_label||'Доставлено'}</span><b>{hoveredPoint.delivered_units===null?'Нет данных':num(hoveredPoint.delivered_units)+' шт.'}{hoveredPoint.delivery_partial?' · неполные данные':''}</b></div>}
     </div>}
-    <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Количество заказанных и проданных товаров по дням">
+    <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Количество заказанных и доставленных товаров по дням">
      {[min,(min+max)/2,max].map(value=><g key={value}><line x1={left} x2={width-right} y1={y(value)} y2={y(value)} stroke="#d8e2ed" strokeDasharray="2 5" strokeWidth="1"/>{(value!==0||min<0)&&<text x={width-right+8} y={y(value)+4} textAnchor="start" fontSize="12" fill="#8192a4">{Math.round(value)}</text>}</g>)}
      <defs><linearGradient id="ozon-delivery-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9bd7ff" stopOpacity=".52"/><stop offset="100%" stopColor="#cceaff" stopOpacity=".20"/></linearGradient></defs>
-     {data?.financial_sales_available&&deliveredPaths.map((segment,index)=><g key={index}><path d={segment.area} fill="url(#ozon-delivery-fill)"/><path d={segment.line} fill="none" stroke="#a2d8ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></g>)}
+     {data?.delivered_available&&deliveredPaths.map((segment,index)=><g key={index}><path d={segment.area} fill="url(#ozon-delivery-fill)"/><path d={segment.line} fill="none" stroke="#a2d8ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></g>)}
      <path d={orderedPath} fill="none" stroke="#168cf0" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
-     {points.map((p,i)=><g key={p.date} onMouseEnter={()=>setHovered(i)} onMouseLeave={()=>setHovered(null)} onFocus={()=>setHovered(i)} onBlur={()=>setHovered(null)} tabIndex={0} role="button" aria-label={`${fmtDay(p.date)}: заказано ${p.ordered_units}, продано ${p.sold_units??'нет данных'}`}>
+     {points.map((p,i)=><g key={p.date} onMouseEnter={()=>setHovered(i)} onMouseLeave={()=>setHovered(null)} onFocus={()=>setHovered(i)} onBlur={()=>setHovered(null)} tabIndex={0} role="button" aria-label={`${fmtDay(p.date)}: заказано ${p.ordered_units}, доставлено ${p.delivered_units??'нет данных'}`}>
       <rect x={x(i)-plotWidth/Math.max(1,points.length-1)/2} y={top} width={plotWidth/Math.max(1,points.length-1)} height={plotHeight+12} fill="transparent"/>
       {hovered===i&&<line x1={x(i)} x2={x(i)} y1={top} y2={top+plotHeight} stroke="#abc8df" strokeDasharray="3 4"/>}
       <circle cx={x(i)} cy={y(p.ordered_units)} r={hovered===i?5:4} fill="#fff" stroke="#168cf0" strokeWidth="2.5"/>
-      {p.sold_units!==null&&p.sold_units!==undefined&&<circle cx={x(i)} cy={y(p.sold_units)} r={hovered===i?4:2.5} fill="#a2d8ff" stroke="#fff" strokeWidth="1.5"/>}
+      {p.delivered_units!==null&&p.delivered_units!==undefined&&<circle cx={x(i)} cy={y(p.delivered_units)} r={hovered===i?4:2.5} fill="#a2d8ff" stroke="#fff" strokeWidth="1.5"/>}
      </g>)}
      {tickIndexes.map(i=><g key={i}><text x={x(i)} y={height-17} textAnchor={i===0?'start':i===points.length-1?'end':'middle'} fontSize="11" fill="#53667d">{fmtTick(points[i]?.date)}</text>{fmtWeekday(points[i].date)&&<text x={x(i)} y={height-3} textAnchor="middle" fontSize="9" fill="#9daabb">{fmtWeekday(points[i].date)}</text>}</g>)}
     </svg>
    </div>
   </>}
-  <p className="muted mt-3">«Продано» — количество реализованных товаров по финансовой истории Ozon (с учётом возвратов), не дата доставки. Premium и push не требуются.</p>
+  <p className="muted mt-3">«Доставлено» — количество единиц в отправлениях со статусом доставки. Для FBS используется фильтр статуса delivered (фактическая дата учитывается, если Ozon её вернул); для FBO — подтверждённые события Ozon Push. Это не финансовый выкуп; неполный охват схем отмечается отдельно.</p>
   <p className="muted mt-1">Обновлено: {date(data?.at)}{data?.date_from&&` · период ${fmtDay(data.date_from)}–${fmtDay(data.date_to)}`}</p>
  </section>
 }

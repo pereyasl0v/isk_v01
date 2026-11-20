@@ -25,7 +25,7 @@ from .digitization import summarize as digitization_summarize
 from .digitization_cache import combine_digitization_days, download_digitization_day, requested_days
 from .product_documents import router as product_documents_router
 from .costing import clean_workspace, parse_legacy_xlsx, calculate_workspace
-from .sales_delivery import build_sales_with_deliveries
+from .sales_delivery import build_sales_with_deliveries, delivered_snapshot
 from .sales_finance import add_financial_sales
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -416,9 +416,9 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
                         })
                     raise
                 store.save(s['client'],'sales_analytics',orders)
-                # The second line comes from exactly the same SQLite daily
-                # financial history used by the existing digitization module.
-                # Do not invent delivery dates from posting creation/status.
+                # Keep the financial history available for accounting metrics.
+                # The chart's delivery series is assembled separately from
+                # delivered posting statuses and verified FBO Push events.
                 last_closed=today-timedelta(days=1)
                 if first<=last_closed:
                     missing=store.digitization_missing_days(
@@ -439,9 +439,17 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
                                 f'Нет подтверждённых продаж за {day_text}: {exc}. '
                                 'Этот день останется без точки на графике.'
                             )
+                delivery_days=delivered_snapshot(
+                    s['api'],first,today,previous,progress
+                )
+                delivery_data=build_sales_with_deliveries(
+                    orders,delivery_days,store.delivery_events(s['client']),
+                    store.latest(s['client'],'history'),
+                )
+                store.save(s['client'],'sales_analytics',delivery_data)
                 progress(
-                    'График заказов и фактических продаж обновлён '
-                    '(по уже сохранённым дневным финансовым данным).'
+                    'График заказов и доставок обновлён. '
+                    'Финансовая история продаж сохранена отдельно.'
                 )
             elif kind=='digitization':
                 first=s['api']._as_date(date_from)
