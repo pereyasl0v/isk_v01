@@ -21,6 +21,16 @@ class Store:
             c.execute('''CREATE TABLE IF NOT EXISTS snapshots (
                 id INTEGER PRIMARY KEY, client TEXT NOT NULL, kind TEXT NOT NULL,
                 at TEXT NOT NULL, payload TEXT NOT NULL)''')
+            c.execute('''CREATE TABLE IF NOT EXISTS ozon_delivery_events (
+                client TEXT NOT NULL, event_id TEXT NOT NULL,
+                posting_number TEXT NOT NULL, delivered_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(client,event_id))''')
+            c.execute('CREATE INDEX IF NOT EXISTS ozon_delivery_by_client ON ozon_delivery_events(client,delivered_at)')
+            if 'products_payload' not in {
+                row[1] for row in c.execute('PRAGMA table_info(ozon_delivery_events)').fetchall()
+            }:
+                c.execute('ALTER TABLE ozon_delivery_events ADD COLUMN products_payload TEXT')
             c.execute('CREATE INDEX IF NOT EXISTS snapshot_lookup ON snapshots(client,kind,id)')
             c.execute('CREATE INDEX IF NOT EXISTS snapshot_time_lookup ON snapshots(client,kind,at)')
             c.execute('''CREATE TABLE IF NOT EXISTS api_cache (
@@ -401,6 +411,40 @@ class Store:
                                  ON CONFLICT(client,date_from,date_to) DO UPDATE SET
                                  updated_at=excluded.updated_at,payload=excluded.payload''',
                               (str(client),first,last,at,payload))
+
+    def save_delivery_event(self,client,event_id,posting_number,delivered_at):
+        """Store a verified FBO webhook once, using Ozon's immutable UUID."""
+        at=datetime.now(timezone.utc).isoformat()
+        with self.db() as c:
+            cur=c.execute(
+                'INSERT OR IGNORE INTO ozon_delivery_events '
+                '(client,event_id,posting_number,delivered_at,created_at) VALUES (?,?,?,?,?)',
+                (str(client),str(event_id),str(posting_number),str(delivered_at),at)
+            )
+        return cur.rowcount==1
+
+    def attach_delivery_event_products(self,client,event_id,products):
+        if not isinstance(products,list):
+            raise ValueError('Некорректные товары отправления.')
+        payload=self._encode_payload(products)
+        with self.db() as c:
+            c.execute('''UPDATE ozon_delivery_events SET products_payload=?
+                         WHERE client=? AND event_id=?''',
+                      (payload,str(client),str(event_id)))
+
+    def delivery_events(self,client):
+        with self.db() as c:
+            rows=c.execute(
+                'SELECT event_id,posting_number,delivered_at,products_payload '
+                'FROM ozon_delivery_events WHERE client=?',
+                (str(client),)
+            ).fetchall()
+        return [
+            {'event_id':r[0],'scheme':'FBO','posting_number':r[1],
+             'delivered_at':r[2],
+             'products':self._decode_payload(r[3]) if r[3] else None}
+            for r in rows
+        ]
 
     def save_history(self,client,data):
         """Append a cumulative FBO/FBS history snapshot without discarding older postings."""

@@ -1,4 +1,5 @@
 """Read-only Ozon Seller API adapter."""
+import math
 import csv
 import io
 import re
@@ -38,162 +39,88 @@ class Ozon(BaseOzon):
         return list(unique.values())
 
     def daily_sales(self, date_from, date_to, progress):
-        """Daily orders (free) and delivered items (Premium Plus) by SKU."""
-        first = self._as_date(date_from)
-        last = self._as_date(date_to)
-        if last < first:
-            raise ApiError('Дата окончания графика не может быть раньше начала.')
-        if (last - first).days > 92:
-            raise ApiError('График Ozon API доступен максимум за 93 календарных дня.')
+        """Free daily ordered units and sales volume grouped by SKU and day.
 
-        # SKU + day are both available as grouping dimensions without Premium.
-        # Keep the free metrics first in their documented response order: Ozon
-        # may omit delivered_units instead of rejecting a restricted metric.
-        base = {
-            'date_from': first.isoformat(),
-            'date_to': last.isoformat(),
-            'dimension': ['sku', 'day'],
-            'filters': [],
-            'limit': 1000,
-            'offset': 0,
+        Delivered items are fetched separately from FBO/FBS posting statuses.
+        Never request the Premium-only delivered_units analytics metric.
+        """
+        first=self._as_date(date_from)
+        last=self._as_date(date_to)
+        if last < first or (last-first).days>92:
+            raise ApiError('Период продаж должен содержать от 1 до 93 дней.')
+        metrics=['ordered_units','revenue']
+        base={
+            'date_from':first.isoformat(),'date_to':last.isoformat(),
+            'dimension':['sku','day'],'filters':[],
+            'limit':1000,'offset':0,'metrics':metrics,
         }
-        requested_metrics = ['ordered_units', 'revenue', 'delivered_units']
-        free_metrics = ['ordered_units', 'revenue']
-        metrics_for_call = requested_metrics
-        delivered_available = True
-        delivered_error = None
-        try:
-            data = self.call('/v1/analytics/data', {
-                **base, 'metrics': requested_metrics,
-            })
-        except ApiError as exc:
-            # Basic order metrics are freely available. Retrying an identical
-            # restricted request is pointless and consumes analytics quota.
-            if 'Ozon HTTP 400.' not in str(exc) and 'Ozon HTTP 403.' not in str(exc):
-                raise
-            delivered_available = False
-            delivered_error = (
-                'Метрика delivered_units через Seller API доступна только '
-                'с Premium Plus или Premium Pro. Заказы и выручка доступны '
-                'без подписки.'
-            )
-            metrics_for_call = free_metrics
-            progress('Недоступна расширенная метрика доставок Ozon; загружаем заказы.')
-            data = self.call('/v1/analytics/data', {
-                **base, 'metrics': free_metrics,
-            })
-
-        by_day = {}
-        by_sku_day = {}
-        offset = 0
-        for page in range(100):
-            if page:
-                data = self.call('/v1/analytics/data', {
-                    **base, 'offset': offset, 'metrics': metrics_for_call,
-                })
-            result = data.get('result')
-            if not isinstance(result, dict) or not isinstance(result.get('data'), list):
+        by_day={}
+        by_sku_day={}
+        offset=0
+        for _ in range(100):
+            data=self.call('/v1/analytics/data',{**base,'offset':offset})
+            result=data.get('result')
+            if not isinstance(result,dict) or not isinstance(result.get('data'),list):
                 raise ApiError('Ozon вернул некорректную структуру дневной аналитики.')
-
-            batch = result['data']
+            batch=result['data']
             for raw in batch:
-                if not isinstance(raw, dict):
-                    raise ApiError('Ozon вернул некорректную строку дневной аналитики.')
-                dimensions = raw.get('dimensions')
-                metrics = raw.get('metrics')
-                if (
-                    not isinstance(dimensions, list) or len(dimensions) < 2
-                    or not all(isinstance(dim, dict) for dim in dimensions[:2])
-                    or not isinstance(metrics, list) or len(metrics) < 2
-                ):
-                    raise ApiError('Ozon не вернул SKU, дату или базовые метрики заказов.')
-
-                sku = str(dimensions[0].get('id') or '').strip()
-                raw_day = str(dimensions[1].get('id') or dimensions[1].get('name') or '')[:10]
-                if not sku:
-                    raise ApiError('В аналитике Ozon отсутствует SKU товара.')
+                if not isinstance(raw,dict):
+                    raise ApiError('Ozon вернул некорректную строку аналитики.')
+                dimensions=raw.get('dimensions')
+                values=raw.get('metrics')
+                if (not isinstance(dimensions,list) or len(dimensions)<2
+                    or not all(isinstance(d,dict) for d in dimensions[:2])
+                    or not isinstance(values,list) or len(values)<2):
+                    raise ApiError('Ozon не вернул SKU, дату или метрики заказов.')
+                sku=str(dimensions[0].get('id') or '').strip()
+                raw_day=str(dimensions[1].get('id') or dimensions[1].get('name') or '')[:10]
                 try:
-                    day = date.fromisoformat(raw_day).isoformat()
+                    day=date.fromisoformat(raw_day)
                 except ValueError:
-                    raise ApiError('Ozon вернул неизвестный формат даты в дневной аналитике.') from None
-                if not first.isoformat() <= day <= last.isoformat():
-                    raise ApiError('Ozon вернул дату за пределами запрошенного периода.')
-
-                if delivered_available and len(metrics) < 3:
-                    delivered_available = False
-                    delivered_error = (
-                        'Ozon вернул только базовые метрики: delivered_units '
-                        'доступна через API с Premium Plus или Premium Pro.'
-                    )
-
-                def metric(index):
-                    try:
-                        value = metrics[index]
-                        if value is None:
-                            return 0.0
-                        return float(str(value).replace(',', '.').replace(' ', ''))
-                    except (TypeError, ValueError, IndexError):
-                        raise ApiError('Ozon вернул некорректное значение метрики.') from None
-
-                ordered = metric(0)
-                revenue = metric(1)
-                delivered = metric(2) if delivered_available else 0.0
-
-                def add(target):
-                    target['ordered_units'] += ordered
-                    target['ordered_revenue'] += revenue
-                    target['delivered_units'] += delivered
-
-                day_row = by_day.setdefault(day, {
-                    'ordered_units': 0.0, 'ordered_revenue': 0.0,
-                    'delivered_units': 0.0,
-                })
-                sku_row = by_sku_day.setdefault((sku, day), {
-                    'sku': sku, 'date': day, 'ordered_units': 0.0,
-                    'ordered_revenue': 0.0, 'delivered_units': 0.0,
-                })
-                add(day_row)
-                add(sku_row)
-
-            progress(f'Продажи Ozon: получено {len(by_day)} дней, {len(by_sku_day)} записей SKU')
-            if len(batch) < base['limit']:
+                    raise ApiError('Ozon вернул неизвестный формат даты заказа.') from None
+                if not sku or day < first or day > last:
+                    raise ApiError('Ozon вернул неизвестный SKU или дату вне периода.')
+                try:
+                    ordered=float(str(values[0] if values[0] is not None else 0).replace(' ','').replace(',','.'))
+                    revenue=float(str(values[1] if values[1] is not None else 0).replace(' ','').replace(',','.'))
+                    if not math.isfinite(ordered) or not math.isfinite(revenue):
+                        raise ValueError('non-finite metric')
+                except (ValueError,TypeError):
+                    raise ApiError('Некорректные значения количества или суммы заказов.') from None
+                for target in (
+                    by_day.setdefault(day.isoformat(),{'ordered_units':0,'ordered_revenue':0}),
+                    by_sku_day.setdefault((sku,day.isoformat()),{
+                        'sku':sku,'date':day.isoformat(),
+                        'ordered_units':0,'ordered_revenue':0,
+                    }),
+                ):
+                    target['ordered_units']+=ordered
+                    target['ordered_revenue']+=revenue
+            if len(batch)<base['limit']:
                 break
-            offset += base['limit']
+            offset+=base['limit']
         else:
-            raise ApiError('Слишком много страниц дневной аналитики Ozon.')
-
-        def format_row(values):
+            raise ApiError('Слишком много страниц аналитики Ozon.')
+        def format_values(row):
             return {
-                'ordered_units': int(round(values.get('ordered_units', 0.0))),
-                'ordered_revenue': round(values.get('ordered_revenue', 0.0), 2),
-                'delivered_units': (
-                    int(round(values.get('delivered_units', 0.0)))
-                    if delivered_available else None
-                ),
+                'ordered_units':int(round(row.get('ordered_units',0))),
+                'ordered_revenue':round(row.get('ordered_revenue',0),2),
             }
-
-        rows = []
-        day = first
-        while day <= last:
-            rows.append({
-                'date': day.isoformat(),
-                **format_row(by_day.get(day.isoformat(), {})),
-            })
-            day += timedelta(days=1)
-
-        by_sku = [
-            {'sku': sku, 'date': day, **format_row(values)}
-            for (sku, day), values in sorted(by_sku_day.items())
+        rows=[]
+        day=first
+        while day<=last:
+            rows.append({'date':day.isoformat(),
+                         **format_values(by_day.get(day.isoformat(),{}))})
+            day+=timedelta(days=1)
+        by_sku=[
+            {'sku':sku,'date':day,**format_values(values)}
+            for (sku,day),values in sorted(by_sku_day.items())
         ]
+        progress(f'Заказы Ozon: загружено {len(rows)} дней, {len(by_sku)} строк по SKU.')
         return {
-            'date_from': first.isoformat(),
-            'date_to': last.isoformat(),
-            'rows': rows,
-            'by_sku': by_sku,
-            'delivered_available': delivered_available,
-            'delivered_error': delivered_error,
-            'error': None,
-            'source': 'ozon_seller_api_v1_analytics_data',
+            'date_from':first.isoformat(),'date_to':last.isoformat(),
+            'rows':rows,'by_sku':by_sku,'error':None,
+            'source':'ozon_seller_api_v1_analytics_data',
         }
 
     def fbs_stocks(self, products, progress):
@@ -309,6 +236,88 @@ class Ozon(BaseOzon):
             seen.add(nxt)
             cursor = nxt
         raise ApiError(f'История {scheme} слишком велика. Уменьшите период.')
+
+    def fbo_posting_by_number(self,number):
+        """Look up a single FBO shipment for webhook SKU enrichment."""
+        number=str(number or '').strip()
+        if not number or len(number)>100:
+            raise ApiError('Некорректный номер отправления FBO.')
+        response=self.call('/v3/posting/fbo/list',{
+            'cursor':'','limit':100,'sort_dir':'ASC',
+            'filter':{'posting_number':[number]},
+            'with':{'analytics_data':False,'financial_data':False,'legal_info':False},
+        })
+        postings=response.get('postings')
+        if not isinstance(postings,list):
+            raise ApiError('Ozon не вернул состав отправления FBO.')
+        for raw in postings:
+            if str(raw.get('posting_number') or '')==number:
+                return self._normalize_posting(raw,'FBO')
+        raise ApiError('Отправление FBO пока не найдено в API.')
+
+    def delivered_postings_for_day(self, day, scheme):
+        """Shipments whose most recent status switched to delivered on this day.
+
+        For historical FBO/FBS data this is the *last status transition*,
+        not an invented delivery timestamp or an order creation date.
+        """
+        from datetime import time as dt_time
+        day=self._as_date(day)
+        first=datetime.combine(day,dt_time.min,tzinfo=MOSCOW_TZ).astimezone(timezone.utc)
+        until=(datetime.combine(day+timedelta(days=1),dt_time.min,tzinfo=MOSCOW_TZ)
+               .astimezone(timezone.utc))
+        if scheme=='FBO':
+            # FBO list v3 does NOT expose a confirmed last-status-change
+            # date filter. Its since/to bounds are order creation dates.
+            # Assigning those deliveries to creation days would be false.
+            raise ApiError(
+                'Историческая дата доставки FBO недоступна через список '
+                'отправлений. Для точных новых событий подключите Ozon Push.'
+            )
+        elif scheme=='FBS':
+            path='/v4/posting/fbs/list'
+            filter_data={
+                'last_changed_status_date':{
+                    'from':first.isoformat(),'to':until.isoformat(),
+                },
+                'statuses':['delivered'],
+            }
+        else:
+            raise ApiError('Неизвестная схема доставки Ozon.')
+        cursor,seen,rows='',set(),{}
+        for _ in range(1000):
+            response=self.call(path,{
+                'cursor':cursor,'limit':100,'sort_dir':'ASC',
+                'filter':filter_data,
+                'with':{'analytics_data':False,'financial_data':False,'legal_info':False},
+            })
+            postings=response.get('postings')
+            if not isinstance(postings,list):
+                raise ApiError(f'Ozon вернул некорректный список доставок {scheme}.')
+            for posting in postings:
+                if str(posting.get('status') or '').lower()!='delivered':
+                    continue
+                row=self._normalize_posting(posting,scheme)
+                actual=posting.get('fact_delivery_date')
+                if actual:
+                    try:
+                        actual_day=datetime.fromisoformat(
+                            str(actual).replace('Z','+00:00')
+                        ).astimezone(MOSCOW_TZ).date()
+                    except (ValueError,TypeError):
+                        raise ApiError(f'Некорректная дата доставки {scheme}.') from None
+                    if actual_day != day:
+                        # Last status change may be later than delivery.
+                        continue
+                rows[row['number']]=row
+            if not response.get('has_next'):
+                return list(rows.values())
+            next_cursor=str(response.get('cursor') or '')
+            if not next_cursor or next_cursor in seen:
+                raise ApiError(f'Ozon повторил курсор доставок {scheme}.')
+            seen.add(next_cursor)
+            cursor=next_cursor
+        raise ApiError(f'Список доставок {scheme} слишком велик.')
 
     def postings(self, days, progress):
         until = datetime.now(timezone.utc)

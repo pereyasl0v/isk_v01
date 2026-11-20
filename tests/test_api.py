@@ -42,6 +42,9 @@ class FakeOzon:
     def postings(self,days,progress):
         return {'since':'2020-01-01T00:00:00+03:00','to':'2030-01-01T00:00:00+03:00',
                 'warehouse_attribution':True,'postings':[]}
+    def fbo_posting_by_number(self,number):
+        return {'number':number,'scheme':'FBO',
+                'products':[{'sku':'100','quantity':2,'name':'Товар','offer_id':'A'}]}
     def cache_counters(self):
         return {'hits':0,'api_requests':0}
 
@@ -95,6 +98,66 @@ class AuthApiTests(unittest.TestCase):
         }).status_code,403)
         self.assertTrue(anonymous.get('/api/auth/status').json()['initialized'])
         anonymous.close()
+
+    def test_signed_ozon_fbo_webhook_requires_valid_token_and_is_idempotent(self):
+        self.connect()
+        with patch.dict(os.environ,{'ISK_PUBLIC_URL':'https://isk.example.test'}):
+            info=self.client.get('/api/ozon/push/info')
+        self.assertEqual(info.status_code,200,info.text)
+        self.assertTrue(info.json()['available'])
+        self.assertEqual(info.json()['event_type'],'TYPE_FBO_POSTING_STATE_CHANGED')
+        url=info.json()['url']
+        from urllib.parse import urlparse
+        path=urlparse(url).path
+        event={
+            'message_type':'TYPE_FBO_POSTING_STATE_CHANGED',
+            'uuid':'stable-event-1',
+            'posting_number':'123-456-1',
+            'new_state':'posting_delivered',
+            'changed_state_date':'2026-11-20T10:15:00Z',
+        }
+        self.assertEqual(self.client.post(path,json=event).status_code,200)
+        self.assertEqual(self.client.post(path,json=event).status_code,200)
+        auth=self.client.get('/api/auth/me').json()
+        scope='account:'+auth['active_account_id']
+        rows=main.store.delivery_events(scope)
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]['posting_number'],'123-456-1')
+        self.assertEqual(rows[0]['products'][0]['quantity'],2)
+        self.assertEqual(
+            self.client.post(path.rsplit('/',1)[0]+'/invalid',json=event).status_code,403
+        )
+        missing=dict(event,changed_state_date='missing')
+        self.assertEqual(self.client.post(path,json=missing).status_code,422)
+
+    def test_sales_api_uses_saved_financial_days_not_premium_delivery(self):
+        self.connect()
+        auth=self.client.get('/api/auth/me').json()
+        scope='account:'+auth['active_account_id']
+        main.store.save(scope,'sales_analytics',{
+            'date_from':'2026-11-18','date_to':'2026-11-19',
+            'rows':[
+                {'date':'2026-11-18','ordered_units':2,'ordered_revenue':200.0},
+                {'date':'2026-11-19','ordered_units':3,'ordered_revenue':300.0},
+            ],
+            'by_sku':[
+                {'date':'2026-11-19','sku':'100','ordered_units':3,'ordered_revenue':300.0},
+            ],
+        })
+        main.store.save_digitization_day(scope,'2026-11-19',{'from':'test'})
+        financial={
+            'metrics':{'sales_quantity':2,'sales_amount':150},
+            'products':[{'sku':'100','sales_quantity':2,'sales_amount':150}],
+        }
+        with patch('backend.sales_finance.summarize_digitization',return_value=financial):
+            res=self.client.get('/api/sales')
+        self.assertEqual(res.status_code,200,res.text)
+        data=res.json()
+        self.assertEqual(data['rows'][1]['sold_units'],2)
+        self.assertEqual(data['by_sku'][0]['sold_units'],2)
+        self.assertIsNone(data['rows'][0]['sold_units'])
+        self.assertEqual(data['financial_sales_missing_days'],['2026-11-18'])
+        self.assertNotIn('delivered_units',data['rows'][1])
 
     def test_session_is_persistent_and_30_days(self):
         cookie=self.client.cookies.get('isk_session')

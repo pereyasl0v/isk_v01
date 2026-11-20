@@ -1,4 +1,6 @@
 import base64
+import hashlib
+import hmac
 import os
 import secrets
 import sqlite3
@@ -6,7 +8,7 @@ import threading
 import time
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from pathlib import Path
-from fastapi import FastAPI, Request, Response, HTTPException, Depends
+from fastapi import FastAPI, Request, Response, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +25,8 @@ from .digitization import summarize as digitization_summarize
 from .digitization_cache import combine_digitization_days, download_digitization_day, requested_days
 from .product_documents import router as product_documents_router
 from .costing import clean_workspace, parse_legacy_xlsx, calculate_workspace
+from .sales_delivery import build_sales_with_deliveries
+from .sales_finance import add_financial_sales
 
 ROOT=Path(__file__).resolve().parents[1]
 DATA=Path(os.environ.get('OZON_FBO_DATA_DIR',str(Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'VKR_Ozon_FBO_Web')))
@@ -400,29 +404,44 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
             elif kind=='sales':
                 today=datetime.now(MOSCOW_TZ).date()
                 first=today-timedelta(days=days-1)
-                last=today
-                progress(f'Загружаем продажи Ozon за {first.isoformat()} — {last.isoformat()}…')
+                progress(f'Заказы Ozon: {first.isoformat()} — {today.isoformat()}…')
+                previous=store.latest(s['client'],'sales_analytics')
                 try:
-                    sales_data=s['api'].daily_sales(first,last,progress)
+                    orders=s['api'].daily_sales(first,today,progress)
                 except ApiError as exc:
-                    # Save a first-attempt error so the dashboard does not
-                    # consume the strict analytics quota on every page load.
-                    if not store.latest(s['client'],'sales_analytics'):
+                    if not previous:
                         store.save(s['client'],'sales_analytics',{
-                            'date_from':first.isoformat(),'date_to':last.isoformat(),
-                            'rows':[],'delivered_available':False,
-                            'delivered_error':None,'error':str(exc),
+                            'date_from':first.isoformat(),'date_to':today.isoformat(),
+                            'rows':[],'by_sku':[],'error':str(exc),
                         })
                     raise
-                store.save(s['client'],'sales_analytics',sales_data)
-                delivered_note=(
-                    'Метрика «Доставлено» доступна.'
-                    if sales_data.get('delivered_available')
-                    else 'Метрика «Доставлено» недоступна; сохранены заказы.'
-                )
+                store.save(s['client'],'sales_analytics',orders)
+                # The second line comes from exactly the same SQLite daily
+                # financial history used by the existing digitization module.
+                # Do not invent delivery dates from posting creation/status.
+                last_closed=today-timedelta(days=1)
+                if first<=last_closed:
+                    missing=store.digitization_missing_days(
+                        s['client'],first.isoformat(),last_closed.isoformat()
+                    )
+                    for index,day_text in enumerate(missing,1):
+                        progress(
+                            f'Продажи по финансовой истории: '
+                            f'{index}/{len(missing)} · {day_text}'
+                        )
+                        try:
+                            data=download_digitization_day(
+                                s['api'],date.fromisoformat(day_text),progress
+                            )
+                            store.save_digitization_day(s['client'],day_text,data)
+                        except (ApiError,KeyError,ValueError,TypeError) as exc:
+                            progress(
+                                f'Нет подтверждённых продаж за {day_text}: {exc}. '
+                                'Этот день останется без точки на графике.'
+                            )
                 progress(
-                    f"Дневная аналитика сохранена: {len(sales_data.get('rows') or [])} дней. "
-                    f"{delivered_note}"
+                    'График заказов и фактических продаж обновлён '
+                    '(по уже сохранённым дневным финансовым данным).'
                 )
             elif kind=='digitization':
                 first=s['api']._as_date(date_from)
@@ -478,6 +497,7 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
             else:
                 history_data=s['api'].postings(days,progress)
                 saved_history=store.save_history(s['client'],history_data)
+                refresh_delivery_from_events(s['client'])
                 for error in history_data.get('errors') or []:
                     progress('Часть истории не обновлена: '+str(error))
                 progress(
@@ -509,17 +529,134 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
 def sync(request:Request):
     return launch(current(request),'inventory')
 
+def refresh_delivery_from_events(client):
+    previous=store.latest(client,'sales_analytics')
+    if previous and previous.get('rows') and previous.get('delivery_days'):
+        updated=build_sales_with_deliveries(
+            previous,previous['delivery_days'],store.delivery_events(client),
+            store.latest(client,'history'),
+        )
+        store.save(client,'sales_analytics',updated)
+
+
+def _ozon_webhook_signature(account_id):
+    import re
+    if not ENCRYPTION_KEY or not re.fullmatch('[0-9a-f]{32}',str(account_id)):
+        return None
+    return hmac.new(
+        ENCRYPTION_KEY, b'isk-ozon-push-fbo-v1:'+str(account_id).encode('ascii'),
+        hashlib.sha256
+    ).hexdigest()
+
+
+@app.get('/api/ozon/push/info')
+def ozon_push_info(request:Request):
+    s=current(request)
+    public_url=os.getenv('ISK_PUBLIC_URL','').strip().rstrip('/')
+    if not public_url:
+        candidates=[origin for origin in ALLOWED_ORIGINS if origin.startswith('https://')]
+        if len(candidates)==1:
+            public_url=candidates[0].rstrip('/')
+    available=public_url.startswith('https://') and ENCRYPTION_KEY is not None
+    return {
+        'available':available,
+        'event_type':'TYPE_FBO_POSTING_STATE_CHANGED',
+        'url':(
+            f'{public_url}/webhooks/ozon/fbo/{s["account_id"]}/'
+            f'{_ozon_webhook_signature(s["account_id"])}'
+            if available else None
+        ),
+        'configured':bool(public_url),
+    }
+
+
+def _enrich_fbo_delivery_event(account_id,event_id,posting_number):
+    """Attach safe SKU data after responding to the Ozon push request."""
+    client='account:'+account_id
+    try:
+        with store.db() as db:
+            row=db.execute(
+                'SELECT client_id,api_key_ciphertext FROM ozon_accounts '
+                'WHERE id=? AND connected=1',
+                (account_id,),
+            ).fetchone()
+        if not row or not row[1] or not ENCRYPTION_KEY:
+            return
+        api=Ozon(row[0],decrypt_secret(row[1],ENCRYPTION_KEY))
+        posting=api.fbo_posting_by_number(posting_number)
+        store.attach_delivery_event_products(client,event_id,posting['products'])
+        refresh_delivery_from_events(client)
+    except Exception:
+        # Webhook delivery has already been stored durably. Transient Ozon
+        # failures are harmless: a later history sync can fill SKU products.
+        return
+
+
+@app.post('/webhooks/ozon/fbo/{account_id}/{signature}')
+async def ozon_fbo_webhook(account_id:str,signature:str,request:Request,background_tasks:BackgroundTasks):
+    expected=_ozon_webhook_signature(account_id)
+    if (not expected or not hmac.compare_digest(signature,expected)):
+        raise HTTPException(403,'Доступ запрещён.')
+    with store.db() as db:
+        account=db.execute(
+            'SELECT id FROM ozon_accounts WHERE id=? AND connected=1',
+            (account_id,),
+        ).fetchone()
+    if not account:
+        raise HTTPException(404,'Кабинет не найден.')
+    payload=await request.body()
+    if len(payload)>8192:
+        raise HTTPException(413,'Слишком большой запрос.')
+    import json
+    try:
+        event=json.loads(payload)
+    except (ValueError,UnicodeDecodeError):
+        raise HTTPException(422,'Некорректный JSON.') from None
+    if not isinstance(event,dict):
+        raise HTTPException(422,'Ожидался объект JSON.')
+    if event.get('message_type')!='TYPE_FBO_POSTING_STATE_CHANGED':
+        # Ozon checks the URL with a test payload; acknowledge it.
+        return {'ok':True}
+    if event.get('new_state')!='posting_delivered':
+        return {'ok':True}
+    uid=str(event.get('uuid') or '')
+    posting=str(event.get('posting_number') or '')
+    timestamp=str(event.get('changed_state_date') or '')
+    if not 1<=len(uid)<=128 or not 1<=len(posting)<=100:
+        raise HTTPException(422,'Некорректные идентификаторы уведомления.')
+    try:
+        delivery_at=datetime.fromisoformat(timestamp.replace('Z','+00:00'))
+        if delivery_at.tzinfo is None:
+            raise ValueError('Missing timezone')
+        delivered_at=delivery_at.astimezone(timezone.utc).isoformat()
+    except (ValueError,TypeError):
+        raise HTTPException(422,'У события отсутствует корректная дата доставки.') from None
+    client='account:'+account_id
+    inserted=store.save_delivery_event(client,uid,posting,delivered_at)
+    if inserted:
+        background_tasks.add_task(_enrich_fbo_delivery_event,account_id,uid,posting)
+    # Quantities are fetched from Ozon after acknowledging the notification.
+    # The event remains durable if the API is temporarily unavailable.
+    return {'ok':True}
+
+
 @app.post('/api/sales/sync')
 def sync_sales(body:SalesParams,request:Request):
     return launch(current(request),'sales',body.days)
 
 @app.get('/api/sales')
 def sales(request:Request):
-    data=store.latest(current(request)['client'],'sales_analytics')
-    if not data:
-        return {'at':None,'date_from':None,'date_to':None,'rows':[],
-                'delivered_available':None,'delivered_error':None,'error':None}
-    return data
+    client=current(request)['client']
+    data=store.latest(client,'sales_analytics')
+    if not data or not data.get('rows'):
+        return {'at':(data or {}).get('at'),'date_from':None,'date_to':None,
+                'rows':[],'by_sku':[],'error':(data or {}).get('error')}
+    first=data.get('date_from')
+    last=data.get('date_to')
+    if not first or not last:
+        return {**data,'rows':[],'by_sku':[]}
+    daily=store.digitization_days_between(client,first,last)
+    return add_financial_sales(data,daily)
 
 @app.post('/api/history/sync')
 def sync_history(body:History,request:Request):
