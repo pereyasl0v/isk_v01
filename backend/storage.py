@@ -3,6 +3,7 @@ import os
 import sqlite3
 import time
 import uuid
+import unicodedata
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from .security import encrypt_payload, decrypt_payload
@@ -80,6 +81,12 @@ class Store:
                 user_id TEXT PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL, payload TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)''')
+            c.execute('''CREATE TABLE IF NOT EXISTS barcode_labels (
+                id TEXT PRIMARY KEY, user_id TEXT NOT NULL, product_name TEXT NOT NULL,
+                search_name TEXT NOT NULL, barcode_code TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL, payload TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)''')
+            c.execute('CREATE INDEX IF NOT EXISTS barcode_labels_search ON barcode_labels(user_id,search_name,updated_at)')
             c.execute('''CREATE TABLE IF NOT EXISTS auth_login_attempts (
                 ip TEXT NOT NULL, username TEXT NOT NULL, window_started REAL NOT NULL,
                 failed_count INTEGER NOT NULL, locked_until REAL NOT NULL DEFAULT 0,
@@ -313,6 +320,92 @@ class Store:
                 )
         return {'revision':revision,'updated_at':now,
                 'products':data.get('products',[]),'shipments':data.get('shipments',[])}
+
+    def save_barcode_label(self,user_id,label_id,product_name,barcode_code,data):
+        user_id=str(user_id)
+        product_name=str(product_name).strip()[:300]
+        search_name=unicodedata.normalize('NFKC',product_name).casefold()
+        barcode_code=str(barcode_code or '')[:13]
+        payload=self._encode_payload(data)
+        now=datetime.now(timezone.utc).isoformat()
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            if label_id:
+                row=c.execute(
+                    'SELECT created_at FROM barcode_labels WHERE id=? AND user_id=?',
+                    (str(label_id),user_id)
+                ).fetchone()
+                if not row:
+                    return None
+                created_at=row[0]
+                changed=c.execute(
+                    '''UPDATE barcode_labels SET product_name=?,search_name=?,barcode_code=?,
+                       updated_at=?,payload=? WHERE id=? AND user_id=?''',
+                    (product_name,search_name,barcode_code,now,payload,str(label_id),user_id)
+                ).rowcount
+                if changed!=1:
+                    return None
+                saved_id=str(label_id)
+            else:
+                saved_id=uuid.uuid4().hex
+                created_at=now
+                c.execute(
+                    '''INSERT INTO barcode_labels
+                       (id,user_id,product_name,search_name,barcode_code,created_at,updated_at,payload)
+                       VALUES(?,?,?,?,?,?,?,?)''',
+                    (saved_id,user_id,product_name,search_name,barcode_code,created_at,now,payload)
+                )
+        return self.get_barcode_label(user_id,saved_id)
+
+    def list_barcode_labels(self,user_id,query='',limit=500):
+        normalized=unicodedata.normalize('NFKC',str(query or '')).casefold().strip()
+        with self.db() as c:
+            if normalized:
+                escaped=normalized.replace('!','!!').replace('%','!%').replace('_','!_')
+                rows=c.execute(
+                    """SELECT id,product_name,barcode_code,created_at,updated_at
+                       FROM barcode_labels WHERE user_id=? AND search_name LIKE ? ESCAPE '!'
+                       ORDER BY updated_at DESC,id DESC LIMIT ?""",
+                    (str(user_id),'%'+escaped+'%',max(1,min(int(limit),1000)))
+                ).fetchall()
+            else:
+                rows=c.execute(
+                    """SELECT id,product_name,barcode_code,created_at,updated_at
+                       FROM barcode_labels WHERE user_id=?
+                       ORDER BY updated_at DESC,id DESC LIMIT ?""",
+                    (str(user_id),max(1,min(int(limit),1000)))
+                ).fetchall()
+        return [
+            {'id':row[0],'name':row[1],'code':row[2],
+             'created_at':row[3],'updated_at':row[4]}
+            for row in rows
+        ]
+
+    def get_barcode_label(self,user_id,label_id):
+        with self.db() as c:
+            row=c.execute(
+                '''SELECT id,product_name,barcode_code,created_at,updated_at,payload
+                   FROM barcode_labels WHERE id=? AND user_id=?''',
+                (str(label_id),str(user_id))
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            data=self._decode_payload(row[5])
+        except (ValueError,TypeError):
+            data={}
+        return {
+            'id':row[0],'name':row[1],'code':row[2],
+            'created_at':row[3],'updated_at':row[4],'data':data
+        }
+
+    def delete_barcode_label(self,user_id,label_id):
+        with self.db() as c:
+            c.execute(
+                'DELETE FROM barcode_labels WHERE id=? AND user_id=?',
+                (str(label_id),str(user_id))
+            )
+            return c.total_changes>0
 
     def migrate_legacy_client_data(self,client_id,account_scope,account_id):
         client_id=str(client_id)
