@@ -375,7 +375,11 @@ class Store:
         name=str(name).strip()[:160]
         if not name:
             raise ValueError('Укажите название предварительного расчёта.')
-        search_name=unicodedata.normalize('NFKC',name).casefold()
+        product_names=' '.join(
+            str(item.get('name') or '') for item in (data.get('products') or [])
+            if isinstance(item,dict)
+        )
+        search_name=unicodedata.normalize('NFKC',name+' '+product_names).casefold()
         payload=self._encode_payload(data)
         now=datetime.now(timezone.utc).isoformat()
         with self.db() as c:
