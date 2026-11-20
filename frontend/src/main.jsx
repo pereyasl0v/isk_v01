@@ -37,8 +37,8 @@ function Overview(){
   act('/sales/sync',{days:14});
  },[sales?.at,sales?.error,state?.job.running]);
  return <><div className="overview-heading"><div><h1>Обзор кабинета</h1><p className="muted mt-2">Продажи и остатки Ozon · остатки обновлены: {date(inv?.at)}</p></div><button className="primary" disabled={!state||state.job.running} onClick={()=>act('/sync',{})}>Обновить остатки <RefreshCw size={16}/></button></div>
- <SalesHistoryChart data={sales} state={state} act={act} inv={inv}/>
  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек"/></div>
+ <SalesHistoryChart data={sales} state={state} act={act} inv={inv}/>
  {inv?.warning&&<Notice>{inv.warning}</Notice>}
  <div className="mt-5"><ProductCatalog/></div></>
 }
@@ -96,14 +96,12 @@ function SalesHistoryChart({data,state,act,inv}){
  const hoveredPoint=hovered===null?null:points[hovered];
  const busy=Boolean(state?.job?.running);
  return <section className="panel sales-chart">
-  <div className="panel-title"><div><h3>Заказано товаров <span className="sales-price-pill">По цене реализации</span></h3><p className="muted mt-2">В штуках за {points.length} дней{points.length<period?' · загружаем продолжение…':''}</p></div>
+  <div className="panel-title"><div><h3>Заказано товаров</h3></div>
    <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null);if(value>(data?.rows||[]).length&&!busy)act('/sales/sync',{days:value})}}>{value} дн.</button>)}</div>
     <button disabled={busy||!state} onClick={()=>act('/sales/sync',{days:Math.max(period,(data?.rows||[]).length||14)})}>{busy?'Загружаем…':'Обновить'}</button>
    </div>
   </div>
   {data?.error&&<Notice>{data.error}</Notice>}
-  {data?.delivery_incomplete_days?.length>0&&<p className="sales-chart-caveat">Данные о доставках неполные за {data.delivery_incomplete_days.length} дней. В эти даты показано количество только по доступным схемам FBO/FBS; итог может быть выше.</p>}
-  {data?.delivered_error&&<p className="sales-chart-caveat">{data.delivered_error}</p>}
   {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает заказы и историю доставок из Ozon Seller API и Ozon Push."/>:<>
    <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.delivered_available&&<span><i className="delivered"/>{data.delivery_label||'Доставлено'}</span>}</div>
    <div className="sales-chart-wrap">
@@ -127,8 +125,6 @@ function SalesHistoryChart({data,state,act,inv}){
     </svg>
    </div>
   </>}
-  <p className="muted mt-3">«Доставлено» — количество единиц в отправлениях со статусом доставки. Для FBS используется фильтр статуса delivered (фактическая дата учитывается, если Ozon её вернул); для FBO — подтверждённые события Ozon Push. Это не финансовый выкуп; неполный охват схем отмечается отдельно.</p>
-  <p className="muted mt-1">Обновлено: {date(data?.at)}{data?.date_from&&` · период ${fmtDay(data.date_from)}–${fmtDay(data.date_to)}`}</p>
  </section>
 }
 function InventoryHistoryChart({data,inv}){
