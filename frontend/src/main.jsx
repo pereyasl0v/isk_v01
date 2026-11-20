@@ -32,7 +32,7 @@ function Overview(){
  useEffect(()=>{salesSyncStarted.current=false},[me?.active_account_id]);
  useEffect(()=>{
   if(!state||state.job.running||salesSyncStarted.current)return;
-  if(sales?.date_to===moscowDate(0)&&sales?.financial_sales_source==='sqlite_digitization_days')return;
+  if(sales?.date_to===moscowDate(0)&&sales?.financial_sales_source==='sqlite_digitization_days'&&!(sales?.financial_sales_missing_days||[]).some(day=>day<moscowDate(0)))return;
   salesSyncStarted.current=true;
   act('/sales/sync',{days:14});
  },[sales?.at,sales?.error,state?.job.running]);
