@@ -249,13 +249,13 @@ class Ozon(BaseOzon):
         until=(datetime.combine(day+timedelta(days=1),dt_time.min,tzinfo=MOSCOW_TZ)
                .astimezone(timezone.utc))
         if scheme=='FBO':
-            path='/v3/posting/fbo/list'
-            filter_data={
-                'last_change_status_date':{
-                    'from':first.isoformat(),'to':until.isoformat(),
-                },
-                'status':['delivered'],
-            }
+            # FBO list v3 does NOT expose a confirmed last-status-change
+            # date filter. Its since/to bounds are order creation dates.
+            # Assigning those deliveries to creation days would be false.
+            raise ApiError(
+                'Историческая дата доставки FBO недоступна через список '
+                'отправлений. Для точных новых событий подключите Ozon Push.'
+            )
         elif scheme=='FBS':
             path='/v4/posting/fbs/list'
             filter_data={
