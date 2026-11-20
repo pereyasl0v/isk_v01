@@ -31,7 +31,7 @@ function Overview(){
  const {inv,state,act,sales,me}=useApp();const s=inv?.summary;const salesSyncStarted=useRef(false);
  useEffect(()=>{salesSyncStarted.current=false},[me?.active_account_id]);
  useEffect(()=>{
-  if(!state||state.job.running||sales?.at||sales?.error||salesSyncStarted.current)return;
+  if(!state||state.job.running||sales?.error||sales?.date_to===moscowDate(0)||salesSyncStarted.current)return;
   salesSyncStarted.current=true;
   act('/sales/sync',{days:90});
  },[sales?.at,sales?.error,state?.job.running]);
@@ -52,8 +52,11 @@ function SalesHistoryChart({data,state,act}){
  const orderedPath=points.map((p,i)=>(i?'L':'M')+` ${x(i)} ${y(p.ordered_units)}`).join(' ');
  const deliveredPath=points.map((p,i)=>(i?'L':'M')+` ${x(i)} ${y(p.delivered_units)}`).join(' ');
  const deliveredArea=points.length?`${deliveredPath} L ${x(points.length-1)} ${top+plotHeight} L ${x(0)} ${top+plotHeight} Z`:'';
- const tickIndexes=[...new Set([0,Math.floor((points.length-1)/2),points.length-1])].filter(i=>i>=0);
- const fmtDay=value=>value?value.slice(8,10)+'.'+value.slice(5,7):'—';
+ const tickStep=points.length<=16?1:Math.ceil(points.length/12);
+ const tickIndexes=points.map((_,i)=>i).filter(i=>i===0||i===points.length-1||i%tickStep===0);
+ const months=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+ const fmtDay=value=>value?Number(value.slice(8,10))+' '+months[Number(value.slice(5,7))-1]:'—';
+ const fmtTick=value=>value?value.slice(8,10):'—';
  const hoveredPoint=hovered===null?null:points[hovered];
  const busy=Boolean(state?.job?.running);
  return <section className="panel sales-chart">
@@ -82,7 +85,7 @@ function SalesHistoryChart({data,state,act}){
       <circle cx={x(i)} cy={y(p.ordered_units)} r={hovered===i?5:4} fill="#fff" stroke="#168cf0" strokeWidth="2.5"/>
       {data?.delivered_available&&<circle cx={x(i)} cy={y(p.delivered_units)} r={hovered===i?4:3} fill="#9bd4ff" stroke="#fff" strokeWidth="1.5"/>}
      </g>)}
-     {tickIndexes.map(i=><text key={i} x={x(i)} y={height-12} textAnchor={i===0?'start':i===points.length-1?'end':'middle'} fontSize="11" fill="#8796a3">{fmtDay(points[i]?.date)}</text>)}
+     {tickIndexes.map(i=><text key={i} x={x(i)} y={height-12} textAnchor={i===0?'start':i===points.length-1?'end':'middle'} fontSize="11" fill="#8796a3">{fmtTick(points[i]?.date)}</text>)}
     </svg>
    </div>
   </>}
