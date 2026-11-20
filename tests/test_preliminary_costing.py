@@ -152,7 +152,7 @@ class PreliminaryCostArchiveApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
 
     def test_save_search_edit_and_delete_archive_without_ozon_account(self):
-        body = {"name": "Щипцы СВП · ноябрь", "data": sample_draft()}
+        body = {"name": "Ноябрьская закупка", "data": sample_draft()}
         created = self.client.post("/api/preliminary-costs", headers=HEAD, json=body)
         self.assertEqual(created.status_code, 201, created.text)
         record = created.json()
@@ -172,7 +172,7 @@ class PreliminaryCostArchiveApiTests(unittest.TestCase):
         updated = self.client.put(
             f"/api/preliminary-costs/{record['id']}",
             headers=HEAD,
-            json={"name": "Щипцы СВП · обновлено", "data": updated_data},
+            json={"name": "Зимняя закупка", "data": updated_data},
         )
         self.assertEqual(updated.status_code, 200, updated.text)
         self.assertEqual(updated.json()["data"]["products"][0]["unitPriceYuan"], 4.0)
@@ -180,6 +180,10 @@ class PreliminaryCostArchiveApiTests(unittest.TestCase):
         self.assertEqual(
             self.client.get("/api/preliminary-costs?q=ноябрь", headers=HEAD).json()["items"],
             [],
+        )
+        self.assertEqual(
+            len(self.client.get("/api/preliminary-costs?q=УМЕНЬШИТЕЛИ", headers=HEAD).json()["items"]),
+            1,
         )
 
         with main.store.db() as db:
