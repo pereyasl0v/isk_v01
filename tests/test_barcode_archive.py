@@ -138,6 +138,14 @@ class BarcodeArchiveApiTests(unittest.TestCase):
         response = self.client.post("/api/barcodes", headers=HEAD, json=invalid)
         self.assertEqual(response.status_code, 422, response.text)
 
+    def test_preserves_valid_ean_when_printing_is_disabled(self):
+        body = label_body()
+        body["data"]["barcodeEnabled"] = False
+        response = self.client.post("/api/barcodes", headers=HEAD, json=body)
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["code"], "2053809942215")
+        self.assertFalse(response.json()["data"]["barcodeEnabled"])
+
     def test_requires_authentication(self):
         anonymous = TestClient(main.app)
         try:
