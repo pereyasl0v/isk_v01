@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {Barcode as BarcodeIcon, Download, RotateCcw, CheckCircle2, AlertCircle, FileText} from 'lucide-react';
+import {Barcode as BarcodeIcon, Download, RotateCcw, CheckCircle2, AlertCircle, FileText, Archive, Search, X, Trash2, Save} from 'lucide-react';
 import './barcodeGenerator.css';
 
 const SIZE_OPTIONS = [
@@ -303,6 +303,24 @@ function Field({field,value,enabled,onValue,onEnabled}){
  </div>;
 }
 
+async function barcodeArchiveRequest(path, method='GET', body){
+ const response = await fetch('/api'+path,{
+  credentials:'same-origin',
+  method,
+  headers:body===undefined?{}:{'Content-Type':'application/json','X-Local-App':'fbo'},
+  body:body===undefined?undefined:JSON.stringify(body)
+ });
+ const data = await response.json().catch(()=>({}));
+ if(!response.ok) throw new Error(data.detail||'Не удалось выполнить операцию с архивом.');
+ return data;
+}
+
+function formatArchiveDate(value){
+ if(!value) return '—';
+ const date = new Date(value);
+ return Number.isNaN(date.getTime())?'—':date.toLocaleString('ru-RU',{dateStyle:'short',timeStyle:'short'});
+}
+
 export default function BarcodeGenerator(){
  const [values,setValues] = useState(INITIAL_VALUES);
  const [enabled,setEnabled] = useState(INITIAL_ENABLED);
@@ -315,6 +333,15 @@ export default function BarcodeGenerator(){
  const [exporting,setExporting] = useState(false);
  const [exportError,setExportError] = useState('');
  const [exportSuccess,setExportSuccess] = useState(false);
+ const [recordId,setRecordId] = useState(null);
+ const [archiveOpen,setArchiveOpen] = useState(false);
+ const [archiveQuery,setArchiveQuery] = useState('');
+ const [archiveItems,setArchiveItems] = useState([]);
+ const [archiveLoading,setArchiveLoading] = useState(false);
+ const [archiveLoadingId,setArchiveLoadingId] = useState(null);
+ const [archiveError,setArchiveError] = useState('');
+ const [archiveNotice,setArchiveNotice] = useState('');
+ const [savingArchive,setSavingArchive] = useState(false);
  const previewRef = useRef(null);
  const size = useMemo(()=>SIZE_OPTIONS.find(item=>item.key===sizeKey)||SIZE_OPTIONS[0],[sizeKey]);
  const codeResult = useMemo(()=>parseEan13(code),[code]);
@@ -327,6 +354,101 @@ export default function BarcodeGenerator(){
   });
   setRenderMeta(meta);
  },[values,enabled,codeResult,barcodeEnabled,size,textSize,showEac,showRst]);
+
+ useEffect(()=>{
+  if(!archiveOpen) return;
+  let active = true;
+  const timer = window.setTimeout(async()=>{
+   setArchiveLoading(true);
+   setArchiveError('');
+   try{
+    const result = await barcodeArchiveRequest('/barcodes?q='+encodeURIComponent(archiveQuery));
+    if(active) setArchiveItems(result.items||[]);
+   }catch(error){
+    if(active) setArchiveError(error?.message||'Не удалось загрузить архив.');
+   }finally{
+    if(active) setArchiveLoading(false);
+   }
+  },180);
+  return ()=>{
+   active = false;
+   window.clearTimeout(timer);
+  };
+ },[archiveOpen,archiveQuery]);
+
+ const openArchive = () => {
+  setArchiveQuery('');
+  setArchiveError('');
+  setArchiveOpen(true);
+ };
+ const loadArchivedLabel = async(id) => {
+  setArchiveLoadingId(id);
+  setArchiveError('');
+  try{
+   const record = await barcodeArchiveRequest('/barcodes/'+encodeURIComponent(id));
+   const data = record.data||{};
+   setValues({...INITIAL_VALUES,...(data.values||{})});
+   setEnabled({...INITIAL_ENABLED,...(data.enabled||{})});
+   setCode(data.code||record.code||'');
+   setBarcodeEnabled(data.barcodeEnabled!==false);
+   setSizeKey(SIZE_OPTIONS.some(option=>option.key===data.sizeKey)?data.sizeKey:'58x40');
+   setTextSize(Number.isFinite(Number(data.textSize))?Number(data.textSize):1.76);
+   setShowEac(Boolean(data.showEac));
+   setShowRst(Boolean(data.showRst));
+   setRecordId(record.id);
+   setExportError('');
+   setExportSuccess(false);
+   setArchiveNotice('Загружена этикетка из архива: '+record.name);
+   setArchiveOpen(false);
+  }catch(error){
+   setArchiveError(error?.message||'Не удалось открыть этикетку.');
+  }finally{
+   setArchiveLoadingId(null);
+  }
+ };
+ const saveToArchive = async() => {
+  const name = String(values.productName||'').trim();
+  if(!name){
+   setExportError('Укажите наименование товара перед сохранением в архив.');
+   return;
+  }
+  if(barcodeEnabled&&!codeResult.valid){
+   setExportError('Введите корректный EAN-13 перед сохранением.');
+   return;
+  }
+  setSavingArchive(true);
+  setExportError('');
+  setArchiveNotice('');
+  try{
+   const finalCode = barcodeEnabled?codeResult.code:'';
+   const body = {
+    name,
+    code:finalCode,
+    data:{values,enabled,code:finalCode,barcodeEnabled,sizeKey,textSize,showEac,showRst}
+   };
+   const result = recordId
+    ? await barcodeArchiveRequest('/barcodes/'+encodeURIComponent(recordId),'PUT',body)
+    : await barcodeArchiveRequest('/barcodes','POST',body);
+   setRecordId(result.id);
+   setArchiveNotice(recordId?'Изменения сохранены в архиве.':'Этикетка сохранена в архиве.');
+   setExportSuccess(false);
+  }catch(error){
+   setExportError(error?.message||'Не удалось сохранить этикетку в архив.');
+  }finally{
+   setSavingArchive(false);
+  }
+ };
+ const deleteArchivedLabel = async(item) => {
+  if(!window.confirm('Удалить этикетку «'+item.name+'» из архива?')) return;
+  try{
+   await barcodeArchiveRequest('/barcodes/'+encodeURIComponent(item.id),'DELETE');
+   setArchiveItems(current=>current.filter(row=>row.id!==item.id));
+   if(recordId===item.id) setRecordId(null);
+   setArchiveNotice('Этикетка удалена из архива.');
+  }catch(error){
+   setArchiveError(error?.message||'Не удалось удалить этикетку.');
+  }
+ };
 
  const updateValue = (key,value) => {
   setValues(current=>({...current,[key]:value}));
@@ -345,8 +467,10 @@ export default function BarcodeGenerator(){
   setTextSize(1.76);
   setShowEac(false);
   setShowRst(false);
+  setRecordId(null);
   setExportError('');
   setExportSuccess(false);
+  setArchiveNotice('');
  };
  const downloadPdf = async () => {
   if(barcodeEnabled && !codeResult.valid) return;
@@ -391,8 +515,12 @@ export default function BarcodeGenerator(){
     <div className="eyebrow">ИНСТРУМЕНТЫ</div>
     <h1>Штрихкоды</h1>
     <p>Создавайте этикетки EAN-13 с данными товара и скачивайте PDF для печати.</p>
+    {recordId&&<span className="barcode-editing-indicator">Редактируется запись из архива</span>}
    </div>
-   <button type="button" className="barcode-reset-button" onClick={reset}><RotateCcw size={15}/> Сбросить форму</button>
+   <div className="barcode-heading-actions">
+    <button type="button" className="barcode-archive-open" onClick={openArchive}><Archive size={16}/> Архив</button>
+    <button type="button" className="barcode-reset-button" onClick={reset}><RotateCcw size={15}/> Новая этикетка</button>
+   </div>
   </div>
 
   <div className="barcode-layout">
@@ -458,12 +586,46 @@ export default function BarcodeGenerator(){
     {renderMeta.overflow&&<div className="barcode-warning"><AlertCircle size={16}/> Слишком много текста. Уменьшите размер шрифта или отключите часть полей.</div>}
     {barcodeEnabled&&!codeResult.valid&&<div className="barcode-preview-hint">Введите корректный код EAN-13, чтобы сформировать PDF со штрихкодом.</div>}
     {exportError&&<div className="barcode-warning"><AlertCircle size={16}/>{exportError}</div>}
+    {archiveNotice&&<div className="barcode-success"><CheckCircle2 size={16}/>{archiveNotice}</div>}
     {exportSuccess&&<div className="barcode-success"><CheckCircle2 size={16}/> PDF готов. Проверьте папку загрузок.</div>}
+    <button type="button" className="barcode-save-button" onClick={saveToArchive} disabled={savingArchive||!String(values.productName||'').trim()||(barcodeEnabled&&!codeResult.valid)}>
+     <Save size={16}/>{savingArchive?'Сохраняем…':recordId?'Сохранить изменения':'Сохранить в архив'}
+    </button>
     <button type="button" className="primary barcode-download-button" onClick={downloadPdf} disabled={exporting||(barcodeEnabled&&!codeResult.valid)||renderMeta.overflow}>
      <Download size={17}/>{exporting?'Формируем PDF…':'Скачать PDF'}
     </button>
     <p className="barcode-download-note">PDF создаётся в точном размере {size.width} × {size.height} мм. Печать — масштаб 100%, без подгонки под страницу.</p>
    </section>
   </div>
+
+  {archiveOpen&&<div className="barcode-archive-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setArchiveOpen(false)}}>
+   <section className="barcode-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="barcode-archive-title">
+    <div className="barcode-archive-header">
+     <div><h2 id="barcode-archive-title">Архив штрихкодов</h2><p>Сохранённые этикетки. Выберите запись, чтобы открыть и отредактировать её.</p></div>
+     <button type="button" className="barcode-archive-close" aria-label="Закрыть архив" onClick={()=>setArchiveOpen(false)}><X size={19}/></button>
+    </div>
+    <label className="barcode-archive-search">
+     <Search size={18}/>
+     <input type="search" value={archiveQuery} onChange={event=>setArchiveQuery(event.target.value)} placeholder="Поиск по наименованию товара…" autoFocus/>
+    </label>
+    <div className="barcode-archive-list" aria-live="polite">
+     {archiveLoading&&<div className="barcode-archive-state">Загружаем архив…</div>}
+     {!archiveLoading&&archiveError&&<div className="barcode-archive-error">{archiveError}</div>}
+     {!archiveLoading&&!archiveError&&!archiveItems.length&&<div className="barcode-archive-empty"><Archive size={27}/><strong>{archiveQuery?'Ничего не найдено':'Архив пока пуст'}</strong><span>{archiveQuery?'Попробуйте изменить поисковый запрос.':'Сохраните созданную этикетку — она появится здесь.'}</span></div>}
+     {!archiveLoading&&archiveItems.map(item=><div className="barcode-archive-item" key={item.id}>
+      <button type="button" className="barcode-archive-item-main" onClick={()=>loadArchivedLabel(item.id)} disabled={archiveLoadingId===item.id}>
+       <span className="barcode-archive-item-title">{item.name}</span>
+       <span className="barcode-archive-item-meta">{item.code?'EAN-13: '+item.code:'Без штрихкода'} · Изменено: {formatArchiveDate(item.updated_at)}</span>
+       <span className="barcode-archive-item-action">{archiveLoadingId===item.id?'Открываем…':'Открыть и редактировать'}</span>
+      </button>
+      <button type="button" className="barcode-archive-delete" aria-label={'Удалить '+item.name} title="Удалить из архива" onClick={()=>deleteArchivedLabel(item)}><Trash2 size={16}/></button>
+     </div>)}
+    </div>
+    <div className="barcode-archive-footer">
+     <span>{archiveItems.length} {archiveItems.length===1?'этикетка':archiveItems.length>=2&&archiveItems.length<=4?'этикетки':'этикеток'}</span>
+     <button type="button" className="primary" onClick={()=>{reset();setArchiveOpen(false)}}>Создать новую этикетку</button>
+    </div>
+   </section>
+  </div>}
  </div>;
 }
