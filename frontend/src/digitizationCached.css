@@ -91,16 +91,25 @@
 }
 
 
-/* Previous-period comparison in digitization metric cards. */
-.metric-comparison{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;margin-top:9px;min-height:23px;font-size:10px;font-variant-numeric:tabular-nums}
-.metric-comparison-previous{color:#829087;font-size:10px;white-space:nowrap}
-.metric-comparison-change{display:inline-flex;align-items:center;gap:3px;padding:3px 6px;border-radius:6px;font-size:10px;font-weight:700;white-space:nowrap}
-.metric-comparison-change svg{flex-shrink:0}
-.metric-comparison.positive .metric-comparison-change{background:#edf7f0;color:#21824c}
-.metric-comparison.negative .metric-comparison-change{background:#fff0ef;color:#c83f3b}
-.metric-comparison.neutral .metric-comparison-change{background:#f0f3f1;color:#718078}
+/* Clear, dashboard-style comparison controls and metric badges. */
+.digitization-comparison-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:8px 0 12px}
+.digitization-comparison-toggle{display:inline-flex;align-items:center;gap:10px;min-height:42px;padding:9px 13px;border:1px solid #dce7df;border-radius:9px;background:#fff;color:#365443;font-size:12px;font-weight:650;cursor:pointer;transition:background .15s,border-color .15s}
+.digitization-comparison-toggle:hover{background:#f7faf8;border-color:#b9d0c1}
+.digitization-comparison-toggle input{width:17px;height:17px;margin:0;flex:0 0 auto;accent-color:#26734d;cursor:pointer}
+.digitization-comparison-period{color:#7a8d81;font-size:11px;font-weight:550}
+.metric-comparison{display:flex;flex-direction:column;gap:8px;margin-top:13px;padding:10px 12px;min-height:76px;border:1px solid transparent;border-radius:10px;font-variant-numeric:tabular-nums}
+.metric-comparison-top{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.metric-comparison-previous{color:inherit;opacity:.72;font-size:9px;font-weight:700;letter-spacing:.045em;white-space:nowrap}
+.metric-comparison-top strong{margin:0;color:inherit;font-size:11px;font-weight:700;letter-spacing:0;white-space:nowrap}
+.metric-comparison-change{display:flex;align-items:center;gap:7px;min-width:0}
+.metric-comparison-change strong{margin:0;color:inherit;font-size:16px;font-weight:750;letter-spacing:-.25px;line-height:1.15;overflow-wrap:anywhere}
+.metric-comparison-percent{margin-left:auto;padding:5px 8px;border-radius:7px;background:#ffffffb8;color:inherit;font-size:12px;font-weight:750;white-space:nowrap}
+.metric-comparison-arrow{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+.metric-comparison-arrow svg{width:19px;height:19px;stroke-width:2.5}
+.metric-comparison.positive{background:#e8f5ec;border-color:#cce6d4;color:#237447}
+.metric-comparison.negative{background:#fbe9e8;border-color:#f0ccca;color:#bf4140}
+.metric-comparison.neutral{background:#eff3f0;border-color:#dce5df;color:#6d7d73}
 .digitization-comparison-status{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 13px;border:1px solid #e1e9e3;border-radius:9px;background:#fff;color:#64776b;font-size:11px;line-height:1.5}
-.digitization-comparison-status.ready{background:#edf6f0;border-color:#d9e9dd;color:#35664a}
 .digitization-comparison-status.loading{background:#f4f7f5;color:#60766a}
 .digitization-comparison-status.missing{background:#fbf7eb;border-color:#eee2c4;color:#806d3d}
 .digitization-comparison-status.limited{background:#f3f5f4;color:#718078}
@@ -108,7 +117,12 @@
 .digitization-comparison-status button:hover:not(:disabled){background:#edf6f0}
 .digitization-comparison-status button:disabled{opacity:.55;cursor:not-allowed}
 @media(max-width:720px){
- .metric-comparison{align-items:flex-start;flex-direction:column;gap:4px}
+ .digitization-comparison-toolbar{align-items:stretch}
+ .digitization-comparison-toggle{width:100%}
+ .digitization-comparison-period{padding-left:3px}
+ .metric-comparison{padding:9px 10px;gap:7px}
+ .metric-comparison-change strong{font-size:14px}
+ .metric-comparison-percent{font-size:11px}
  .digitization-comparison-status{align-items:flex-start}
  .digitization-comparison-status button{width:100%}
 }
