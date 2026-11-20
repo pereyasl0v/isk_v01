@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {salesRangeTotals, salesTickIndexes} from './sales-chart-range.mjs';
+import {salesChartWindow, salesRangeTotals, salesTickIndexes} from './sales-chart-range.mjs';
 
 test('90-day chart keeps last two tick labels separated', () => {
   const ticks = salesTickIndexes(90);
@@ -43,4 +43,37 @@ test('single-day selections and bounds work', () => {
   assert.equal(one.deliveryComplete, true);
   assert.equal(salesRangeTotals(points, -30, 99).days, 4);
   assert.equal(salesRangeTotals([], 0, 0), null);
+});
+
+test('90 дн. means 90 completed Moscow days plus today (91 points)', () => {
+  const now = new Date('2026-11-20T12:00:00Z');
+  const allDates = Array.from({length: 91}, (_, i) => {
+    const day = new Date('2026-08-22T00:00:00Z');
+    day.setUTCDate(day.getUTCDate() + i);
+    return {date: day.toISOString().slice(0, 10), ordered_units: i};
+  });
+  const window = salesChartWindow(allDates, 90, now);
+  assert.equal(window.from, '2026-08-22');
+  assert.equal(window.to, '2026-11-20');
+  assert.equal(window.points.length, 91);
+  assert.equal(window.complete, true);
+  assert.equal(salesChartWindow(allDates.slice(1), 90, now).complete, false);
+  assert.equal(salesChartWindow(allDates.slice(0, -1), 90, now).complete, false);
+  assert.equal(salesChartWindow(allDates.filter(p => p.date !== '2026-10-01'), 90, now).complete, false);
+  assert.equal(salesTickIndexes(window.points.length).at(-1), 90);
+});
+
+test('chart ignores old cached dates and uses Moscow today across midnight', () => {
+  const now = new Date('2026-11-19T22:30:00Z'); // already Nov 20 in Moscow
+  const rows = [
+    {date:'2026-11-12'}, {date:'2026-11-13'}, {date:'2026-11-14'},
+    {date:'2026-11-15'}, {date:'2026-11-16'}, {date:'2026-11-17'},
+    {date:'2026-11-18'}, {date:'2026-11-19'}, {date:'2026-11-20'}
+  ];
+  const window = salesChartWindow(rows, 7, now);
+  assert.equal(window.from, '2026-11-13');
+  assert.equal(window.to, '2026-11-20');
+  assert.equal(window.points.length, 8);
+  assert.equal(window.complete, true);
+  assert.deepEqual(salesChartWindow([], 7, now).points, []);
 });
