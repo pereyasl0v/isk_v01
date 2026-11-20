@@ -30,9 +30,15 @@ PERSISTENT_CACHE_TTLS = {
     '/v1/finance/accrual/postings': 12 * 3600,
     '/v1/finance/products/buyout': 12 * 3600,
     '/v1/returns/list': 12 * 3600,
+    # Ozon limits this endpoint to one request per minute; a 30-minute
+    # persistent cache also stays below the 50/day free-plan quota.
+    '/v1/analytics/data': 30 * 60,
     PLACEMENT_CREATE_PATH: PLACEMENT_CACHE_TTL,
 }
 MOSCOW_TZ = timezone(timedelta(hours=3))
+_ANALYTICS_RATE_LOCK = threading.Lock()
+_ANALYTICS_RATE_LOCKS = {}
+_ANALYTICS_LAST_REQUEST = {}
 
 
 class ApiError(Exception):
@@ -185,10 +191,23 @@ class Ozon:
                 pass
         return result
 
-    def _throttle(self):
-        # The global Ozon limit may be higher, but individual methods can have
-        # stricter limits. A small per-session gap prevents bursts when a sync
-        # chains many finance/report requests one after another.
+    def _throttle(self, path=None):
+        # /v1/analytics/data is limited to one request per minute per seller.
+        # Coordinate across Ozon instances so reconnects do not bypass it.
+        if path == '/v1/analytics/data':
+            with _ANALYTICS_RATE_LOCK:
+                client_lock = _ANALYTICS_RATE_LOCKS.setdefault(
+                    self.client_id, threading.Lock()
+                )
+            with client_lock:
+                now = time.monotonic()
+                wait = 60.0 - (now - _ANALYTICS_LAST_REQUEST.get(self.client_id, 0.0))
+                if wait > 0:
+                    self.sleep(wait)
+                _ANALYTICS_LAST_REQUEST[self.client_id] = time.monotonic()
+            return
+        # A small per-session gap prevents bursts when a sync chains many
+        # ordinary finance/report requests one after another.
         with self._rate_lock:
             now = time.monotonic()
             wait = 0.25 - (now - self._last_request_at)
@@ -231,7 +250,7 @@ class Ozon:
         opener = urllib.request.build_opener(NoRedirect())
         for attempt in range(6):
             try:
-                self._throttle()
+                self._throttle(path)
                 self._api_requests += 1
                 with opener.open(request, timeout=40) as response:
                     result = json.load(response)
