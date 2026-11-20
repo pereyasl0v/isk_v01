@@ -181,7 +181,7 @@ def build_sales_with_deliveries(orders,delivery_days,events=(),history=None):
         'rows':rows,'by_sku':by_sku,'delivery_days':delivery_days,
         'delivered_available':available,
         'delivery_complete':complete,
-        'delivery_error':'; '.join(errors) if errors else None,
+        'delivered_error':'; '.join(errors) if errors else None,
         'delivery_source':'fbs_delivered_status_and_verified_fbo_push',
         'delivery_incomplete_days':incomplete,
         'delivery_unknown_days':sorted(unknown),

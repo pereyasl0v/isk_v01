@@ -103,7 +103,7 @@ function SalesHistoryChart({data,state,act,inv}){
   </div>
   {data?.error&&<Notice>{data.error}</Notice>}
   {data?.delivery_incomplete_days?.length>0&&<p className="sales-chart-caveat">Данные о доставках неполные за {data.delivery_incomplete_days.length} дней. В эти даты показано количество только по доступным схемам FBO/FBS; итог может быть выше.</p>}
-  {data?.delivery_error&&<p className="sales-chart-caveat">{data.delivery_error}</p>}
+  {data?.delivered_error&&<p className="sales-chart-caveat">{data.delivered_error}</p>}
   {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает заказы и историю доставок из Ozon Seller API и Ozon Push."/>:<>
    <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.delivered_available&&<span><i className="delivered"/>{data.delivery_label||'Доставлено'}</span>}</div>
    <div className="sales-chart-wrap">

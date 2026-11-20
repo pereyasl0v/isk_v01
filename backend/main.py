@@ -416,9 +416,9 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
                         })
                     raise
                 store.save(s['client'],'sales_analytics',orders)
-                # The second line comes from exactly the same SQLite daily
-                # financial history used by the existing digitization module.
-                # Do not invent delivery dates from posting creation/status.
+                # Keep the financial history available for accounting metrics.
+                # The chart's delivery series is assembled separately from
+                # delivered posting statuses and verified FBO Push events.
                 last_closed=today-timedelta(days=1)
                 if first<=last_closed:
                     missing=store.digitization_missing_days(

@@ -62,7 +62,6 @@ class DeliveryAccountingTests(unittest.TestCase):
         self.assertEqual(result['delivery_incomplete_days'],['2026-11-19'])
         self.assertFalse(result['delivery_complete'])
         self.assertEqual(result['delivery_label'],'Доставлено · неполные данные')
-        self.assertFalse(result['delivery_complete'])
 
     def test_two_failed_schemes_leave_unknown_not_zero(self):
         data=checked()
