@@ -95,7 +95,7 @@
 .digitization-comparison-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:8px 0 12px}
 .digitization-comparison-toggle{display:inline-flex;align-items:center;gap:10px;min-height:42px;padding:9px 13px;border:1px solid #dce7df;border-radius:9px;background:#fff;color:#365443;font-size:12px;font-weight:650;cursor:pointer;transition:background .15s,border-color .15s}
 .digitization-comparison-toggle:hover{background:#f7faf8;border-color:#b9d0c1}
-.digitization-comparison-toggle input{width:17px;height:17px;margin:0;flex:0 0 auto;accent-color:#26734d;cursor:pointer}
+.digitization-comparison-toggle input{width:17px;height:17px;min-width:17px;margin:0;padding:0;border:0;background:transparent;flex:0 0 auto;accent-color:#26734d;cursor:pointer}
 .digitization-comparison-period{color:#7a8d81;font-size:11px;font-weight:550}
 .metric-comparison{display:flex;flex-direction:column;gap:8px;margin-top:13px;padding:10px 12px;min-height:76px;border:1px solid transparent;border-radius:10px;font-variant-numeric:tabular-nums}
 .metric-comparison-top{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
