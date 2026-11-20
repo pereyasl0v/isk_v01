@@ -99,3 +99,53 @@
  .barcode-range-control{width:100%}
  .barcode-mark-options{width:100%}
 }
+
+/* Searchable, editable archive */
+.barcode-heading-actions{display:flex;align-items:center;gap:8px;margin-left:auto}
+.barcode-archive-open{border-color:#cbdcd0;background:#f4f8f5;color:#245b43}
+.barcode-archive-open:hover:not(:disabled){background:#e9f3ed}
+.barcode-editing-indicator{display:inline-flex;margin-top:7px;color:#347451;font-size:10px;font-weight:650}
+.barcode-save-button{width:100%;min-height:42px;margin-top:14px;border:1px solid #cbdcd0;border-radius:8px;background:#f5f9f6;color:#245b43}
+.barcode-save-button:hover:not(:disabled){background:#e9f3ed}
+.barcode-save-button:disabled{opacity:.48;cursor:not-allowed}
+.barcode-save-button+ .barcode-download-button{margin-top:9px}
+.barcode-archive-backdrop{position:fixed;z-index:1000;inset:0;display:flex;align-items:center;justify-content:center;padding:22px;background:#14231dcc;backdrop-filter:blur(3px)}
+.barcode-archive-dialog{display:flex;flex-direction:column;width:min(100%,680px);max-height:min(82vh,760px);min-height:340px;overflow:hidden;border:1px solid #e1e8e3;border-radius:16px;background:#fff;box-shadow:0 24px 80px #10231940}
+.barcode-archive-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:22px 23px 17px;border-bottom:1px solid #edf1ee}
+.barcode-archive-header h2{margin:0;color:#263c2e;font-size:20px;font-weight:700;letter-spacing:-.3px}
+.barcode-archive-header p{margin:6px 0 0;color:#829087;font-size:11px;line-height:1.5}
+.barcode-archive-close{width:34px;height:34px;flex:0 0 auto;padding:0;border:1px solid #e1e8e3;border-radius:8px;background:#fff;color:#74847a}
+.barcode-archive-search{display:flex;align-items:center;gap:10px;margin:17px 22px 12px;padding:0 12px;border:1px solid #dce5df;border-radius:9px;color:#8a998f}
+.barcode-archive-search:focus-within{border-color:#83ac90;box-shadow:0 0 0 3px #2b76551a}
+.barcode-archive-search input{width:100%;min-width:0;height:43px;padding:0;border:0;outline:0;background:transparent;color:#26392e;font-size:13px;box-shadow:none}
+.barcode-archive-search input:focus{outline:0;box-shadow:none}
+.barcode-archive-search input::placeholder{color:#a0aaa3}
+.barcode-archive-list{flex:1;min-height:120px;overflow:auto;padding:0 22px 12px}
+.barcode-archive-item{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #edf1ee}
+.barcode-archive-item-main{display:flex;flex:1;min-width:0;flex-direction:column;align-items:flex-start;gap:4px;padding:4px 6px;border:0;background:transparent;text-align:left}
+.barcode-archive-item-main:hover:not(:disabled){background:#f5f8f6}
+.barcode-archive-item-title{max-width:100%;overflow:hidden;color:#2b4333;font-size:13px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+.barcode-archive-item-meta{max-width:100%;overflow:hidden;color:#87948c;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.barcode-archive-item-action{margin-top:3px;color:#3d8057;font-size:10px;font-weight:650}
+.barcode-archive-delete{width:35px;height:35px;flex:0 0 auto;padding:0;border:1px solid #e8e4e1;background:#fff;color:#9c6b61}
+.barcode-archive-delete:hover:not(:disabled){border-color:#e3c9c3;background:#fff5f3;color:#a54c3e}
+.barcode-archive-state,.barcode-archive-error{padding:30px 12px;color:#7d8b82;font-size:12px;text-align:center}
+.barcode-archive-error{color:#a54c43}
+.barcode-archive-empty{display:flex;flex-direction:column;align-items:center;gap:9px;padding:48px 18px;color:#8a998f;text-align:center}
+.barcode-archive-empty svg{margin-bottom:3px;color:#9aafa0}
+.barcode-archive-empty strong{color:#586e5e;font-size:13px}
+.barcode-archive-empty span{max-width:340px;font-size:11px;line-height:1.6}
+.barcode-archive-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 22px;border-top:1px solid #edf1ee;color:#829087;font-size:10px}
+.barcode-archive-footer button{font-size:11px}
+@media(max-width:560px){
+ .barcode-heading-actions{width:100%;margin:0}
+ .barcode-heading-actions button{flex:1;min-width:0;padding:9px 8px;font-size:11px}
+ .barcode-archive-backdrop{align-items:flex-end;padding:0}
+ .barcode-archive-dialog{width:100%;max-height:88vh;min-height:60vh;border-radius:17px 17px 0 0}
+ .barcode-archive-header{padding:18px 16px 14px}
+ .barcode-archive-header h2{font-size:18px}
+ .barcode-archive-search{margin:14px 15px 10px}
+ .barcode-archive-list{padding:0 15px 10px}
+ .barcode-archive-footer{padding:12px 15px}
+ .barcode-archive-footer button{padding:9px 10px}
+}
