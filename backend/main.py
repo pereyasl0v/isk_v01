@@ -27,6 +27,7 @@ from .product_documents import router as product_documents_router
 from .costing import clean_workspace, parse_legacy_xlsx, calculate_workspace
 from .sales_delivery import build_sales_with_deliveries, delivered_snapshot
 from .sales_finance import add_financial_sales
+from .sales_period import closed_sales_period
 
 ROOT=Path(__file__).resolve().parents[1]
 DATA=Path(os.environ.get('OZON_FBO_DATA_DIR',str(Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'VKR_Ozon_FBO_Web')))
@@ -402,16 +403,15 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
                             'fbs_stock_quantity':fbs_stock_quantity,'fbs_stocks':fbs_stocks,
                             'fbs_stock_error':fbs_stock_error})
             elif kind=='sales':
-                today=datetime.now(MOSCOW_TZ).date()
-                first=today-timedelta(days=days-1)
-                progress(f'Заказы Ozon: {first.isoformat()} — {today.isoformat()}…')
+                first,last_closed=closed_sales_period(days)
+                progress(f'Заказы Ozon: {first.isoformat()} — {last_closed.isoformat()} (завершённые дни)…')
                 previous=store.latest(s['client'],'sales_analytics')
                 try:
-                    orders=s['api'].daily_sales(first,today,progress)
+                    orders=s['api'].daily_sales(first,last_closed,progress)
                 except ApiError as exc:
                     if not previous:
                         store.save(s['client'],'sales_analytics',{
-                            'date_from':first.isoformat(),'date_to':today.isoformat(),
+                            'date_from':first.isoformat(),'date_to':last_closed.isoformat(),
                             'rows':[],'by_sku':[],'error':str(exc),
                         })
                     raise
@@ -419,7 +419,6 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
                 # Keep the financial history available for accounting metrics.
                 # The chart's delivery series is assembled separately from
                 # delivered posting statuses and verified FBO Push events.
-                last_closed=today-timedelta(days=1)
                 if first<=last_closed:
                     missing=store.digitization_missing_days(
                         s['client'],first.isoformat(),last_closed.isoformat()
@@ -440,7 +439,7 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
                                 'Этот день останется без точки на графике.'
                             )
                 delivery_days=delivered_snapshot(
-                    s['api'],first,today,previous,progress
+                    s['api'],first,last_closed,previous,progress
                 )
                 delivery_data=build_sales_with_deliveries(
                     orders,delivery_days,store.delivery_events(s['client']),
