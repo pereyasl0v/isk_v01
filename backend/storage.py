@@ -87,6 +87,12 @@ class Store:
                 created_at TEXT NOT NULL, updated_at TEXT NOT NULL, payload TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)''')
             c.execute('CREATE INDEX IF NOT EXISTS barcode_labels_search ON barcode_labels(user_id,search_name,updated_at)')
+            c.execute('''CREATE TABLE IF NOT EXISTS preliminary_cost_calculations (
+                id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
+                search_name TEXT NOT NULL, created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL, payload TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)''')
+            c.execute('CREATE INDEX IF NOT EXISTS preliminary_cost_search ON preliminary_cost_calculations(user_id,search_name,updated_at)')
             c.execute('''CREATE TABLE IF NOT EXISTS auth_login_attempts (
                 ip TEXT NOT NULL, username TEXT NOT NULL, window_started REAL NOT NULL,
                 failed_count INTEGER NOT NULL, locked_until REAL NOT NULL DEFAULT 0,
@@ -320,6 +326,95 @@ class Store:
                 )
         return {'revision':revision,'updated_at':now,
                 'products':data.get('products',[]),'shipments':data.get('shipments',[])}
+
+    def list_preliminary_costs(self,user_id,query='',limit=200):
+        normalized=unicodedata.normalize('NFKC',str(query or '')).casefold().strip()
+        safe_limit=max(1,min(int(limit),500))
+        with self.db() as c:
+            if normalized:
+                escaped=normalized.replace('!','!!').replace('%','!%').replace('_','!_')
+                rows=c.execute(
+                    """SELECT id,name,created_at,updated_at
+                       FROM preliminary_cost_calculations
+                       WHERE user_id=? AND search_name LIKE ? ESCAPE '!'
+                       ORDER BY updated_at DESC,id DESC LIMIT ?""",
+                    (str(user_id),'%'+escaped+'%',safe_limit)
+                ).fetchall()
+            else:
+                rows=c.execute(
+                    """SELECT id,name,created_at,updated_at
+                       FROM preliminary_cost_calculations WHERE user_id=?
+                       ORDER BY updated_at DESC,id DESC LIMIT ?""",
+                    (str(user_id),safe_limit)
+                ).fetchall()
+        return [
+            {'id':row[0],'name':row[1],'created_at':row[2],'updated_at':row[3]}
+            for row in rows
+        ]
+
+    def get_preliminary_cost(self,user_id,record_id):
+        with self.db() as c:
+            row=c.execute(
+                '''SELECT id,name,created_at,updated_at,payload
+                   FROM preliminary_cost_calculations WHERE id=? AND user_id=?''',
+                (str(record_id),str(user_id))
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            data=self._decode_payload(row[4])
+        except (ValueError,TypeError):
+            data={}
+        return {
+            'id':row[0],'name':row[1],'created_at':row[2],
+            'updated_at':row[3],'data':data,
+        }
+
+    def save_preliminary_cost(self,user_id,record_id,name,data):
+        user_id=str(user_id)
+        name=str(name).strip()[:160]
+        if not name:
+            raise ValueError('Укажите название предварительного расчёта.')
+        search_name=unicodedata.normalize('NFKC',name).casefold()
+        payload=self._encode_payload(data)
+        now=datetime.now(timezone.utc).isoformat()
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            if record_id:
+                row=c.execute(
+                    'SELECT created_at FROM preliminary_cost_calculations WHERE id=? AND user_id=?',
+                    (str(record_id),user_id)
+                ).fetchone()
+                if not row:
+                    return None
+                created_at=row[0]
+                changed=c.execute(
+                    '''UPDATE preliminary_cost_calculations
+                       SET name=?,search_name=?,updated_at=?,payload=?
+                       WHERE id=? AND user_id=?''',
+                    (name,search_name,now,payload,str(record_id),user_id)
+                ).rowcount
+                if changed!=1:
+                    return None
+                saved_id=str(record_id)
+            else:
+                saved_id=uuid.uuid4().hex
+                created_at=now
+                c.execute(
+                    '''INSERT INTO preliminary_cost_calculations
+                       (id,user_id,name,search_name,created_at,updated_at,payload)
+                       VALUES(?,?,?,?,?,?,?)''',
+                    (saved_id,user_id,name,search_name,created_at,now,payload)
+                )
+        return self.get_preliminary_cost(user_id,saved_id)
+
+    def delete_preliminary_cost(self,user_id,record_id):
+        with self.db() as c:
+            c.execute(
+                'DELETE FROM preliminary_cost_calculations WHERE id=? AND user_id=?',
+                (str(record_id),str(user_id))
+            )
+            return c.total_changes>0
 
     def save_barcode_label(self,user_id,label_id,product_name,barcode_code,data):
         user_id=str(user_id)
