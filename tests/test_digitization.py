@@ -101,6 +101,23 @@ class DigitizationTests(unittest.TestCase):
         self.assertEqual(m['advertising'], 30.0)
         self.assertEqual(m['other_deductions'], 0.0)
 
+    def test_operation_types_use_official_ozon_descriptions(self):
+        snapshot = {
+            'accrual_types': [
+                {'id': 2, 'name': 'Logistic', 'description': 'Логистика'},
+                {'id': 4, 'name': 'LastMileCourier', 'description': 'Доставка последней мили'},
+                {'id': 5, 'name': 'ReturnFlowLogistic', 'description': 'Обратная логистика'},
+            ],
+            'accrual_rows': [row(2, -100), row(4, -20), row(5, -10)],
+            'sales_facts': {},
+            'buyout_products': [],
+            'orders': {},
+        }
+        operations = summarize(snapshot)['operation_types']
+        names = {item['name'] for item in operations}
+        self.assertEqual(names, {'Логистика', 'Доставка последней мили', 'Обратная логистика'})
+        self.assertEqual(len(operations), 3)
+
     def test_buyout_commission_does_not_reduce_sales_twice(self):
         snapshot = {
             'accrual_types': TYPES,
