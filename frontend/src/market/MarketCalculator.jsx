@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Archive, Plus, Trash2, Save, RotateCcw, Search, X,
-  Package, CheckCircle2, AlertCircle, ChevronDown, Calculator,
+  Package, CheckCircle2, AlertCircle, ChevronDown,
 } from "lucide-react";
 import { calculatePreliminaryCost, createDraft, createProduct, n } from "./preliminary-costing.mjs";
 
@@ -115,8 +115,12 @@ export default function MarketCalculator() {
   const [archiveError, setArchiveError] = useState("");
   const [loadingId, setLoadingId] = useState(null);
 
-  const calculated = useMemo(() => calculatePreliminaryCost(draft), [draft]);
   const validProducts = draft.products.filter(product => product.name.trim() && n(product.quantity) >= 1);
+  const calculationDraft = useMemo(() => ({
+    ...draft,
+    products: draft.products.filter(product => product.name.trim() && n(product.quantity) >= 1),
+  }), [draft]);
+  const calculated = useMemo(() => calculatePreliminaryCost(calculationDraft), [calculationDraft]);
 
   const updateProduct = (id, key, value) => {
     setDraft(current => ({
@@ -163,6 +167,10 @@ export default function MarketCalculator() {
   const save = async () => {
     if (!validProducts.length) {
       setError("Добавь хотя бы один товар и укажи его наименование и количество.");
+      return;
+    }
+    if (validProducts.length !== draft.products.length) {
+      setError("Заполни наименование и количество во всех строках или удали пустые товары.");
       return;
     }
     const title = calculationName.trim() || defaultTitle(validProducts);
