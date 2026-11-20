@@ -187,14 +187,13 @@ function ProductCatalog(){
   <Filter value={q} set={setQ} placeholder="Поиск по названию, артикулу или коду товара"/>
   <Table rows={rows} onRowClick={setSelected} columns={[
    ["name","Название"],
-   ["offer_id","Артикул",(value,row)=>row.id
-    ? <a href={`https://www.ozon.ru/product/${encodeURIComponent(String(row.id))}/`}
+   ["id","Артикул",(value)=>value
+    ? <a href={`https://www.ozon.ru/product/${encodeURIComponent(String(value))}/`}
          target="_blank" rel="noopener noreferrer"
          className="font-medium text-emerald-800 hover:underline"
          onClick={event=>event.stopPropagation()}
-         title="Открыть карточку товара на Ozon">{value||'Открыть товар на Ozon'}</a>
-    : (value||'—')],
-   ["id","Код товара"]
+         title="Открыть карточку товара на Ozon">{value}</a>
+    : '—']
   ]}/>
  </section>
  {selected&&<ProductDetails key={selected.id} product={selected} onClose={()=>setSelected(null)}/>}
