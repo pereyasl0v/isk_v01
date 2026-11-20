@@ -54,12 +54,48 @@ function Stocks(){
  const groups=groupStocks(inv?.products||[],source,raw);
  const shown=groups.map(g=>({...g,visible:g.rows.filter(r=>!only||(raw?r.present>0||r.reserved>0:r.available_stock_count>0))}))
   .filter(g=>g.visible.length&&[g.name,g.offer,...g.skus,...g.visible.map(r=>`${r.warehouse_name||''} ${r.warehouse_id}`)].join(' ').toLowerCase().includes(q.toLowerCase()));
+ const productNames=new Map((inv?.products||[]).map(p=>[String(p.sku),p.name]));
+ const fbsRows=(inv?.fbs_stocks||[]).map(row=>({...row,product_name:productNames.get(String(row.sku))||row.name||'Товар'}));
  return <div className="flex flex-col gap-5"><section className="panel"><div className="panel-title"><h3>Остатки FBO</h3><div className="segmented"><button className={!raw?'selected':''} onClick={()=>setRaw(false)}>Доступные остатки</button><button className={raw?'selected':''} onClick={()=>setRaw(true)}>Учёт и резервы</button></div></div>
  <div className="filters"><Filter value={q} set={setQ}/><label className="check"><input type="checkbox" checked={only} onChange={e=>setOnly(e.target.checked)}/> Только склады с остатком</label></div>
- {!raw&&inv?.analytics===null?<Empty text="Остатки пока недоступны" help="Обновите данные. Если загрузка не удаётся, проверьте разрешение на чтение аналитики у ключа Ozon."/>:!shown.length?<Empty text="Карточки не найдены" help="Проверьте загрузку, поиск и фильтр остатков."/>:<div className="fbo-stock-list">{shown.map(g=><details className="stock-card" key={g.key}><summary><div className="stock-title"><strong>{g.name}</strong><span className="sku">SKU {g.skus.join(', ')}</span><small>Артикул: {g.offer}</small></div><div className="stock-total"><strong>{num(g.total)} <small>ед.</small></strong><span>{raw?'На складах':'Доступно к продаже'}</span></div><span className="expand-arrow">⌄</span></summary><div className="stock-details">{raw&&<p className="muted mb-4">Учётное количество и резерв показаны раздельно. Доступное к продаже количество находится на вкладке «Доступные остатки».</p>}<Table rows={g.visible} columns={raw?[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["present","На складе, ед.",num],["reserved","В резерве, ед.",num]]:[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["available_stock_count","Доступно, ед.",num],["valid_stock_count","Готовится к продаже, ед.",num],["transit_stock_count","В пути на Ozon, ед.",num],["requested_stock_count","В заявках, ед.",num]]}/></div></details>)}</div>}
- </section><History/></div>
+ {!raw&&inv?.analytics===null?<Empty text="Остатки пока недоступны" help="Обновите данные. Если загрузка не удаётся, проверьте разрешение на чтение аналитики у ключа Ozon."/>:!shown.length?<Empty text="Карточки не найдены" help="Проверьте загрузку, поиск и фильтр остатков."/>:<div className="fbo-stock-list">{shown.map(g=><details className="stock-card" key={g.key}><summary><div className="stock-title"><strong>{g.name}</strong><span className="sku">SKU {g.skus.join(', ')}</span><small>Артикул: {g.offer}</small></div><div className="stock-total"><strong>{num(g.total)} <small>ед.</small></strong><span>{raw?'На складах':'Доступно к продаже'}</span></div><span className="expand-arrow">⌄</span></summary><div className="stock-details">{raw&&<p className="muted mb-4">Учётное количество и резерв показаны раздельно. Доступное к продаже количество находится на вкладке «Доступные остатки».</p>}<Table rows={g.visible} columns={raw?[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["present","На складе, ед.",num],["reserved","В резерве, ед.",num]]:[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["available_stock_count","Доступно, ед.",num],["valid_stock_count","Готовится к продаже, ед.",num],["transit_stock_count","В пути на Ozon, ед.",num],["requested_stock_count","В заявках, ед.",num],["inbound_replenishment","В перемещении, ед.",num],["stock_not_being_sold","Снято с продажи, ед.",num]]}/></div></details>)}</div>}
+ </section>
+ <section className="panel">
+  <div className="panel-title"><h3>Остатки FBS</h3><span className="badge">{inv?.fbs_stock_quantity===null||inv?.fbs_stock_quantity===undefined?'Не загружены':num(inv.fbs_stock_quantity)+' свободных ед.'}</span></div>
+  {inv?.fbs_stock_error&&<Notice>Не удалось получить FBS-остатки: {inv.fbs_stock_error}</Notice>}
+  {fbsRows.length?<Table rows={fbsRows} columns={[["product_name","Товар"],["offer_id","Артикул"],["sku","SKU"],["warehouse_name","Склад",(v)=><span>{v||'Склад продавца'}</span>],["free_stock","Свободно, ед.",num],["present","На складе, ед.",num],["reserved","В резерве, ед.",num]]}/>:<Empty text={inv?.fbs_stock_quantity===0?'Свободных остатков FBS нет':'Остатки FBS пока не загружены'} help="FBS-остатки запрашиваются отдельно от FBO при обновлении данных кабинета."/>}
+ </section>
+ <History/></div>
 }
-function History(){const {hist,state,act}=useApp();const [days,setDays]=useState(90);const [q,setQ]=useState('');const [status,setStatus]=useState('');const postings=hist?.postings||[];const rows=postings.filter(p=>p.number.includes(q)&&(!status||p.status===status)).map(p=>({...p,units:p.products.reduce((n,r)=>n+r.quantity,0),items:p.products.map(r=>`${r.offer_id||r.sku} × ${r.quantity}`).join('; ')}));return <><section className="panel"><div className="panel-title"><h3>История FBO</h3><div className="flex gap-2"><select aria-label="Период загрузки" value={days} onChange={e=>setDays(Number(e.target.value))}><option value={30}>30 дней</option><option value={90}>90 дней</option><option value={180}>180 дней</option><option value={365}>365 дней</option></select><button className="primary" disabled={!state||state.job.running} onClick={()=>act('/history/sync',{days})}>Загрузить историю</button></div></div><p className="muted mb-4">Снимок: {date(hist?.at)}{hist?.since&&` · период ${date(hist.since)} — ${date(hist.to)}`}</p><div className="filters"><Filter value={q} set={setQ} placeholder="Номер отправления"/><select aria-label="Статус" value={status} onChange={e=>setStatus(e.target.value)}><option value="">Все статусы</option>{[...new Set(postings.map(p=>p.status))].sort().map(s=><option key={s} value={s}>{statusLabel(s)}</option>)}</select></div><div className="fbo-history-table"><Table rows={rows} pageSize={8} columns={[["number","Отправление"],["created_at","Создано",date],["status","Статус",statusLabel],["items","Состав"],["units","Единиц",num]]}/></div></section></>}
+function History(){
+ const {hist,state,act}=useApp();
+ const [days,setDays]=useState(90);const [q,setQ]=useState('');const [status,setStatus]=useState('');const [scheme,setScheme]=useState('all');
+ const postings=hist?.postings||[];
+ const scoped=postings.filter(p=>scheme==='all'||String(p.scheme||'FBO').toUpperCase()===scheme);
+ const rows=scoped.filter(p=>String(p.number||'').includes(q)&&(!status||p.status===status)).map(p=>({
+  ...p,scheme:p.scheme||'FBO',event_date:p.created_at||p.in_process_at,
+  units:(p.products||[]).reduce((n,r)=>n+Number(r.quantity||0),0),
+  items:(p.products||[]).map(r=>`${r.offer_id||r.sku} × ${r.quantity}`).join('; ')
+ }));
+ const counts=hist?.counts||{
+  fbo:postings.filter(p=>(p.scheme||'FBO')==='FBO').length,
+  fbs:postings.filter(p=>p.scheme==='FBS').length
+ };
+ const statuses=[...new Set(scoped.map(p=>p.status).filter(Boolean))].sort();
+ return <section className="panel">
+  <div className="panel-title"><div><h3>История отправлений Ozon</h3><p className="muted mt-2">FBO: {num(counts.fbo)} · FBS: {num(counts.fbs)}</p></div>
+   <div className="flex gap-2"><select aria-label="Период загрузки" value={days} onChange={e=>setDays(Number(e.target.value))}><option value={30}>30 дней</option><option value={90}>90 дней</option><option value={180}>180 дней</option><option value={365}>365 дней</option></select><button className="primary" disabled={!state||state.job.running} onClick={()=>act('/history/sync',{days})}>Обновить историю</button></div>
+  </div>
+  <p className="muted mb-4">Последняя проверка: {date(hist?.at)}{hist?.since&&` · охват ${date(hist.since)} — ${date(hist.to)}`}</p>
+  {hist?.errors?.length>0&&<Notice>Не все данные удалось обновить: {hist.errors.join('; ')}. Ранее сохранённая история оставлена.</Notice>}
+  <div className="filters">
+   <Filter value={q} set={setQ} placeholder="Номер отправления"/>
+   <select aria-label="Схема отправления" value={scheme} onChange={e=>{setScheme(e.target.value);setStatus('');}}><option value="all">FBO и FBS</option><option value="FBO">Только FBO</option><option value="FBS">Только FBS</option></select>
+   <select aria-label="Статус" value={status} onChange={e=>setStatus(e.target.value)}><option value="">Все статусы</option>{statuses.map(value=><option key={value} value={value}>{statusLabel(value)}</option>)}</select>
+  </div>
+  <div className="fbo-history-table"><Table rows={rows} pageSize={8} columns={[["scheme","Схема",v=>v],["number","Отправление"],["event_date","Создано / обработка",v=>date(v)],["status","Статус",statusLabel],["substatus","Подстатус",v=>v||'—'],["warehouse_name","Склад",v=>v||'—'],["items","Состав"],["units","Единиц",num]]}/></div>
+ </section>
+}
 function LoginScreen({onSuccess}){
  const [username,setUsername]=useState('');const [password,setPassword]=useState('');
  const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [initialized,setInitialized]=useState(null);
@@ -123,7 +159,7 @@ function AdminUsers(){
   </section>
  </div>
 }
-const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/market-calculator','Калькулятор WB / Ozon',Calculator],['/stocks','Остатки FBO и история',Warehouse],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
+const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/market-calculator','Калькулятор WB / Ozon',Calculator],['/stocks','Остатки и история Ozon',Warehouse],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
 function RequireAccount({children}){const {me}=useApp();return me?.active_account_id?children:<Navigate to="/connection" replace/>}
 function App(){
  const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);
