@@ -52,6 +52,10 @@ def calculate(snapshot,history,window):
     totals=defaultdict(int);local=defaultdict(int);unassigned=defaultdict(int)
     unexpected=defaultdict(int);seen=set()
     for posting in history['postings']:
+        # Replenishment forecasts FBO warehouse stock only. FBS orders leave
+        # seller-warehouse stock and must not be counted against FBO balances.
+        if str(posting.get('scheme') or 'FBO').upper()!='FBO':
+            continue
         number=posting['number']
         if number in seen:continue
         seen.add(number)
