@@ -16,16 +16,22 @@ const divide=(a,b)=>n(b)?n(a)/n(b):null;
 const percent=(a,b)=>n(b)?n(a)/n(b)*100:null;
 const round=(v,d=2)=>v===null||v===undefined?null:Number(n(v).toFixed(d));
 
+const ComparisonVisibilityContext=React.createContext(true);
+
 function Metric({label,value,note,icon:Icon=WalletCards,format=money,comparison,direction='higher'}){
+ const showComparison=React.useContext(ComparisonVisibilityContext);
  const tone=comparisonTone(comparison,direction);
  return <div className="metric"><div className="metric-top"><span>{label}</span><Icon size={19}/></div><strong>{format(value)}</strong>{note!==undefined&&note!==null&&note!==''&&<small>{note}</small>}
-  {comparison&&<div className={'metric-comparison '+tone}>
-   <span className="metric-comparison-previous">Пред.: {format(comparison.previous)}</span>
-   <span className="metric-comparison-change">
-    {comparison.delta>0?'+':''}{format(comparison.delta)}
-    {comparison.changePercent===null?(comparison.fromZero?'(с нуля)':''):`(${comparison.changePercent>0?'+':''}${nf.format(comparison.changePercent)}%)`}
-    {comparison.trend==='up'?<ArrowUpRight size={13}/>:comparison.trend==='down'?<ArrowDownRight size={13}/>:<Minus size={12}/>}
-   </span>
+  {showComparison&&comparison&&<div className={'metric-comparison '+tone}>
+   <div className="metric-comparison-top">
+    <span className="metric-comparison-previous">ПРЕДЫДУЩИЙ ПЕРИОД</span>
+    <strong>{format(comparison.previous)}</strong>
+   </div>
+   <div className="metric-comparison-change">
+    <strong className="metric-comparison-delta">{comparison.delta>0?'+':''}{format(comparison.delta)}</strong>
+    <span className="metric-comparison-percent">{comparison.changePercent===null?(comparison.fromZero?'с нуля':'без базы'):`${comparison.changePercent>0?'+':''}${nf.format(comparison.changePercent)}%`}</span>
+    <span className="metric-comparison-arrow">{comparison.trend==='up'?<ArrowUpRight size={19}/>:comparison.trend==='down'?<ArrowDownRight size={19}/>:<Minus size={18}/>}</span>
+   </div>
   </div>}
  </div>
 }
@@ -47,6 +53,11 @@ function periodDays(first,last){
 
 export default function Digitization({state,digi,act}){
  const defaults=useMemo(()=>{const end=new Date();const start=new Date(end);start.setDate(start.getDate()-29);return {from:iso(start),to:iso(end)}},[]);
+ const client=state?.client_id||'local';
+ const comparisonVisibilityKey=`isk-digitization-show-comparisons-${client}`;
+ const [showComparisons,setShowComparisons]=useState(()=>{
+  try{const saved=localStorage.getItem(comparisonVisibilityKey);return saved===null?true:saved==='true'}catch{return true}
+ });
  const [dateFrom,setDateFrom]=useState(defaults.from);
  const [dateTo,setDateTo]=useState(defaults.to);
  const [inventory,setInventory]=useState(null);
@@ -62,6 +73,16 @@ export default function Digitization({state,digi,act}){
  const periodEnd=digi?.effective_to||digi?.to;
  const comparisonRange=useMemo(()=>previousPeriodRange(digi?.since,periodEnd),[digi?.since,periodEnd]);
  const selectedPeriodDays=periodDays(digi?.since,periodEnd);
+
+ useEffect(()=>{
+  try{const saved=localStorage.getItem(comparisonVisibilityKey);setShowComparisons(saved===null?true:saved==='true')}catch{setShowComparisons(true)}
+ },[comparisonVisibilityKey]);
+
+ const handleComparisonVisibilityChange=event=>{
+  const checked=event.target.checked;
+  setShowComparisons(checked);
+  try{localStorage.setItem(comparisonVisibilityKey,String(checked))}catch{}
+ };
 
  useEffect(()=>{
   setCosts(localRead(costKey,{}));
@@ -89,6 +110,12 @@ export default function Digitization({state,digi,act}){
  // Read the immediately preceding equal-length period from SQLite. No Ozon
  // requests are made automatically; missing days can be loaded on demand.
  useEffect(()=>{
+  if(!showComparisons){
+   setComparisonDigi(null);
+   setComparisonInventoryHistory([]);
+   setComparisonState({loading:false,available:false,error:'',coverage:{}});
+   return;
+  }
   if(!state){
    setComparisonDigi(null);
    setComparisonInventoryHistory([]);
@@ -140,7 +167,7 @@ export default function Digitization({state,digi,act}){
     }
    });
   return()=>{live=false};
- },[state?.client_id,state?.job?.running,comparisonRange?.from,comparisonRange?.to,digi?.at]);
+ },[state?.client_id,state?.job?.running,comparisonRange?.from,comparisonRange?.to,digi?.at,showComparisons]);
 
  const saveCost=(sku,field,value)=>{
   setCosts(prev=>{
@@ -264,18 +291,24 @@ export default function Digitization({state,digi,act}){
  const missingProfitCosts=soldRows.length-costCoverage;
  const operations=digi?.operation_types||[];
 
- return <>
+ return <ComparisonVisibilityContext.Provider value={showComparisons}>
   <div className="overview-heading"><div><h1>Оцифровка</h1><p className="muted mt-2">Метрики и формулы TrueStats · данные периода: {dateTime(digi?.at)} · остатки Ozon: {dateTime(currentStock.sourceAt)}</p></div><div className="flex gap-2 flex-wrap items-center"><button className="primary" disabled={!state||state.job.running} onClick={()=>act('/sync',{})}>Обновить актуальные остатки <RefreshCw size={16}/></button><input aria-label="Дата начала" type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/><span className="muted">—</span><input aria-label="Дата окончания" type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/><button className="primary" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={()=>act('/digitization/sync',{date_from:dateFrom,date_to:dateTo})}>Обновить период <RefreshCw size={16}/></button></div></div>
   {invalid&&<div className="notice warning mt-4"><AlertTriangle size={18}/>Дата окончания не может быть раньше даты начала.</div>}
   {digi?.since&&<p className="muted mt-4">Выбранный период: {digi.since} — {digi.to}{digi?.effective_to?` · в расчёт включены данные Ozon по ${digi.effective_to} включительно`:''}</p>}
   {comparisonCutoff&&<div className="notice warning mt-4"><AlertTriangle size={18}/>Текущий день исключён только для сравнения с вашим снимком TrueStats; в нём последняя дневная колонка — 10.10.</div>}
-  {comparisonRange&&comparisonState.available&&<div className="digitization-comparison-status ready"><span>Сравнение с предыдущими {comparisonRange.days} днями: {dateLabel(comparisonRange.from)} — {dateLabel(comparisonRange.to)}</span></div>}
-  {comparisonRange&&(comparisonState.loading||state?.job?.running)&&<div className="digitization-comparison-status loading"><RefreshCw size={15} className="animate-spin"/><span>{state?.job?.running?'Ожидаем завершения загрузки…':'Проверяем данные предыдущего периода…'}</span></div>}
-  {comparisonRange&&!comparisonState.available&&!comparisonState.loading&&!state?.job?.running&&<div className="digitization-comparison-status missing">
+  {(comparisonRange||selectedPeriodDays>31)&&<div className="digitization-comparison-toolbar">
+   <label className="digitization-comparison-toggle">
+    <input type="checkbox" checked={showComparisons} onChange={handleComparisonVisibilityChange}/>
+    <span>Показывать сравнение с предыдущим периодом</span>
+   </label>
+   {showComparisons&&comparisonRange&&comparisonState.available&&<span className="digitization-comparison-period">Сравнение: {dateLabel(comparisonRange.from)} — {dateLabel(comparisonRange.to)}</span>}
+  </div>}
+  {showComparisons&&comparisonRange&&(comparisonState.loading||state?.job?.running)&&<div className="digitization-comparison-status loading"><RefreshCw size={15} className="animate-spin"/><span>{state?.job?.running?'Ожидаем завершения загрузки…':'Проверяем данные предыдущего периода…'}</span></div>}
+  {showComparisons&&comparisonRange&&!comparisonState.available&&!comparisonState.loading&&!state?.job?.running&&<div className="digitization-comparison-status missing">
    <span>{comparisonState.error||('Для сравнения нужны данные за '+dateLabel(comparisonRange.from)+' — '+dateLabel(comparisonRange.to)+'. '+(comparisonState.coverage?.missing_days?.length?'Не хватает дней: '+comparisonState.coverage.missing_days.length+'.':''))}</span>
    <button type="button" disabled={!state||state.job.running} onClick={()=>act('/digitization/sync',{date_from:comparisonRange.from,date_to:comparisonRange.to})}>Загрузить предыдущий период</button>
   </div>}
-  {!comparisonRange&&selectedPeriodDays>31&&<div className="digitization-comparison-status limited"><span>Сравнение доступно для периодов до одного месяца (31 дня). Выбрано: {selectedPeriodDays} дн.</span></div>}
+  {showComparisons&&!comparisonRange&&selectedPeriodDays>31&&<div className="digitization-comparison-status limited"><span>Сравнение доступно для периодов до одного месяца (31 дня). Выбрано: {selectedPeriodDays} дн.</span></div>}
 
   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6">
    <Metric label="Чистая прибыль/Марж-сть" value={cleanProfit} note={pct(margin)} icon={Boxes} comparison={compareMetric(cleanProfit,previousMetrics?.cleanProfit)} direction="higher"/>
@@ -353,5 +386,5 @@ export default function Digitization({state,digi,act}){
 
 
   <section className="panel"><div className="panel-title"><h3>Начисления Ozon по типам операций</h3></div><SimpleTable rows={operations} empty="Нет начислений" columns={[["name","Официальное название операции"],["count","Строк"],["amount","Сумма итого",money]]}/></section>
- </>
+ </ComparisonVisibilityContext.Provider>
 }
