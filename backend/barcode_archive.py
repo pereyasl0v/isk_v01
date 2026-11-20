@@ -62,11 +62,10 @@ def _clean(body: BarcodeLabelBody):
     if raw_code and not raw_code.isdigit():
         raise HTTPException(422, "Код EAN-13 должен содержать только цифры.")
     code = raw_code
-    if barcode_enabled:
-        if len(code) != 13 or code[-1] != _check_digit(code[:12]):
-            raise HTTPException(422, "Укажите корректный код EAN-13.")
-    else:
-        code = ""
+    if code and (len(code) != 13 or code[-1] != _check_digit(code[:12])):
+        raise HTTPException(422, "Укажите корректный код EAN-13.")
+    if barcode_enabled and not code:
+        raise HTTPException(422, "Укажите код EAN-13 для печати.")
 
     size_key = body.data.get("sizeKey", "58x40")
     if not isinstance(size_key, str) or size_key not in SIZE_KEYS:
