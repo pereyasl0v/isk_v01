@@ -13,6 +13,7 @@ const Context=createContext(null);
 const nf=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
 const num=v=>v===null||v===undefined?'—':nf.format(v);
 const date=v=>v?new Date(v).toLocaleString('ru-RU'):'Ещё не загружено';
+function moscowDate(daysAgo=0){const value=new Date(Date.now()+3*60*60*1000);value.setUTCDate(value.getUTCDate()-daysAgo);return value.toISOString().slice(0,10)}
 async function api(path,body){
  const r=await fetch('/api'+path,{credentials:'same-origin',method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'Content-Type':'application/json','X-Local-App':'fbo'},body:body===undefined?undefined:JSON.stringify(body)});
  const data=await r.json(); if(!r.ok){const e=new Error(data.detail||'Запрос не выполнен');e.status=r.status;throw e;}return data;
@@ -27,11 +28,59 @@ function Table({columns,rows,empty='Нет строк для отображен�
 function Filter({value,set,placeholder='Поиск по названию, артикулу или SKU'}){return <label className="search"><Search size={17}/><input aria-label="Поиск" value={value} onChange={e=>set(e.target.value)} placeholder={placeholder}/></label>}
 function Card({label,value,note,icon:Icon=Package}){return <div className="metric"><div className="metric-top"><span>{label}</span><Icon size={19}/></div><strong>{num(value)}</strong><small>{note}</small></div>}
 function Overview(){
- const {inv,state,act}=useApp();const s=inv?.summary;
+ const {inv,state,act,stockHistory}=useApp();const s=inv?.summary;
  return <><div className="overview-heading"><div><h1>Обзор запасов</h1><p className="muted mt-2">Обновлено: {date(inv?.at)}</p></div><button className="primary" disabled={!state||state.job.running} onClick={()=>act('/sync',{})}>Обновить данные <RefreshCw size={16}/></button></div>
- <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6"><Card label="Доступно к продаже" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек"/></div>
+ <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек"/></div>
  {inv?.warning&&<Notice>{inv.warning}</Notice>}
+ <StockHistoryChart data={stockHistory} inv={inv}/>
  <div className="mt-5"><ProductCatalog/></div></>
+}
+function StockHistoryChart({data,inv}){
+ const [period,setPeriod]=useState(30);const [sku,setSku]=useState('all');
+ const days=(data?.days||[]).slice(-period);
+ const skuNames=new Map((inv?.products||[]).map(p=>[String(p.sku),p.name||String(p.sku)]));
+ const skuValues=[...new Set((data?.days||[]).flatMap(day=>(day.aggregated||[]).map(row=>String(row.sku))))].sort();
+ const points=days.map(day=>{
+  const row=sku==='all'?day.summary:(day.aggregated||[]).find(item=>String(item.sku)===sku);
+  return {date:day.date,available:row?.available??null,preparing:row?.preparing??null,transit:row?.transit??null};
+ });
+ const series=[{key:'available',label:'Доступно к продаже',stroke:'#287b58'},{key:'preparing',label:'Готовится к продаже',stroke:'#d49a32'},{key:'transit',label:'В пути на Ozon',stroke:'#4284c5'}];
+ const max=Math.max(1,...points.flatMap(point=>series.map(item=>point[item.key]).filter(value=>typeof value==='number'&&Number.isFinite(value))));
+ const width=960,height=290,left=58,right=22,top=18,bottom=42,plotWidth=width-left-right,plotHeight=height-top-bottom;
+ const x=index=>left+(points.length<=1?plotWidth/2:index*plotWidth/(points.length-1));
+ const y=value=>top+plotHeight-(value/max)*plotHeight;
+ const dayGap=(first,last)=>(Date.parse(last+'T00:00:00Z')-Date.parse(first+'T00:00:00Z'))/86400000;
+ const segments=key=>{
+  const output=[];let current=[];let previousDate=null;
+  for(let index=0;index<points.length;index++){
+   const point=points[index],value=point[key];
+   if(value===null||value===undefined||!Number.isFinite(value)){
+    if(current.length)output.push(current);current=[];previousDate=point.date;continue;
+   }
+   if(previousDate&&dayGap(previousDate,point.date)>1){if(current.length)output.push(current);current=[];}
+   current.push({x:x(index),y:y(value),value,date:point.date,index});
+   previousDate=point.date;
+  }
+  if(current.length)output.push(current);
+  return output;
+ };
+ const hasValues=points.some(point=>series.some(item=>typeof point[item.key]==='number'&&Number.isFinite(point[item.key])));
+ const tickIndexes=[...new Set([0,Math.floor((points.length-1)/2),points.length-1])].filter(index=>index>=0);
+ return <section className="panel stock-history-chart">
+  <div className="panel-title"><div><h3>Динамика остатков FBO</h3><p className="muted mt-2">История фактических снимков из Ozon Seller API</p></div>
+   <div className="flex gap-2"><select aria-label="Товар для графика" value={sku} onChange={e=>setSku(e.target.value)}><option value="all">Все товары</option>{skuValues.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><select aria-label="Период графика" value={period} onChange={e=>setPeriod(Number(e.target.value))}><option value={7}>7 дней</option><option value={30}>30 дней</option><option value={90}>90 дней</option></select></div>
+  </div>
+  {!hasValues?<Empty text="Истории остатков пока недостаточно" help="График появится после успешных обновлений остатков. Система не дорисовывает значения за дни без снимков."/>:<>
+   <div className="stock-history-legend">{series.map(item=><span key={item.key}><i style={{background:item.stroke}}/>{item.label}</span>)}</div>
+   <div className="stock-history-svg-wrap"><svg className="stock-history-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="История остатков по выбранному товару">
+    {[0,.25,.5,.75,1].map(fraction=><g key={fraction}><line x1={left} x2={width-right} y1={top+plotHeight*(1-fraction)} y2={top+plotHeight*(1-fraction)} stroke="#e8eeea" strokeWidth="1"/><text x={left-10} y={top+plotHeight*(1-fraction)+4} textAnchor="end" fontSize="11" fill="#829087">{Math.round(max*fraction).toLocaleString('ru-RU')}</text></g>)}
+    {series.map(item=>segments(item.key).map((segment,index)=><polyline key={item.key+'-'+index} fill="none" stroke={item.stroke} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={segment.map(point=>point.x+','+point.y).join(' ')}/>))}
+    {points.map((point,index)=>series.map(item=>{const value=point[item.key];return typeof value==='number'&&Number.isFinite(value)?<circle key={item.key+'-'+point.date} cx={x(index)} cy={y(value)} r="4" fill={item.stroke} stroke="#fff" strokeWidth="2"><title>{point.date} · {item.label}: {num(value)}</title></circle>:null;}))}
+    {tickIndexes.map(index=><text key={index} x={x(index)} y={height-12} textAnchor={index===0?'start':index===points.length-1?'end':'middle'} fontSize="11" fill="#829087">{points[index]?.date?.slice(5).split('-').reverse().join('.')}</text>)}
+   </svg></div>
+  </>}
+  <p className="muted mt-3">Точка — последнее успешное обновление за календарный день по Москве. Если обновлений не было, на графике остаётся разрыв: значения не интерполируются.</p>
+ </section>
 }
 function ProductCatalog(){
  const {inv,me}=useApp();
@@ -162,13 +211,13 @@ function AdminUsers(){
 const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/market-calculator','Калькулятор WB / Ozon',Calculator],['/stocks','Остатки и история Ozon',Warehouse],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
 function RequireAccount({children}){const {me}=useApp();return me?.active_account_id?children:<Navigate to="/connection" replace/>}
 function App(){
- const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);
+ const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);const [stockHistory,setStockHistory]=useState(null);
  const [error,setError]=useState('');const [loading,setLoading]=useState(true);const [authChecked,setAuthChecked]=useState(false);const wasRunning=useRef(false);
- async function loadData(){const [i,h,d]=await Promise.all([api('/inventory'),api('/history'),api('/digitization')]);setInv(i);setHist(h);setDigi(d)}
- function clearData(){setState(null);setInv(null);setHist(null);setDigi(null)}
+ async function loadData(){const first=moscowDate(89),last=moscowDate(0);const [i,h,d,sh]=await Promise.all([api('/inventory'),api('/history'),api('/digitization'),api('/inventory/history?date_from='+first+'&date_to='+last)]);setInv(i);setHist(h);setDigi(d);setStockHistory(sh)}
+ function clearData(){setState(null);setInv(null);setHist(null);setDigi(null);setStockHistory(null)}
  async function reload(){
   try{const auth=await api('/auth/me');setMe(auth);
-   if(auth.active_account_id){const [s,i,h,d]=await Promise.all([api('/state'),api('/inventory'),api('/history'),api('/digitization')]);setState(s);setInv(i);setHist(h);setDigi(d)}
+   if(auth.active_account_id){const first=moscowDate(89),last=moscowDate(0);const [s,i,h,d,sh]=await Promise.all([api('/state'),api('/inventory'),api('/history'),api('/digitization'),api('/inventory/history?date_from='+first+'&date_to='+last)]);setState(s);setInv(i);setHist(h);setDigi(d);setStockHistory(sh)}
    else clearData();
   }catch(e){if(e.status===401){setMe(null);clearData()}else if(e.status!==409)setError(e.message)}
   finally{setAuthChecked(true);setLoading(false)}
@@ -185,7 +234,7 @@ function App(){
  if(!authChecked||loading)return <div className="auth-screen"><div className="auth-card">Загружаем ИСК…</div></div>;
  if(!me)return <LoginScreen onSuccess={reload}/>;
  const navItems=me.user.role==='admin'?[...nav,['/admin/users','Пользователи',Users]]:nav;
- return <Context.Provider value={{me,state,setState,inv,hist,digi,reload,act,setError}}>
+ return <Context.Provider value={{me,state,setState,inv,hist,digi,stockHistory,reload,act,setError}}>
   <div className="shell"><aside className="sidebar"><div className="brand"><div className="brand-icon"><Boxes size={25}/></div><div className="isk-brand">ИСК</div></div>
    <nav>{navItems.map(([path,label,Icon])=><NavLink key={path} to={path} end={path==='/'} className={({isActive})=>'nav-item '+(isActive?'active':'')}><Icon size={19}/>{label}</NavLink>)}</nav>
    <div className="sidebar-footer"><span className="status-dot"/>{me.user.username}</div>
