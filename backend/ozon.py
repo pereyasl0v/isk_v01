@@ -310,6 +310,70 @@ class Ozon(BaseOzon):
             cursor = nxt
         raise ApiError(f'История {scheme} слишком велика. Уменьшите период.')
 
+    def delivered_postings_for_day(self, day, scheme):
+        """Shipments whose most recent status switched to delivered on this day.
+
+        For historical FBO/FBS data this is the *last status transition*,
+        not an invented delivery timestamp or an order creation date.
+        """
+        from datetime import time as dt_time
+        day=self._as_date(day)
+        first=datetime.combine(day,dt_time.min,tzinfo=MOSCOW_TZ).astimezone(timezone.utc)
+        until=(datetime.combine(day+timedelta(days=1),dt_time.min,tzinfo=MOSCOW_TZ)
+               .astimezone(timezone.utc))
+        if scheme=='FBO':
+            path='/v3/posting/fbo/list'
+            filter_data={
+                'last_change_status_date':{
+                    'from':first.isoformat(),'to':until.isoformat(),
+                },
+                'status':['delivered'],
+            }
+        elif scheme=='FBS':
+            path='/v4/posting/fbs/list'
+            filter_data={
+                'last_changed_status_date':{
+                    'from':first.isoformat(),'to':until.isoformat(),
+                },
+                'statuses':['delivered'],
+            }
+        else:
+            raise ApiError('Неизвестная схема доставки Ozon.')
+        cursor,seen,rows='',set(),{}
+        for _ in range(1000):
+            response=self.call(path,{
+                'cursor':cursor,'limit':100,'sort_dir':'ASC',
+                'filter':filter_data,
+                'with':{'analytics_data':False,'financial_data':False,'legal_info':False},
+            })
+            postings=response.get('postings')
+            if not isinstance(postings,list):
+                raise ApiError(f'Ozon вернул некорректный список доставок {scheme}.')
+            for posting in postings:
+                if str(posting.get('status') or '').lower()!='delivered':
+                    continue
+                row=self._normalize_posting(posting,scheme)
+                actual=posting.get('fact_delivery_date')
+                if actual:
+                    try:
+                        actual_day=datetime.fromisoformat(
+                            str(actual).replace('Z','+00:00')
+                        ).astimezone(MOSCOW_TZ).date()
+                    except (ValueError,TypeError):
+                        raise ApiError(f'Некорректная дата доставки {scheme}.') from None
+                    if actual_day != day:
+                        # Last status change may be later than delivery.
+                        continue
+                rows[row['number']]=row
+            if not response.get('has_next'):
+                return list(rows.values())
+            next_cursor=str(response.get('cursor') or '')
+            if not next_cursor or next_cursor in seen:
+                raise ApiError(f'Ozon повторил курсор доставок {scheme}.')
+            seen.add(next_cursor)
+            cursor=next_cursor
+        raise ApiError(f'Список доставок {scheme} слишком велик.')
+
     def postings(self, days, progress):
         until = datetime.now(timezone.utc)
         since = until - timedelta(days=days)
