@@ -3,6 +3,7 @@ import math
 from collections import defaultdict
 
 FIELDS = ('available_stock_count','valid_stock_count','transit_stock_count','requested_stock_count')
+OPTIONAL_STATUS_FIELDS = ('inbound_replenishment','stock_not_being_sold')
 OUTBOUND_FIELDS = (
     'outbound_pending_delivery',
     'outbound_returns_picking',
@@ -48,13 +49,16 @@ def summarize(snapshot):
             'analytics_rows':len(rows) if rows is not None else None,
             'stocked_skus':None,'available':None,'preparing':None,'transit':None,'requested':None,
             'outbound_fields_available':False,'outbound_pending_delivery':None,
-            'outbound_returns':None,'capitalization_quantity':None}
+            'outbound_returns':None,'capitalization_quantity':None,
+            'inbound_replenishment':None,'stock_not_being_sold':None}
     if rows is not None:
         output.update(available=sum(quantity(x,FIELDS[0]) for x in rows),
                       preparing=sum(quantity(x,FIELDS[1]) for x in rows),
                       transit=sum(quantity(x,FIELDS[2]) for x in rows),
                       requested=sum(quantity(x,FIELDS[3]) for x in rows),
-                      stocked_skus=len({str(x['sku']) for x in rows if quantity(x,FIELDS[0])>0}))
+                      stocked_skus=len({str(x['sku']) for x in rows if quantity(x,FIELDS[0])>0}),
+                      inbound_replenishment=sum(optional_quantity(x,OPTIONAL_STATUS_FIELDS[0]) for x in rows),
+                      stock_not_being_sold=sum(optional_quantity(x,OPTIONAL_STATUS_FIELDS[1]) for x in rows))
         outbound=outbound_totals(rows)
         if outbound is not None:
             output.update(outbound_fields_available=True,
@@ -89,6 +93,8 @@ def aggregate(snapshot):
             'transit':sum(quantity(x,'transit_stock_count') for x in rows),
             'requested':sum(quantity(x,'requested_stock_count') for x in rows),
             **outbound,
+            'inbound_replenishment':sum(optional_quantity(x,OPTIONAL_STATUS_FIELDS[0]) for x in rows),
+            'stock_not_being_sold':sum(optional_quantity(x,OPTIONAL_STATUS_FIELDS[1]) for x in rows),
             'capitalization_quantity':available+sum(outbound.values()) if outbound_available else None,
             'ads':rates[0] if rates and consistent else None,
             'restricted':any(r.get('turnover_grade')=='RESTRICTED_NO_SALES' for r in rows)})
