@@ -103,6 +103,9 @@ class Ozon(BaseOzon):
                 except ValueError:
                     raise ApiError('Ozon вернул неизвестный формат даты в дневной аналитике.') from None
 
+                if delivered_available and len(metrics) < 3:
+                    delivered_available = False
+                    delivered_error = 'Ozon не вернул все запрошенные метрики delivered_units и revenue.'
                 def metric(index):
                     try:
                         value = metrics[index]
