@@ -1,7 +1,7 @@
-"""Shared rule for Ozon orders: last N completed Moscow calendar days.
+"""Reporting ranges in Europe/Moscow for Ozon analytics.
 
-The inclusive end date is always yesterday in Europe/Moscow, matching the
-Digitization presets. Today's in-progress figures must not enter the chart.
+Digitization works with N completed days, ending yesterday.
+The order chart adds the ongoing current day to that same N-day range.
 """
 from datetime import datetime, timedelta
 from .ozon import MOSCOW_TZ
@@ -15,3 +15,9 @@ def closed_sales_period(days, now=None):
         raise ValueError('Для расчёта периода нужна дата с часовым поясом.')
     last_closed = instant.astimezone(MOSCOW_TZ).date() - timedelta(days=1)
     return last_closed - timedelta(days=days - 1), last_closed
+
+
+def sales_chart_period(days, now=None):
+    """Inclusive N closed Moscow days plus the current day (N+1 data points)."""
+    first, last_closed = closed_sales_period(days, now)
+    return first, last_closed + timedelta(days=1)
