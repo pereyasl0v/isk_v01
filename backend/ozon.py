@@ -237,6 +237,24 @@ class Ozon(BaseOzon):
             cursor = nxt
         raise ApiError(f'История {scheme} слишком велика. Уменьшите период.')
 
+    def fbo_posting_by_number(self,number):
+        """Look up a single FBO shipment for webhook SKU enrichment."""
+        number=str(number or '').strip()
+        if not number or len(number)>100:
+            raise ApiError('Некорректный номер отправления FBO.')
+        response=self.call('/v3/posting/fbo/list',{
+            'cursor':'','limit':100,'sort_dir':'ASC',
+            'filter':{'posting_number':[number]},
+            'with':{'analytics_data':False,'financial_data':False,'legal_info':False},
+        })
+        postings=response.get('postings')
+        if not isinstance(postings,list):
+            raise ApiError('Ozon не вернул состав отправления FBO.')
+        for raw in postings:
+            if str(raw.get('posting_number') or '')==number:
+                return self._normalize_posting(raw,'FBO')
+        raise ApiError('Отправление FBO пока не найдено в API.')
+
     def delivered_postings_for_day(self, day, scheme):
         """Shipments whose most recent status switched to delivered on this day.
 
