@@ -67,26 +67,13 @@ class SalesAnalyticsTests(unittest.TestCase):
 
 
 class DeliveredPostingsTests(unittest.TestCase):
-    def test_fbo_delivery_count_is_filtered_by_last_status_change(self):
-        calls = []
-
+    def test_fbo_history_is_not_assigned_to_creation_day(self):
         def transport(path,payload):
-            calls.append((path,payload))
-            self.assertEqual(path,'/v3/posting/fbo/list')
-            self.assertEqual(payload['filter']['status'],['delivered'])
-            window=payload['filter']['last_change_status_date']
-            self.assertEqual(window['from'],'2026-11-19T21:00:00+00:00')
-            self.assertEqual(window['to'],'2026-11-20T21:00:00+00:00')
-            return {'postings':[
-                {'posting_number':'a','status':'delivered','products':[{'sku':101,'quantity':3}]},
-                {'posting_number':'b','status':'delivering','products':[{'sku':101,'quantity':9}]},
-            ],'has_next':False}
-        data=Ozon('123','key',transport=transport).delivered_postings_for_day(
-            '2026-11-20','FBO',
-        )
-        self.assertEqual(len(calls),1)
-        self.assertEqual(len(data),1)
-        self.assertEqual(data[0]['products'][0]['quantity'],3)
+            self.fail('Исторический фильтр изменения статуса FBO не документирован')
+        with self.assertRaisesRegex(ApiError,'Историческая дата доставки FBO'):
+            Ozon('123','key',transport=transport).delivered_postings_for_day(
+                '2026-11-20','FBO',
+            )
 
     def test_fbs_deliveries_use_latest_version_and_cursor(self):
         calls=[]
@@ -126,7 +113,7 @@ class DeliveredPostingsTests(unittest.TestCase):
             return {'postings':[], 'cursor':'repeat','has_next':True}
         with self.assertRaisesRegex(ApiError,'курсор'):
             Ozon('123','key',transport=transport).delivered_postings_for_day(
-                '2026-11-20','FBO',
+                '2026-11-20','FBS',
             )
 
 
