@@ -32,7 +32,7 @@ function Overview(){
  useEffect(()=>{salesSyncStarted.current=false},[me?.active_account_id]);
  useEffect(()=>{
   if(!state||state.job.running||salesSyncStarted.current)return;
-  if(sales?.date_to===moscowDate(0)&&sales?.delivery_source==='postings_last_status_change_and_verified_push')return;
+  if(sales?.date_to===moscowDate(0)&&sales?.financial_sales_source==='sqlite_digitization_days')return;
   salesSyncStarted.current=true;
   act('/sales/sync',{days:14});
  },[sales?.at,sales?.error,state?.job.running]);
@@ -53,9 +53,11 @@ function SalesHistoryChart({data,state,act,inv}){
   const selected=selectedDays.get(day.date);
   return {date:day.date,ordered_units:selected?.ordered_units??0,
    ordered_revenue:selected?.ordered_revenue??0,
-   delivered_units:data?.delivered_available?(allPoints.find(p=>p.date===day.date)?.delivered_units===null?null:(selected?.delivered_units??0)):null};
+   sold_units:day.sold_units===null?null:(selected?.sold_units??0),
+   sold_amount:day.sold_units===null?null:(selected?.sold_amount??0),
+   sales_partial:Boolean(day.sales_partial)};
  });
- const maxValue=Math.max(1,...points.flatMap(p=>[Number(p.ordered_units||0),...(data?.delivered_available?[Number(p.delivered_units||0)]:[])]));
+ const maxValue=Math.max(1,...points.flatMap(p=>[Number(p.ordered_units||0),...(data?.financial_sales_available?[Number(p.sold_units||0)]:[])]));
  const max=Math.max(5,Math.ceil(maxValue/5)*5);
  const width=960,height=235,left=14,right=37,top=24,bottom=38,plotWidth=width-left-right,plotHeight=height-top-bottom;
  const x=index=>left+(points.length<=1?plotWidth/2:index*plotWidth/(points.length-1));
@@ -75,10 +77,10 @@ function SalesHistoryChart({data,state,act,inv}){
  const orderedPath=smoothPath(points.map((point,index)=>({index,value:point.ordered_units})));
  const deliveredSegments=[];let continuous=[];
  points.forEach((point,index)=>{
-  if(point.delivered_units===null||point.delivered_units===undefined){
+  if(point.sold_units===null||point.sold_units===undefined){
    if(continuous.length)deliveredSegments.push(continuous);
    continuous=[];
-  }else continuous.push({index,value:point.delivered_units});
+  }else continuous.push({index,value:point.sold_units});
  });
  if(continuous.length)deliveredSegments.push(continuous);
  const deliveredPaths=deliveredSegments.map(segment=>{
@@ -100,31 +102,31 @@ function SalesHistoryChart({data,state,act,inv}){
    </div>
   </div>
   {data?.error&&<Notice>{data.error}</Notice>}
-  {data?.delivered_error&&<p className="sales-chart-caveat">Некоторые дни доставки недоступны: {data.delivered_error}</p>}
-  {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает заказы из аналитики Ozon, а доставки — из истории статусов FBO/FBS."/>:<>
-   <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.delivered_available&&<span><i className="delivered"/>{data?.delivery_label||'Доставлено'}</span>}</div>
+  {data?.financial_sales_missing_days?.length>0&&<p className="sales-chart-caveat">Нет финансовой истории за {data.financial_sales_missing_days.length} дней. Пропуски не считаются нулевыми продажами.</p>}
+  {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает заказы из аналитики Ozon, а продажи — из финансовой истории по дням."/>:<>
+   <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.financial_sales_available&&<span><i className="delivered"/>Продано</span>}</div>
    <div className="sales-chart-wrap">
     {hoveredPoint&&<div className="sales-chart-tooltip" style={{left:`${Math.max(16,Math.min(84,x(hovered)/width*100))}%`}}>
      <strong>{fmtDay(hoveredPoint.date)}</strong>
      <div><span><i className="ordered"/>Заказано</span><b>{num(hoveredPoint.ordered_units)} шт. · {num(hoveredPoint.ordered_revenue)} ₽</b></div>
-     {data?.delivered_available&&<div><span><i className="delivered"/>{data?.delivery_label||'Доставлено'}</span><b>{hoveredPoint.delivered_units===null?'Нет данных':num(hoveredPoint.delivered_units)+' шт.'}</b></div>}
+     {data?.financial_sales_available&&<div><span><i className="delivered"/>Продано</span><b>{hoveredPoint.sold_units===null?'Нет данных':num(hoveredPoint.sold_units)+' шт. · '+num(hoveredPoint.sold_amount)+' ₽'}</b></div>}
     </div>}
-    <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Количество заказанных и доставленных товаров по дням">
+    <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Количество заказанных и проданных товаров по дням">
      {[0,.5,1].map(f=><g key={f}><line x1={left} x2={width-right} y1={top+plotHeight*(1-f)} y2={top+plotHeight*(1-f)} stroke="#d8e2ed" strokeDasharray="2 5" strokeWidth="1"/>{f>0&&<text x={width-right+8} y={top+plotHeight*(1-f)+4} textAnchor="start" fontSize="12" fill="#8192a4">{Math.round(max*f)}</text>}</g>)}
      <defs><linearGradient id="ozon-delivery-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9bd7ff" stopOpacity=".52"/><stop offset="100%" stopColor="#cceaff" stopOpacity=".20"/></linearGradient></defs>
-     {data?.delivered_available&&deliveredPaths.map((segment,index)=><g key={index}><path d={segment.area} fill="url(#ozon-delivery-fill)"/><path d={segment.line} fill="none" stroke="#a2d8ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></g>)}
+     {data?.financial_sales_available&&deliveredPaths.map((segment,index)=><g key={index}><path d={segment.area} fill="url(#ozon-delivery-fill)"/><path d={segment.line} fill="none" stroke="#a2d8ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></g>)}
      <path d={orderedPath} fill="none" stroke="#168cf0" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
-     {points.map((p,i)=><g key={p.date} onMouseEnter={()=>setHovered(i)} onMouseLeave={()=>setHovered(null)} onFocus={()=>setHovered(i)} onBlur={()=>setHovered(null)} tabIndex={0} role="button" aria-label={`${fmtDay(p.date)}: заказано ${p.ordered_units}, доставлено ${p.delivered_units??'нет данных'}`}>
+     {points.map((p,i)=><g key={p.date} onMouseEnter={()=>setHovered(i)} onMouseLeave={()=>setHovered(null)} onFocus={()=>setHovered(i)} onBlur={()=>setHovered(null)} tabIndex={0} role="button" aria-label={`${fmtDay(p.date)}: заказано ${p.ordered_units}, продано ${p.sold_units??'нет данных'}`}>
       <rect x={x(i)-plotWidth/Math.max(1,points.length-1)/2} y={top} width={plotWidth/Math.max(1,points.length-1)} height={plotHeight+12} fill="transparent"/>
       {hovered===i&&<line x1={x(i)} x2={x(i)} y1={top} y2={top+plotHeight} stroke="#abc8df" strokeDasharray="3 4"/>}
       <circle cx={x(i)} cy={y(p.ordered_units)} r={hovered===i?5:4} fill="#fff" stroke="#168cf0" strokeWidth="2.5"/>
-      {p.delivered_units!==null&&p.delivered_units!==undefined&&<circle cx={x(i)} cy={y(p.delivered_units)} r={hovered===i?4:2.5} fill="#a2d8ff" stroke="#fff" strokeWidth="1.5"/>}
+      {p.sold_units!==null&&p.sold_units!==undefined&&<circle cx={x(i)} cy={y(p.sold_units)} r={hovered===i?4:2.5} fill="#a2d8ff" stroke="#fff" strokeWidth="1.5"/>}
      </g>)}
      {tickIndexes.map(i=><g key={i}><text x={x(i)} y={height-17} textAnchor={i===0?'start':i===points.length-1?'end':'middle'} fontSize="11" fill="#53667d">{fmtTick(points[i]?.date)}</text>{fmtWeekday(points[i].date)&&<text x={x(i)} y={height-3} textAnchor="middle" fontSize="9" fill="#9daabb">{fmtWeekday(points[i].date)}</text>}</g>)}
     </svg>
    </div>
   </>}
-  <p className="muted mt-3">Доставлено — по последнему изменению статуса отправлений FBO/FBS; для новых FBO-событий может использоваться точная дата из push-уведомления. Это не финансовые выкупы.</p>
+  <p className="muted mt-3">«Продано» — количество реализованных товаров по финансовой истории Ozon (с учётом возвратов), не дата доставки. Premium и push не требуются.</p>
   <p className="muted mt-1">Обновлено: {date(data?.at)}{data?.date_from&&` · период ${fmtDay(data.date_from)}–${fmtDay(data.date_to)}`}</p>
  </section>
 }
