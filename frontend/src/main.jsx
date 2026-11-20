@@ -179,21 +179,20 @@ function ProductCatalog(){
  const [q,setQ]=useState('');
  const [selected,setSelected]=useState(null);
  useEffect(()=>setSelected(null),[me?.active_account_id]);
- // SKU используется внутренними модулями, но не показывается в каталоге.
- // Прямая ссылка на карточку Ozon строится по product_id (id), а не по SKU.
+ // SKU остаётся скрытым в интерфейсе, но используется как идентификатор карточки в URL Ozon.
  const rows=(inv?.products||[]).filter(p=>[p.name,p.offer_id,p.id].join(' ').toLowerCase().includes(q.toLowerCase()));
  return <><section className="panel">
   <div className="panel-title"><h3>Каталог товаров</h3><span className="badge">{rows.length} карточек</span></div>
   <Filter value={q} set={setQ} placeholder="Поиск по названию, артикулу или коду товара"/>
   <Table rows={rows} onRowClick={setSelected} columns={[
    ["name","Название"],
-   ["id","Артикул",(value)=>value
-    ? <a href={`https://www.ozon.ru/product/${encodeURIComponent(String(value))}/`}
+   ["id","Артикул",(value,row)=>row.sku
+    ? <a href={`https://www.ozon.ru/product/${encodeURIComponent(String(row.sku))}/`}
          target="_blank" rel="noopener noreferrer"
          className="font-medium text-emerald-800 hover:underline"
          onClick={event=>event.stopPropagation()}
-         title="Открыть карточку товара на Ozon">{value}</a>
-    : '—']
+         title="Открыть карточку товара на Ozon">{value||'—'}</a>
+    : (value||'—')]
   ]}/>
  </section>
  {selected&&<ProductDetails key={selected.id} product={selected} onClose={()=>setSelected(null)}/>}
