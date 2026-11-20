@@ -5,10 +5,11 @@ date filter only when Ozon confirms the current status is delivered. These are
 historical approximations when later status transitions could have occurred;
 verified push event timestamps take precedence where known.
 """
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, timedelta, timezone
 
-MOSCOW=ZoneInfo('Europe/Moscow')
+# Moscow stays at UTC+03:00 for the 2026 Ozon reporting periods. Avoid
+# dependency on OS tzdata in the read-only slim Docker container.
+MOSCOW=timezone(timedelta(hours=3))
 SCHEMES=('FBO','FBS')
 
 
