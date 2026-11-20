@@ -293,7 +293,7 @@ export default function MarketCalculator() {
           <NumberField label="Доставка до Саши, всего" value={product.deliveryToSashaYuan} onChange={value => updateProduct(product.id, "deliveryToSashaYuan", value)} unit="¥" help="Для маршрута через Ростов" />
           <NumberField label="Доставка до Гуанчжоу, всего" value={product.deliveryToGuangzhouYuan} onChange={value => updateProduct(product.id, "deliveryToGuangzhouYuan", value)} unit="¥" help="Для маршрута через Южные ворота" />
           <NumberField label="Пошлина по товару" value={product.dutyPercent} onChange={value => updateProduct(product.id, "dutyPercent", value)} unit="%" step="0.1" />
-          <NumberField label="Объём всей партии" value={product.volumeM3} onChange={value => updateProduct(product.id, "volumeM3", value)} unit="м³" />
+          <NumberField label="Объём всей партии" value={product.volumeM3} onChange={value => updateProduct(product.id, "volumeM3", value)} unit="м³" min="0.1" help="Минимум 0,1 м³ по файлу «2»; 0 оставь, если объём пока неизвестен" />
           <NumberField label="Вес брутто всей партии" value={product.grossWeightKg} onChange={value => updateProduct(product.id, "grossWeightKg", value)} unit="кг" />
           <NumberField label="Вес нетто всей партии" value={product.netWeightKg} onChange={value => updateProduct(product.id, "netWeightKg", value)} unit="кг" help="Для распределения доп. расходов через Ростов" />
           <NumberField label="Вес нетто одной штуки" value={product.unitNetWeightG} onChange={value => updateProduct(product.id, "unitNetWeightG", value)} unit="г" help="Для расчёта маршрута через Южные ворота" />
