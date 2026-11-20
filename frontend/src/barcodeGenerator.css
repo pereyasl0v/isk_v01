@@ -99,11 +99,3 @@
  .barcode-range-control{width:100%}
  .barcode-mark-options{width:100%}
 }
-@media print{
- body *{visibility:hidden!important}
- .barcode-preview-card,.barcode-preview-card *{visibility:visible!important}
- .barcode-preview-card{position:absolute!important;left:0!important;top:0!important;width:100%!important;padding:0!important;border:0!important;box-shadow:none!important}
- .barcode-preview-card>*:not(.barcode-preview-stage){display:none!important}
- .barcode-preview-stage{display:block!important;padding:0!important;border:0!important;background:#fff!important}
- .barcode-preview-canvas{width:100%!important;max-height:none!important;border:0!important;box-shadow:none!important}
-}
