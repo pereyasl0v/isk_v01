@@ -8,7 +8,7 @@ import MarketPage from './market';
 import DigitizationCached from './DigitizationCached';
 import ProductDetails from './ProductDetails';
 import {statusLabel,roleLabel,groupStocks} from './presentation';
-import {salesRangeTotals,salesTickIndexes} from './sales-chart-range.mjs';
+import {salesChartWindow,salesRangeTotals,salesTickIndexes} from './sales-chart-range.mjs';
 import {getDigitizationPeriod} from './digitization-period.mjs';
 
 const Context=createContext(null);
@@ -51,8 +51,21 @@ function SalesHistoryChart({data,state,act,inv}){
  const [sku,setSku]=useState('all');
  const [selectedRange,setSelectedRange]=useState(null);
  const selectionStart=useRef(null);
- // Match Digitization's N closed Moscow days, plus today's provisional point.
- const allPoints=(data?.rows||[]).slice(-(period+1));
+ const pendingPeriodSync=useRef(null);
+ // Use the same N completed Moscow dates as Digitization, plus today.
+ // Filtering by dates (not the last N rows) also detects incomplete old caches.
+ const allPoints=salesChartWindow(data?.rows,period).points;
+ const needsSalesSync=days=>{
+  const window=salesChartWindow(data?.rows,days);
+  return !window.complete||data?.date_to!==window.to||!data?.date_from||data.date_from>window.from;
+ };
+ // If another job was running when the period was selected, load it once idle.
+ useEffect(()=>{
+  if(state?.job?.running||pendingPeriodSync.current===null)return;
+  const days=pendingPeriodSync.current;
+  pendingPeriodSync.current=null;
+  if(needsSalesSync(days))act('/sales/sync',{days});
+ },[state?.job?.running,data?.at,period]);
  const skuNames=new Map((inv?.products||[]).filter(p=>p.sku).map(p=>[String(p.sku),p.name||String(p.sku)]));
  const skuRows=data?.by_sku||[];
  const skuOptions=[...new Set([...skuNames.keys(),...skuRows.map(row=>String(row.sku))])].sort((a,b)=>(skuNames.get(a)||a).localeCompare(skuNames.get(b)||b,'ru'));
@@ -146,7 +159,7 @@ function SalesHistoryChart({data,state,act,inv}){
  const busy=Boolean(state?.job?.running);
  return <section className="panel sales-chart">
   <div className="panel-title"><div><h3>Заказано товаров</h3></div>
-   <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null);setSelectedRange(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null);setSelectedRange(null);if(!busy&&(value+1>(data?.rows||[]).length||data?.date_to!==moscowDate(0)||data?.date_from>getDigitizationPeriod(value).from))act('/sales/sync',{days:value})}}>{value} дн.</button>)}</div>
+   <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null);setSelectedRange(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null);setSelectedRange(null);if(needsSalesSync(value)){if(busy)pendingPeriodSync.current=value;else act('/sales/sync',{days:value})}else pendingPeriodSync.current=null}}>{value} дн.</button>)}</div>
     <button disabled={busy||!state} onClick={()=>act('/sales/sync',{days:Math.min(90,Math.max(period,(data?.rows||[]).length-1,14))})}>{busy?'Загружаем…':'Обновить'}</button>
    </div>
   </div>
