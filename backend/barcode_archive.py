@@ -1,6 +1,4 @@
 """Private, user-scoped archive for printable barcode labels."""
-import re
-
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
