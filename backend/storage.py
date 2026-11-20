@@ -478,10 +478,7 @@ class Store:
             old_sources=previous.get('sources') or {}
             new_sources=data.get('sources') or {}
             if not new_sources:
-                represented={scheme.lower() for scheme,number in merged if any(
-                    str(row.get('scheme') or 'FBO').upper()==scheme and
-                    str(row.get('number') or '')==number for row in incoming
-                )}
+                represented={str(row.get('scheme') or 'FBO').lower() for row in incoming}
                 new_sources={name:{'ok':True} for name in represented}
             sources={}
             for scheme in ('fbo','fbs'):
