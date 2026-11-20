@@ -56,7 +56,7 @@ function SalesHistoryChart({data,state,act,inv}){
    delivered_units:data?.delivered_available?(allPoints.find(p=>p.date===day.date)?.delivered_units===null?null:(selected?.delivered_units??0)):null};
  });
  const maxValue=Math.max(1,...points.flatMap(p=>[Number(p.ordered_units||0),...(data?.delivered_available?[Number(p.delivered_units||0)]:[])]));
- const max=Math.max(4,Math.ceil(maxValue/4)*4);
+ const max=Math.max(5,Math.ceil(maxValue/5)*5);
  const width=960,height=235,left=14,right=37,top=24,bottom=38,plotWidth=width-left-right,plotHeight=height-top-bottom;
  const x=index=>left+(points.length<=1?plotWidth/2:index*plotWidth/(points.length-1));
  const y=value=>top+plotHeight-(Number(value||0)/max)*plotHeight;
@@ -110,7 +110,7 @@ function SalesHistoryChart({data,state,act,inv}){
      {data?.delivered_available&&<div><span><i className="delivered"/>{data?.delivery_label||'Доставлено'}</span><b>{hoveredPoint.delivered_units===null?'Нет данных':num(hoveredPoint.delivered_units)+' шт.'}</b></div>}
     </div>}
     <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Количество заказанных и доставленных товаров по дням">
-     {[0,.25,.5,.75,1].map(f=><g key={f}><line x1={left} x2={width-right} y1={top+plotHeight*(1-f)} y2={top+plotHeight*(1-f)} stroke="#d8e2ed" strokeDasharray="2 5" strokeWidth="1"/><text x={width-right+8} y={top+plotHeight*(1-f)+4} textAnchor="start" fontSize="12" fill="#8192a4">{Math.round(max*f)}</text></g>)}
+     {[0,.5,1].map(f=><g key={f}><line x1={left} x2={width-right} y1={top+plotHeight*(1-f)} y2={top+plotHeight*(1-f)} stroke="#d8e2ed" strokeDasharray="2 5" strokeWidth="1"/>{f>0&&<text x={width-right+8} y={top+plotHeight*(1-f)+4} textAnchor="start" fontSize="12" fill="#8192a4">{Math.round(max*f)}</text>}</g>)}
      <defs><linearGradient id="ozon-delivery-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9bd7ff" stopOpacity=".52"/><stop offset="100%" stopColor="#cceaff" stopOpacity=".20"/></linearGradient></defs>
      {data?.delivered_available&&deliveredPaths.map((segment,index)=><g key={index}><path d={segment.area} fill="url(#ozon-delivery-fill)"/><path d={segment.line} fill="none" stroke="#a2d8ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></g>)}
      <path d={orderedPath} fill="none" stroke="#168cf0" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
