@@ -24,6 +24,7 @@ from .market_search import router as market_router
 from .digitization import summarize as digitization_summarize
 from .digitization_cache import combine_digitization_days, download_digitization_day, requested_days
 from .product_documents import router as product_documents_router
+from .barcode_archive import router as barcode_archive_router
 from .costing import clean_workspace, parse_legacy_xlsx, calculate_workspace
 from .sales_delivery import build_sales_with_deliveries, delivered_snapshot
 from .sales_finance import add_financial_sales
@@ -79,6 +80,7 @@ def authenticated(request:Request):
 
 app.include_router(market_router,dependencies=[Depends(authenticated)])
 app.include_router(product_documents_router)
+app.include_router(barcode_archive_router)
 
 
 def current(request):
