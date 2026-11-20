@@ -8,7 +8,7 @@ import threading
 import time
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from pathlib import Path
-from fastapi import FastAPI, Request, Response, HTTPException, Depends
+from fastapi import FastAPI, Request, Response, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
@@ -554,8 +554,30 @@ def ozon_push_info(request:Request):
     }
 
 
+def _enrich_fbo_delivery_event(account_id,event_id,posting_number):
+    """Attach safe SKU data after responding to the Ozon push request."""
+    client='account:'+account_id
+    try:
+        with store.db() as db:
+            row=db.execute(
+                'SELECT client_id,api_key_ciphertext FROM ozon_accounts '
+                'WHERE id=? AND connected=1',
+                (account_id,),
+            ).fetchone()
+        if not row or not row[1] or not ENCRYPTION_KEY:
+            return
+        api=Ozon(row[0],decrypt_secret(row[1],ENCRYPTION_KEY))
+        posting=api.fbo_posting_by_number(posting_number)
+        store.attach_delivery_event_products(client,event_id,posting['products'])
+        refresh_delivery_from_events(client)
+    except Exception:
+        # Webhook delivery has already been stored durably. Transient Ozon
+        # failures are harmless: a later history sync can fill SKU products.
+        return
+
+
 @app.post('/webhooks/ozon/fbo/{account_id}/{signature}')
-async def ozon_fbo_webhook(account_id:str,signature:str,request:Request):
+async def ozon_fbo_webhook(account_id:str,signature:str,request:Request,background_tasks:BackgroundTasks):
     expected=_ozon_webhook_signature(account_id)
     if (not expected or not hmac.compare_digest(signature,expected)):
         raise HTTPException(403,'Доступ запрещён.')
@@ -596,9 +618,9 @@ async def ozon_fbo_webhook(account_id:str,signature:str,request:Request):
     client='account:'+account_id
     inserted=store.save_delivery_event(client,uid,posting,delivered_at)
     if inserted:
-        refresh_delivery_from_events(client)
-    # Product quantities still come from trusted posting API data. If they
-    # have not yet been loaded, the event stays durable until history sync.
+        background_tasks.add_task(_enrich_fbo_delivery_event,account_id,uid,posting)
+    # Quantities are fetched from Ozon after acknowledging the notification.
+    # The event remains durable if the API is temporarily unavailable.
     return {'ok':True}
 
 
