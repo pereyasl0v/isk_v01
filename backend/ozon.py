@@ -9,7 +9,7 @@ from openpyxl import load_workbook
 from .legacy import Ozon as BaseOzon, ApiError, ALLOWED
 
 ALLOWED.update({
-    '/v1/analytics/stocks', '/v3/posting/fbo/list', '/v4/posting/fbs/list',
+    '/v1/analytics/stocks', '/v1/analytics/data', '/v3/posting/fbo/list', '/v4/posting/fbs/list',
     '/v1/finance/accrual/by-day', '/v1/finance/accrual/types',
     '/v1/finance/accrual/postings', '/v1/finance/products/buyout',
     '/v1/report/placement/by-products/create', '/v1/report/info',
@@ -36,6 +36,138 @@ class Ozon(BaseOzon):
         if products and not unique:
             raise ApiError('Ozon не вернул строки аналитики для каталога.')
         return list(unique.values())
+
+    def daily_sales(self, date_from, date_to, progress):
+        """Daily ordered and delivered item counts from Ozon Seller analytics."""
+        first = self._as_date(date_from)
+        last = self._as_date(date_to)
+        if last < first:
+            raise ApiError('Дата окончания графика не может быть раньше начала.')
+        if (last - first).days > 92:
+            raise ApiError('График Ozon API доступен максимум за 93 календарных дня.')
+
+        base = {
+            'date_from': first.isoformat(),
+            'date_to': last.isoformat(),
+            'dimension': ['day'],
+            'filters': [],
+            'limit': 1000,
+            'offset': 0,
+        }
+        delivered_available = True
+        delivered_error = None
+        requested_metrics = ['ordered_units', 'delivered_units', 'revenue']
+        try:
+            data = self.call('/v1/analytics/data', {
+                **base, 'metrics': requested_metrics,
+            })
+        except ApiError as exc:
+            # ordered_units and revenue are free metrics. delivered_units is an
+            # advanced metric and Ozon restricts it to Premium Plus.
+            if 'Ozon HTTP 400.' not in str(exc) and 'Ozon HTTP 403.' not in str(exc):
+                raise
+            delivered_available = False
+            delivered_error = (
+                'Ozon не разрешил метрику delivered_units. Для неё может '
+                'потребоваться Premium Plus или дополнительное право API. '
+                f'Ответ: {exc}'
+            )
+            progress('Метрика «Доставлено» недоступна; загружаем доступное количество заказанных товаров.')
+            data = self.call('/v1/analytics/data', {
+                **base, 'metrics': ['ordered_units', 'revenue'],
+            })
+
+        by_day = {}
+        offset = 0
+        for page in range(100):
+            if page:
+                payload = {
+                    **base, 'offset': offset,
+                    'metrics': requested_metrics if delivered_available else ['ordered_units', 'revenue'],
+                }
+                data = self.call('/v1/analytics/data', payload)
+            result = data.get('result')
+            if not isinstance(result, dict) or not isinstance(result.get('data'), list):
+                raise ApiError('Ozon вернул некорректную структуру дневной аналитики.')
+            batch = result['data']
+            for raw in batch:
+                if not isinstance(raw, dict):
+                    raise ApiError('Ozon вернул некорректную строку дневной аналитики.')
+                dimensions = raw.get('dimensions') or []
+                metrics = raw.get('metrics') or []
+                if not dimensions or not isinstance(dimensions[0], dict) or not metrics:
+                    raise ApiError('В дневной аналитике Ozon отсутствует дата или метрики.')
+                raw_day = str(dimensions[0].get('id') or dimensions[0].get('name') or '')[:10]
+                try:
+                    day = date.fromisoformat(raw_day).isoformat()
+                except ValueError:
+                    raise ApiError('Ozon вернул неизвестный формат даты в дневной аналитике.') from None
+
+                def metric(index):
+                    try:
+                        value = metrics[index]
+                    except IndexError:
+                        return None
+                    if value is None:
+                        return 0.0
+                    try:
+                        return float(str(value).replace(',', '.').replace(' ', ''))
+                    except (TypeError, ValueError):
+                        raise ApiError('Ozon вернул некорректное значение метрики.') from None
+
+                ordered = metric(0)
+                if ordered is None:
+                    raise ApiError('Ozon не вернул метрику ordered_units.')
+                delivered = metric(1) if delivered_available else None
+                revenue_index = 2 if delivered_available else 1
+                revenue = metric(revenue_index)
+                row = by_day.setdefault(day, {
+                    'ordered_units': 0.0,
+                    'delivered_units': 0.0 if delivered_available else None,
+                    'ordered_revenue': 0.0,
+                })
+                row['ordered_units'] += ordered
+                if delivered_available:
+                    if delivered is None:
+                        delivered_available = False
+                        delivered_error = 'Ozon не вернул метрику delivered_units в ответе.'
+                        row['delivered_units'] = None
+                    elif row['delivered_units'] is not None:
+                        row['delivered_units'] += delivered
+                if revenue is not None:
+                    row['ordered_revenue'] += revenue
+
+            progress(f'Продажи Ozon: получено {len(by_day)} дней аналитики')
+            if len(batch) < base['limit']:
+                break
+            offset += base['limit']
+        else:
+            raise ApiError('Слишком много страниц дневной аналитики Ozon.')
+
+        rows = []
+        day = first
+        while day <= last:
+            values = by_day.get(day.isoformat(), {})
+            rows.append({
+                'date': day.isoformat(),
+                'ordered_units': int(round(values.get('ordered_units', 0.0))),
+                'delivered_units': (
+                    int(round(values.get('delivered_units') or 0.0))
+                    if delivered_available else None
+                ),
+                'ordered_revenue': round(values.get('ordered_revenue', 0.0), 2),
+            })
+            day += timedelta(days=1)
+
+        return {
+            'date_from': first.isoformat(),
+            'date_to': last.isoformat(),
+            'rows': rows,
+            'delivered_available': delivered_available,
+            'delivered_error': delivered_error,
+            'error': None,
+            'source': 'ozon_seller_api_v1_analytics_data',
+        }
 
     def fbs_stocks(self, products, progress):
         """Get seller-warehouse (FBS/rFBS) free stock for the current catalog."""
