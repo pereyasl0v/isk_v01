@@ -53,7 +53,7 @@ export default function Digitization({state,digi,act}){
  const [inventoryHistory,setInventoryHistory]=useState([]);
  const [comparisonDigi,setComparisonDigi]=useState(null);
  const [comparisonInventoryHistory,setComparisonInventoryHistory]=useState([]);
- const [comparisonState,setComparisonState]=useState({loading:false,available:false,error:'',coverage:{}});
+ const [comparisonState,setComparisonState]=useState({loading:true,available:false,error:'',coverage:{}});
  const client=state?.client_id||'local';
  const costKey=`isk-digitization-costs-${client}`;
  const settingsKey=`isk-digitization-settings-${client}`;
@@ -103,7 +103,9 @@ export default function Digitization({state,digi,act}){
   }
   if(state?.job?.running)return;
   let live=true;
-  setComparisonState(s=>({...s,loading:true,error:''}));
+  setComparisonDigi(null);
+  setComparisonInventoryHistory([]);
+  setComparisonState({loading:true,available:false,error:'',coverage:{}});
   const q=new URLSearchParams({date_from:comparisonRange.from,date_to:comparisonRange.to});
   fetch('/api/digitization?'+q,{credentials:'same-origin'})
    .then(async response=>{
