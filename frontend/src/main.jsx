@@ -57,11 +57,12 @@ function SalesHistoryChart({data,state,act,inv}){
    sold_amount:day.sold_units===null?null:(selected?.sold_amount??0),
    sales_partial:Boolean(day.sales_partial)};
  });
- const maxValue=Math.max(1,...points.flatMap(p=>[Number(p.ordered_units||0),...(data?.financial_sales_available?[Number(p.sold_units||0)]:[])]));
- const max=Math.max(5,Math.ceil(maxValue/5)*5);
+ const values=points.flatMap(p=>[Number(p.ordered_units||0),...(data?.financial_sales_available&&p.sold_units!==null?[Number(p.sold_units)]:[])]);
+ const max=Math.max(5,Math.ceil(Math.max(1,...values)/5)*5);
+ const min=Math.min(0,Math.floor(Math.min(0,...values)/5)*5);
  const width=960,height=235,left=14,right=37,top=24,bottom=38,plotWidth=width-left-right,plotHeight=height-top-bottom;
  const x=index=>left+(points.length<=1?plotWidth/2:index*plotWidth/(points.length-1));
- const y=value=>top+plotHeight-(Number(value||0)/max)*plotHeight;
+ const y=value=>top+plotHeight-((Number(value||0)-min)/(max-min))*plotHeight;
  const smoothPath=items=>{
   if(!items.length)return '';
   const coords=items.map(({index,value})=>({x:x(index),y:y(value)}));
@@ -85,7 +86,7 @@ function SalesHistoryChart({data,state,act,inv}){
  if(continuous.length)deliveredSegments.push(continuous);
  const deliveredPaths=deliveredSegments.map(segment=>{
   const line=smoothPath(segment),a=x(segment[0].index),b=x(segment[segment.length-1].index);
-  return {line,area:line+' L '+b+' '+(top+plotHeight)+' L '+a+' '+(top+plotHeight)+' Z'};
+  return {line,area:line+' L '+b+' '+y(0)+' L '+a+' '+y(0)+' Z'};
  });
  const tickStep=points.length<=16?1:Math.ceil(points.length/12);
  const tickIndexes=points.map((_,i)=>i).filter(i=>i===0||i===points.length-1||i%tickStep===0);
@@ -103,6 +104,7 @@ function SalesHistoryChart({data,state,act,inv}){
   </div>
   {data?.error&&<Notice>{data.error}</Notice>}
   {data?.financial_sales_missing_days?.length>0&&<p className="sales-chart-caveat">Нет финансовой истории за {data.financial_sales_missing_days.length} дней. Пропуски не считаются нулевыми продажами.</p>}
+  {data?.financial_sales_incomplete_days?.length>0&&<p className="sales-chart-caveat">За {data.financial_sales_incomplete_days.length} дней финансовые данные частичные: возможны уточнения после загрузки отчётов Ozon.</p>}
   {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает заказы из аналитики Ozon, а продажи — из финансовой истории по дням."/>:<>
    <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.financial_sales_available&&<span><i className="delivered"/>Продано</span>}</div>
    <div className="sales-chart-wrap">
@@ -112,7 +114,7 @@ function SalesHistoryChart({data,state,act,inv}){
      {data?.financial_sales_available&&<div><span><i className="delivered"/>Продано</span><b>{hoveredPoint.sold_units===null?'Нет данных':num(hoveredPoint.sold_units)+' шт. · '+num(hoveredPoint.sold_amount)+' ₽'}</b></div>}
     </div>}
     <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Количество заказанных и проданных товаров по дням">
-     {[0,.5,1].map(f=><g key={f}><line x1={left} x2={width-right} y1={top+plotHeight*(1-f)} y2={top+plotHeight*(1-f)} stroke="#d8e2ed" strokeDasharray="2 5" strokeWidth="1"/>{f>0&&<text x={width-right+8} y={top+plotHeight*(1-f)+4} textAnchor="start" fontSize="12" fill="#8192a4">{Math.round(max*f)}</text>}</g>)}
+     {[min,(min+max)/2,max].map(value=><g key={value}><line x1={left} x2={width-right} y1={y(value)} y2={y(value)} stroke="#d8e2ed" strokeDasharray="2 5" strokeWidth="1"/>{(value!==0||min<0)&&<text x={width-right+8} y={y(value)+4} textAnchor="start" fontSize="12" fill="#8192a4">{Math.round(value)}</text>}</g>)}
      <defs><linearGradient id="ozon-delivery-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9bd7ff" stopOpacity=".52"/><stop offset="100%" stopColor="#cceaff" stopOpacity=".20"/></linearGradient></defs>
      {data?.financial_sales_available&&deliveredPaths.map((segment,index)=><g key={index}><path d={segment.area} fill="url(#ozon-delivery-fill)"/><path d={segment.line} fill="none" stroke="#a2d8ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></g>)}
      <path d={orderedPath} fill="none" stroke="#168cf0" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
