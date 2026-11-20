@@ -25,7 +25,8 @@ from .digitization import summarize as digitization_summarize
 from .digitization_cache import combine_digitization_days, download_digitization_day, requested_days
 from .product_documents import router as product_documents_router
 from .costing import clean_workspace, parse_legacy_xlsx, calculate_workspace
-from .sales_delivery import build_sales_with_deliveries, delivered_snapshot
+from .sales_delivery import build_sales_with_deliveries
+from .sales_finance import add_financial_sales
 
 ROOT=Path(__file__).resolve().parents[1]
 DATA=Path(os.environ.get('OZON_FBO_DATA_DIR',str(Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'VKR_Ozon_FBO_Web')))
@@ -403,29 +404,44 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
             elif kind=='sales':
                 today=datetime.now(MOSCOW_TZ).date()
                 first=today-timedelta(days=days-1)
-                last=today
-                progress(f'Загружаем заказы Ozon за {first.isoformat()} — {last.isoformat()}…')
+                progress(f'Заказы Ozon: {first.isoformat()} — {today.isoformat()}…')
                 previous=store.latest(s['client'],'sales_analytics')
                 try:
-                    orders=s['api'].daily_sales(first,last,progress)
+                    orders=s['api'].daily_sales(first,today,progress)
                 except ApiError as exc:
                     if not previous:
                         store.save(s['client'],'sales_analytics',{
-                            'date_from':first.isoformat(),'date_to':last.isoformat(),
-                            'rows':[],'delivered_available':False,
-                            'delivered_error':None,'error':str(exc),
+                            'date_from':first.isoformat(),'date_to':today.isoformat(),
+                            'rows':[],'by_sku':[],'error':str(exc),
                         })
                     raise
-                progress('Сверяем доставленные товары по истории статусов FBO и FBS…')
-                delivery_days=delivered_snapshot(s['api'],first,last,previous,progress)
-                sales_data=build_sales_with_deliveries(
-                    orders,delivery_days,store.delivery_events(s['client']),
-                    store.latest(s['client'],'history'),
-                )
-                store.save(s['client'],'sales_analytics',sales_data)
+                store.save(s['client'],'sales_analytics',orders)
+                # The second line comes from exactly the same SQLite daily
+                # financial history used by the existing digitization module.
+                # Do not invent delivery dates from posting creation/status.
+                last_closed=today-timedelta(days=1)
+                if first<=last_closed:
+                    missing=store.digitization_missing_days(
+                        s['client'],first.isoformat(),last_closed.isoformat()
+                    )
+                    for index,day_text in enumerate(missing,1):
+                        progress(
+                            f'Продажи по финансовой истории: '
+                            f'{index}/{len(missing)} · {day_text}'
+                        )
+                        try:
+                            data=download_digitization_day(
+                                s['api'],date.fromisoformat(day_text),progress
+                            )
+                            store.save_digitization_day(s['client'],day_text,data)
+                        except (ApiError,KeyError,ValueError,TypeError) as exc:
+                            progress(
+                                f'Нет подтверждённых продаж за {day_text}: {exc}. '
+                                'Этот день останется без точки на графике.'
+                            )
                 progress(
-                    f"Дневная аналитика сохранена: {len(sales_data['rows'])} дней, "
-                    f"неполных дней доставки: {len(sales_data['delivery_incomplete_days'])}."
+                    'График заказов и фактических продаж обновлён '
+                    '(по уже сохранённым дневным финансовым данным).'
                 )
             elif kind=='digitization':
                 first=s['api']._as_date(date_from)
@@ -630,11 +646,17 @@ def sync_sales(body:SalesParams,request:Request):
 
 @app.get('/api/sales')
 def sales(request:Request):
-    data=store.latest(current(request)['client'],'sales_analytics')
-    if not data:
-        return {'at':None,'date_from':None,'date_to':None,'rows':[],
-                'delivered_available':None,'delivered_error':None,'error':None}
-    return data
+    client=current(request)['client']
+    data=store.latest(client,'sales_analytics')
+    if not data or not data.get('rows'):
+        return {'at':(data or {}).get('at'),'date_from':None,'date_to':None,
+                'rows':[],'by_sku':[],'error':(data or {}).get('error')}
+    first=data.get('date_from')
+    last=data.get('date_to')
+    if not first or not last:
+        return {**data,'rows':[],'by_sku':[]}
+    daily=store.digitization_days_between(client,first,last)
+    return add_financial_sales(data,daily)
 
 @app.post('/api/history/sync')
 def sync_history(body:History,request:Request):
