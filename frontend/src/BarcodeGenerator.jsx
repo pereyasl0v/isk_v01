@@ -426,7 +426,7 @@ export default function BarcodeGenerator(){
      <label className="barcode-code-label" htmlFor="barcode-ean-input">Код EAN-13</label>
      <input id="barcode-ean-input" className="barcode-code-input" inputMode="numeric" autoComplete="off" maxLength={13} value={code} onChange={event=>{setCode(event.target.value.replace(/\D/g,'').slice(0,13));setExportError('');setExportSuccess(false)}} placeholder="Введите 12 или 13 цифр" disabled={!barcodeEnabled}/>
      {codeStatus&&<div className={'barcode-code-status '+codeStatus.kind}>{codeStatus.kind==='valid'?<CheckCircle2 size={16}/>:<AlertCircle size={16}/>}<span>{codeStatus.text}</span></div>}
-     <p className="barcode-code-note"><AlertCircle size={14}/> Проверка контрольной цифры не регистрирует и не выдаёт номер GS1. Используйте код, присвоенный вашему товару.</p>
+     <p className="barcode-code-note"><AlertCircle size={14}/> Проверка контрольной цифры не регистрирует и не выдаёт номер GS1. Используйте код, присвоенный вашему товару. Данные этикетки обрабатываются в браузере и не отправляются на сервер.</p>
     </section>
    </div>
 
@@ -458,7 +458,7 @@ export default function BarcodeGenerator(){
     {renderMeta.overflow&&<div className="barcode-warning"><AlertCircle size={16}/> Слишком много текста. Уменьшите размер шрифта или отключите часть полей.</div>}
     {barcodeEnabled&&!codeResult.valid&&<div className="barcode-preview-hint">Введите корректный код EAN-13, чтобы сформировать PDF со штрихкодом.</div>}
     {exportError&&<div className="barcode-warning"><AlertCircle size={16}/>{exportError}</div>}
-    {exportSuccess&&<div className="barcode-success"><CheckCircle2 size={16}/> PDF сформирован и отправлен в загрузки.</div>}
+    {exportSuccess&&<div className="barcode-success"><CheckCircle2 size={16}/> PDF готов. Проверьте папку загрузок.</div>}
     <button type="button" className="primary barcode-download-button" onClick={downloadPdf} disabled={exporting||(barcodeEnabled&&!codeResult.valid)||renderMeta.overflow}>
      <Download size={17}/>{exporting?'Формируем PDF…':'Скачать PDF'}
     </button>
