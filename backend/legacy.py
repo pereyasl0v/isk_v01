@@ -30,8 +30,6 @@ PERSISTENT_CACHE_TTLS = {
     '/v1/finance/accrual/postings': 12 * 3600,
     '/v1/finance/products/buyout': 12 * 3600,
     '/v1/returns/list': 12 * 3600,
-    '/v3/posting/fbo/list': 6 * 3600,
-    '/v4/posting/fbs/list': 6 * 3600,
     PLACEMENT_CREATE_PATH: PLACEMENT_CACHE_TTL,
 }
 MOSCOW_TZ = timezone(timedelta(hours=3))
