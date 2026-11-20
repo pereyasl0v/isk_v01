@@ -86,6 +86,72 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual([len(c['skus']) for c in calls],[100,1])
         api=Ozon('1','fake',transport=lambda p,b:{'items':[row(1,5),row(1,5)]})
         with self.assertRaises(ApiError):api.analytics([{'sku':100}],[],lambda m:None)
+    def test_history_loads_both_fbo_and_fbs_with_safe_normalized_fields(self):
+        calls=[]
+        def fake(path,body):
+            calls.append((path,body))
+            self.assertFalse(body['with']['legal_info'])
+            self.assertFalse(body['with']['financial_data'])
+            if path=='/v3/posting/fbo/list':
+                if body['cursor']=='':
+                    return {'has_next':True,'cursor':'fbo-next','postings':[{
+                        'posting_number':'FBO-1','status':'delivering',
+                        'created_at':'2026-10-01T12:00:00Z',
+                        'analytics_data':{'warehouse_id':10,'warehouse':'Хоругвино','city':'private'},
+                        'products':[{'sku':100,'offer_id':'A','name':'Товар','quantity':2}],
+                    }]}
+                return {'has_next':False,'postings':[{
+                    'posting_number':'FBO-2','status':'delivered',
+                    'created_at':'2026-10-02T12:00:00Z',
+                    'analytics_data':{'warehouse_id':11,'warehouse_name':'Казань'},
+                    'products':[{'sku':101,'quantity':1}],
+                }]}
+            self.assertEqual(path,'/v4/posting/fbs/list')
+            return {'has_next':False,'postings':[{
+                'posting_number':'FBS-1','status':'awaiting_deliver','substatus':'posting_registered',
+                'in_process_at':'2026-10-03T12:00:00Z','shipment_date':'2026-10-04T12:00:00Z',
+                'delivery_method':{'warehouse_id':20,'warehouse':'Склад продавца','name':'Способ доставки'},
+                'analytics_data':{'warehouse_id':20,'warehouse':'Склад продавца','city':'private'},
+                'products':[{'sku':102,'offer_id':'C','name':'Третий товар','quantity':3}],
+                'customer':{'name':'private'},'legal_info':{'secret':'private'},
+            }]}
+        data=Ozon('1','fake',transport=fake).postings(30,lambda _:None)
+        self.assertEqual([path for path,_ in calls],[
+            '/v3/posting/fbo/list','/v3/posting/fbo/list','/v4/posting/fbs/list'
+        ])
+        self.assertEqual(calls[1][1]['cursor'],'fbo-next')
+        self.assertEqual(data['sources']['fbo']['count'],2)
+        self.assertEqual(data['sources']['fbs']['count'],1)
+        by_number={row['number']:row for row in data['postings']}
+        self.assertEqual(by_number['FBO-1']['scheme'],'FBO')
+        self.assertEqual(by_number['FBO-1']['warehouse_name'],'Хоругвино')
+        self.assertNotIn('city',by_number['FBO-1'])
+        self.assertEqual(by_number['FBS-1']['scheme'],'FBS')
+        self.assertEqual(by_number['FBS-1']['substatus'],'posting_registered')
+        self.assertIsNone(by_number['FBS-1']['created_at'])
+        self.assertEqual(by_number['FBS-1']['in_process_at'],'2026-10-03T12:00:00Z')
+        self.assertEqual(by_number['FBS-1']['warehouse_id'],'20')
+        self.assertEqual(by_number['FBS-1']['products'][0]['quantity'],3)
+        self.assertNotIn('customer',by_number['FBS-1'])
+        self.assertNotIn('legal_info',by_number['FBS-1'])
+        self.assertTrue(data['warehouse_attribution'])
+
+    def test_history_keeps_successful_scheme_when_other_scheme_is_forbidden(self):
+        def fake(path,body):
+            if path=='/v4/posting/fbs/list':
+                raise ApiError('Ozon HTTP 403.')
+            return {'has_next':False,'postings':[{
+                'posting_number':'FBO-1','status':'delivered',
+                'created_at':'2026-10-01T12:00:00Z',
+                'analytics_data':{'warehouse_id':10,'warehouse':'Склад'},
+                'products':[{'sku':100,'quantity':1}],
+            }]}
+        data=Ozon('1','fake',transport=fake).postings(30,lambda _:None)
+        self.assertTrue(data['sources']['fbo']['ok'])
+        self.assertFalse(data['sources']['fbs']['ok'])
+        self.assertEqual(len(data['postings']),1)
+        self.assertEqual(data['errors'],['FBS: Ozon HTTP 403.'])
+
     def test_history_cursor_and_no_personal_fields(self):
         def fake(path,body):
             self.assertFalse(body['with']['legal_info'])
