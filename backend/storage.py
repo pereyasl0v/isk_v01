@@ -402,6 +402,133 @@ class Store:
                                  updated_at=excluded.updated_at,payload=excluded.payload''',
                               (str(client),first,last,at,payload))
 
+    def save_history(self,client,data):
+        """Append a cumulative FBO/FBS history snapshot without discarding older postings."""
+        if not isinstance(data,dict):
+            raise ValueError('Некорректная история отправлений.')
+        at=datetime.now(timezone.utc).isoformat()
+        with self.db() as c:
+            previous_row=c.execute(
+                "SELECT at,payload FROM snapshots WHERE client=? AND kind='history' ORDER BY at DESC,id DESC LIMIT 1",
+                (str(client),)
+            ).fetchone()
+            previous_at=previous_row[0] if previous_row else None
+            try:
+                previous=self._decode_payload(previous_row[1]) if previous_row else {}
+            except (ValueError,TypeError):
+                previous={}
+
+            merged={}
+            for raw in previous.get('postings') or []:
+                if not isinstance(raw,dict):
+                    continue
+                item=dict(raw)
+                scheme=str(item.get('scheme') or 'FBO').upper()
+                number=str(item.get('number') or '').strip()
+                if not number:
+                    continue
+                item['scheme']=scheme
+                merged[(scheme,number)]=item
+
+            incoming=data.get('postings') or []
+            if not isinstance(incoming,list):
+                raise ValueError('Некорректный список отправлений.')
+            for raw in incoming:
+                if not isinstance(raw,dict):
+                    raise ValueError('Некорректная запись отправления.')
+                item=dict(raw)
+                scheme=str(item.get('scheme') or 'FBO').upper()
+                number=str(item.get('number') or '').strip()
+                if not number:
+                    raise ValueError('У отправления отсутствует номер.')
+                item['scheme']=scheme
+                old=merged.get((scheme,number))
+                if old:
+                    observations=list(old.get('status_observations') or [])
+                    if not observations and old.get('status'):
+                        observations.append({
+                            'status':old.get('status'),
+                            'substatus':old.get('substatus') or '',
+                            'observed_at':old.get('last_seen_at') or previous_at,
+                            'source':'isk_sync',
+                        })
+                    if (
+                        old.get('status') != item.get('status')
+                        or (old.get('substatus') or '') != (item.get('substatus') or '')
+                    ):
+                        observations.append({
+                            'status':item.get('status'),
+                            'substatus':item.get('substatus') or '',
+                            'observed_at':at,
+                            'source':'isk_sync',
+                        })
+                    item['first_seen_at']=old.get('first_seen_at') or previous_at or at
+                    item['status_observations']=observations
+                else:
+                    item['first_seen_at']=at
+                    item['status_observations']=[{
+                        'status':item.get('status'),
+                        'substatus':item.get('substatus') or '',
+                        'observed_at':at,
+                        'source':'isk_sync',
+                    }]
+                item['last_seen_at']=at
+                merged[(scheme,number)]=item
+
+            old_sources=previous.get('sources') or {}
+            new_sources=data.get('sources') or {}
+            if not new_sources:
+                represented={scheme.lower() for scheme,number in merged if any(
+                    str(row.get('scheme') or 'FBO').upper()==scheme and
+                    str(row.get('number') or '')==number for row in incoming
+                )}
+                new_sources={name:{'ok':True} for name in represented}
+            sources={}
+            for scheme in ('fbo','fbs'):
+                attempted=new_sources.get(scheme)
+                old_source=old_sources.get(scheme) or {}
+                if attempted and attempted.get('ok'):
+                    sources[scheme]={
+                        **old_source,**attempted,
+                        'ok':True,'last_success_at':at,'last_attempt_at':at,'last_error':None,
+                    }
+                elif attempted:
+                    sources[scheme]={
+                        **old_source,'ok':False,'last_attempt_at':at,
+                        'last_error':str(attempted.get('error') or 'Загрузка недоступна.'),
+                    }
+                elif old_source:
+                    sources[scheme]=old_source
+
+            result=dict(previous)
+            result.update(data)
+            result['sources']=sources
+            result['postings']=sorted(
+                merged.values(),
+                key=lambda row:str(row.get('created_at') or row.get('in_process_at') or ''),
+                reverse=True,
+            )
+            result['counts']={
+                'fbo':sum(1 for row in result['postings'] if row.get('scheme')=='FBO'),
+                'fbs':sum(1 for row in result['postings'] if row.get('scheme')=='FBS'),
+            }
+            if previous.get('since') and data.get('since'):
+                result['since']=min(str(previous['since']),str(data['since']))
+            if previous.get('to') and data.get('to'):
+                result['to']=max(str(previous['to']),str(data['to']))
+            if new_sources.get('fbo',{}).get('ok'):
+                result['warehouse_attribution']=bool(data.get('warehouse_attribution'))
+            elif previous.get('warehouse_attribution') is not None:
+                result['warehouse_attribution']=previous.get('warehouse_attribution')
+            result['errors']=list(data.get('errors') or [])
+
+            payload=self._encode_payload(result)
+            c.execute(
+                'INSERT INTO snapshots(client,kind,at,payload) VALUES (?,?,?,?)',
+                (str(client),'history',at,payload)
+            )
+        return {'at':at,**result}
+
     def latest(self,client,kind):
         with self.db() as c:
             row=c.execute('SELECT at,payload FROM snapshots WHERE client=? AND kind=? ORDER BY at DESC,id DESC LIMIT 1',
