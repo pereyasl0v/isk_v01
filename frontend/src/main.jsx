@@ -90,10 +90,11 @@ function SalesHistoryChart({data,state,act,inv}){
  const months=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
  const fmtDay=value=>value?Number(value.slice(8,10))+' '+months[Number(value.slice(5,7))-1]:'—';
  const fmtTick=value=>value?value.slice(8,10):'—';
+ const fmtWeekday=value=>{const day=new Date(value+'T12:00:00Z').getUTCDay();return day===6?'сб':day===0?'вс':''};
  const hoveredPoint=hovered===null?null:points[hovered];
  const busy=Boolean(state?.job?.running);
  return <section className="panel sales-chart">
-  <div className="panel-title"><div><h3>Заказано товаров <span className="sales-price-pill">По цене реализации</span></h3><p className="muted mt-2">В штуках за {period} дней</p></div>
+  <div className="panel-title"><div><h3>Заказано товаров <span className="sales-price-pill">По цене реализации</span></h3><p className="muted mt-2">В штуках за {points.length} дней{points.length<period?' · загружаем продолжение…':''}</p></div>
    <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null);if(value>(data?.rows||[]).length&&!busy)act('/sales/sync',{days:value})}}>{value} дн.</button>)}</div>
     <button disabled={busy||!state} onClick={()=>act('/sales/sync',{days:Math.max(period,(data?.rows||[]).length||14)})}>{busy?'Загружаем…':'Обновить'}</button>
    </div>
@@ -101,12 +102,12 @@ function SalesHistoryChart({data,state,act,inv}){
   {data?.error&&<Notice>{data.error}</Notice>}
   {data?.delivered_error&&<p className="sales-chart-caveat">Некоторые дни доставки недоступны: {data.delivered_error}</p>}
   {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает заказы из аналитики Ozon, а доставки — из истории статусов FBO/FBS."/>:<>
-   <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.delivered_available&&<span><i className="delivered"/>Доставлено</span>}</div>
+   <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.delivered_available&&<span><i className="delivered"/>{data?.delivery_label||'Доставлено'}</span>}</div>
    <div className="sales-chart-wrap">
     {hoveredPoint&&<div className="sales-chart-tooltip" style={{left:`${Math.max(16,Math.min(84,x(hovered)/width*100))}%`}}>
      <strong>{fmtDay(hoveredPoint.date)}</strong>
      <div><span><i className="ordered"/>Заказано</span><b>{num(hoveredPoint.ordered_units)} шт. · {num(hoveredPoint.ordered_revenue)} ₽</b></div>
-     {data?.delivered_available&&<div><span><i className="delivered"/>Доставлено</span><b>{hoveredPoint.delivered_units===null?'Нет данных':num(hoveredPoint.delivered_units)+' шт.'}</b></div>}
+     {data?.delivered_available&&<div><span><i className="delivered"/>{data?.delivery_label||'Доставлено'}</span><b>{hoveredPoint.delivered_units===null?'Нет данных':num(hoveredPoint.delivered_units)+' шт.'}</b></div>}
     </div>}
     <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Количество заказанных и доставленных товаров по дням">
      {[0,.25,.5,.75,1].map(f=><g key={f}><line x1={left} x2={width-right} y1={top+plotHeight*(1-f)} y2={top+plotHeight*(1-f)} stroke="#d8e2ed" strokeDasharray="2 5" strokeWidth="1"/><text x={width-right+8} y={top+plotHeight*(1-f)+4} textAnchor="start" fontSize="12" fill="#8192a4">{Math.round(max*f)}</text></g>)}
@@ -119,7 +120,7 @@ function SalesHistoryChart({data,state,act,inv}){
       <circle cx={x(i)} cy={y(p.ordered_units)} r={hovered===i?5:4} fill="#fff" stroke="#168cf0" strokeWidth="2.5"/>
       {p.delivered_units!==null&&p.delivered_units!==undefined&&<circle cx={x(i)} cy={y(p.delivered_units)} r={hovered===i?4:2.5} fill="#a2d8ff" stroke="#fff" strokeWidth="1.5"/>}
      </g>)}
-     {tickIndexes.map(i=><text key={i} x={x(i)} y={height-12} textAnchor={i===0?'start':i===points.length-1?'end':'middle'} fontSize="11" fill="#8796a3">{fmtTick(points[i]?.date)}</text>)}
+     {tickIndexes.map(i=><g key={i}><text x={x(i)} y={height-17} textAnchor={i===0?'start':i===points.length-1?'end':'middle'} fontSize="11" fill="#53667d">{fmtTick(points[i]?.date)}</text>{fmtWeekday(points[i].date)&&<text x={x(i)} y={height-3} textAnchor="middle" fontSize="9" fill="#9daabb">{fmtWeekday(points[i].date)}</text>}</g>)}
     </svg>
    </div>
   </>}
