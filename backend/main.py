@@ -26,6 +26,7 @@ from .digitization_cache import combine_digitization_days, download_digitization
 from .product_documents import router as product_documents_router
 from .barcode_archive import router as barcode_archive_router
 from .costing import clean_workspace, parse_legacy_xlsx, calculate_workspace
+from .preliminary_costing import clean_preliminary_cost, calculate_preliminary_cost
 from .sales_delivery import build_sales_with_deliveries, delivered_snapshot
 from .sales_finance import add_financial_sales
 from .sales_period import sales_chart_period
@@ -131,6 +132,11 @@ class CostingWorkspaceBody(BaseModel):
 class CostingImportBody(BaseModel):
     filename:str=Field(default='legacy.xlsx',max_length=200)
     file_base64:str=Field(min_length=1,max_length=15000000)
+
+
+class PreliminaryCostBody(BaseModel):
+    name:str=Field(min_length=1,max_length=160)
+    data:dict
 
 
 class Connect(BaseModel):
@@ -268,6 +274,53 @@ def costing_import_xlsx(body:CostingImportBody,request:Request):
         'importedShipments':imported['importedShipments'],
         'calculated':calculate_workspace(saved['products'],saved['shipments']),
     }
+
+
+@app.get('/api/preliminary-costs')
+def preliminary_costs_list(request:Request,q:str=''):
+    auth=authenticated(request)
+    return {'items':store.list_preliminary_costs(auth['user_id'],q[:100])}
+
+
+@app.get('/api/preliminary-costs/{record_id}')
+def preliminary_costs_get(record_id:str,request:Request):
+    auth=authenticated(request)
+    record=store.get_preliminary_cost(auth['user_id'],record_id)
+    if not record:
+        raise HTTPException(404,'Предварительный расчёт не найден.')
+    return {**record,'calculated':calculate_preliminary_cost(record['data'])}
+
+
+@app.post('/api/preliminary-costs',status_code=201)
+def preliminary_costs_create(body:PreliminaryCostBody,request:Request):
+    auth=authenticated(request)
+    try:
+        data=clean_preliminary_cost(body.data)
+        record=store.save_preliminary_cost(auth['user_id'],None,body.name,data)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from None
+    return {**record,'calculated':calculate_preliminary_cost(record['data'])}
+
+
+@app.put('/api/preliminary-costs/{record_id}')
+def preliminary_costs_update(record_id:str,body:PreliminaryCostBody,request:Request):
+    auth=authenticated(request)
+    try:
+        data=clean_preliminary_cost(body.data)
+        record=store.save_preliminary_cost(auth['user_id'],record_id,body.name,data)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from None
+    if not record:
+        raise HTTPException(404,'Предварительный расчёт не найден.')
+    return {**record,'calculated':calculate_preliminary_cost(record['data'])}
+
+
+@app.delete('/api/preliminary-costs/{record_id}')
+def preliminary_costs_delete(record_id:str,request:Request):
+    auth=authenticated(request)
+    if not store.delete_preliminary_cost(auth['user_id'],record_id):
+        raise HTTPException(404,'Предварительный расчёт не найден.')
+    return {'ok':True}
 
 
 @app.get('/api/admin/users')
