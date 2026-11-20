@@ -31,7 +31,7 @@ const formatDate = value => {
 const defaultTitle = products => {
   const names = products.map(item => item.name.trim()).filter(Boolean);
   if (!names.length) return "Предварительный расчёт";
-  return names.slice(0, 2).join(", ") + (names.length > 2 ? " +" + (names.length - 2) : "");
+  return (names.slice(0, 2).join(", ") + (names.length > 2 ? " +" + (names.length - 2) : "")).slice(0, 150);
 };
 
 function NumberField({ label, value, onChange, unit, step = "any", min = 0, help }) {
@@ -45,10 +45,10 @@ function NumberField({ label, value, onChange, unit, step = "any", min = 0, help
   </label>;
 }
 
-function TextField({ label, value, onChange, placeholder = "" }) {
+function TextField({ label, value, onChange, placeholder = "", maxLength }) {
   return <label className="mc-field">
     <span>{label}</span>
-    <input type="text" value={value ?? ""} placeholder={placeholder} onChange={event => onChange(event.target.value)} />
+    <input type="text" value={value ?? ""} placeholder={placeholder} maxLength={maxLength} onChange={event => onChange(event.target.value)} />
   </label>;
 }
 
@@ -259,7 +259,7 @@ export default function MarketCalculator() {
         <h1>Предварительная себестоимость</h1>
         <p>Рассчитай реальную стоимость товара в Санкт-Петербурге до того, как оформлять заказ поставщику.</p>
         <div className="mc-title-line">
-          <TextField label="Название расчёта" value={calculationName} onChange={setCalculationName} placeholder={defaultTitle(validProducts)} />
+          <TextField label="Название расчёта" value={calculationName} onChange={setCalculationName} placeholder={defaultTitle(validProducts)} maxLength={160} />
           {recordId && <span className="mc-record-state">Редактируется запись из архива</span>}
         </div>
       </div>
@@ -286,8 +286,8 @@ export default function MarketCalculator() {
           <button type="button" className="mc-remove-button" onClick={() => removeProduct(product.id)} title="Удалить товар" aria-label="Удалить товар"><Trash2 size={16} /></button>
         </div>
         <div className="mc-product-fields">
-          <TextField label="Наименование товара" value={product.name} onChange={value => updateProduct(product.id, "name", value)} placeholder="Например, Щипцы СВП" />
-          <TextField label="Артикул / код" value={product.article} onChange={value => updateProduct(product.id, "article", value)} placeholder="Необязательно" />
+          <TextField label="Наименование товара" value={product.name} onChange={value => updateProduct(product.id, "name", value)} placeholder="Например, Щипцы СВП" maxLength={300} />
+          <TextField label="Артикул / код" value={product.article} onChange={value => updateProduct(product.id, "article", value)} placeholder="Необязательно" maxLength={80} />
           <NumberField label="Количество" value={product.quantity} onChange={value => updateProduct(product.id, "quantity", value)} unit="шт." step="1" min="1" />
           <NumberField label="Цена за 1 штуку" value={product.unitPriceYuan} onChange={value => updateProduct(product.id, "unitPriceYuan", value)} unit="¥" />
           <NumberField label="Доставка до Саши, всего" value={product.deliveryToSashaYuan} onChange={value => updateProduct(product.id, "deliveryToSashaYuan", value)} unit="¥" help="Для маршрута через Ростов" />
