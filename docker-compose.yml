@@ -10,6 +10,7 @@ services:
       ISK_ALLOWED_HOSTS: "${ISK_ALLOWED_HOSTS:-127.0.0.1,localhost,testserver}"
       ISK_ALLOWED_ORIGINS: "${ISK_ALLOWED_ORIGINS:-http://127.0.0.1:8000,http://localhost:8000}"
       ISK_SECURE_COOKIE: "${ISK_SECURE_COOKIE:-true}"
+      ISK_PUBLIC_URL: "${ISK_PUBLIC_URL:-}"
       ISK_ENCRYPTION_KEY_FILE: /run/secrets/isk_encryption_key
       WB_DESTINATION: "${WB_DESTINATION:-1259570991}"
     secrets:
