@@ -42,6 +42,9 @@ class FakeOzon:
     def postings(self,days,progress):
         return {'since':'2020-01-01T00:00:00+03:00','to':'2030-01-01T00:00:00+03:00',
                 'warehouse_attribution':True,'postings':[]}
+    def fbo_posting_by_number(self,number):
+        return {'number':number,'scheme':'FBO',
+                'products':[{'sku':'100','quantity':2,'name':'Товар','offer_id':'A'}]}
     def cache_counters(self):
         return {'hits':0,'api_requests':0}
 
@@ -120,6 +123,7 @@ class AuthApiTests(unittest.TestCase):
         rows=main.store.delivery_events(scope)
         self.assertEqual(len(rows),1)
         self.assertEqual(rows[0]['posting_number'],'123-456-1')
+        self.assertEqual(rows[0]['products'][0]['quantity'],2)
         self.assertEqual(
             self.client.post(path.rsplit('/',1)[0]+'/invalid',json=event).status_code,403
         )
