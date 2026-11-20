@@ -82,7 +82,7 @@ class BarcodeArchiveApiTests(unittest.TestCase):
         self.assertEqual(detail.status_code, 200, detail.text)
         self.assertEqual(detail.json()["data"]["values"]["article"], "SKU-100")
 
-        updated_body = label_body("Щипцы СВП обновлённые")
+        updated_body = label_body("Кусачки СВП обновлённые")
         updated_body["data"]["values"]["article"] = "SKU-200"
         updated = self.client.put(
             f"/api/barcodes/{item['id']}", headers=HEAD, json=updated_body
@@ -96,7 +96,7 @@ class BarcodeArchiveApiTests(unittest.TestCase):
             [],
         )
         self.assertEqual(
-            len(self.client.get("/api/barcodes?q=обновлённые", headers=HEAD).json()["items"]),
+            len(self.client.get("/api/barcodes?q=Кусачки", headers=HEAD).json()["items"]),
             1,
         )
 
