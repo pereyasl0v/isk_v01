@@ -43,6 +43,22 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(by_sku['2']['capitalization_quantity'],92)
         self.assertEqual(by_sku['3']['capitalization_quantity'],107)
 
+    def test_new_ozon_stock_status_fields_are_aggregated_by_sku(self):
+        snapshot = {
+            'products':[{'sku':1},{'sku':2}],
+            'stocks':[],
+            'analytics':[
+                row(1,10) | {'sku':1,'inbound_replenishment':4,'stock_not_being_sold':2},
+                row(2,20) | {'sku':2,'inbound_replenishment':3,'stock_not_being_sold':1},
+            ],
+        }
+        summary = summarize(snapshot)
+        self.assertEqual(summary['inbound_replenishment'],7)
+        self.assertEqual(summary['stock_not_being_sold'],3)
+        by_sku = {item['sku']:item for item in aggregate(snapshot)}
+        self.assertEqual(by_sku['1']['inbound_replenishment'],4)
+        self.assertEqual(by_sku['2']['stock_not_being_sold'],1)
+
     def test_missing_new_outbound_fields_are_not_mistaken_for_zero(self):
         snapshot = sample()
         summary = summarize(snapshot)
