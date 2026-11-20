@@ -11,6 +11,7 @@ class SqlApiCacheTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory()
         self.store=Store(Path(self.temp.name)/'cache.sqlite3')
         ALLOWED.add('/v1/finance/accrual/by-day')
+        ALLOWED.update({'/v3/posting/fbo/list','/v4/posting/fbs/list'})
 
     def tearDown(self):
         self.temp.cleanup()
@@ -52,6 +53,19 @@ class SqlApiCacheTests(unittest.TestCase):
         self.api('123',transport).call('/v1/finance/accrual/by-day',payload)
         self.api('456',transport).call('/v1/finance/accrual/by-day',payload)
         self.assertEqual(len(calls),2)
+
+    def test_posting_statuses_are_refetched_instead_of_using_six_hour_cache(self):
+        for path in ('/v3/posting/fbo/list','/v4/posting/fbs/list'):
+            calls=[]
+            payload={'cursor':'','limit':100,'sort_dir':'ASC',
+                     'filter':{'since':'2026-11-01T00:00:00+00:00','to':'2026-11-20T00:00:00+00:00'},
+                     'with':{'analytics_data':True,'financial_data':False,'legal_info':False}}
+            def transport(request_path,body):
+                calls.append((request_path,body))
+                return {'postings':[],'has_next':False}
+            self.api('123',transport).call(path,payload)
+            self.api('123',transport).call(path,payload)
+            self.assertEqual(len(calls),2,path)
 
     def test_live_stock_is_not_persistently_cached(self):
         calls=[]
