@@ -79,36 +79,116 @@ class Ozon(BaseOzon):
             'rows': result,
         }
 
-    def postings(self, days, progress):
-        until = datetime.now(timezone.utc)
-        since = until - timedelta(days=days)
+    @staticmethod
+    def _normalize_posting(posting, scheme):
+        if not isinstance(posting, dict):
+            raise ApiError(f'Ozon вернул некорректное отправление {scheme}.')
+        number = str(posting.get('posting_number') or '').strip()
+        if not number:
+            raise ApiError(f'Ozon вернул отправление {scheme} без номера.')
+        raw_products = posting.get('products')
+        if not isinstance(raw_products, list):
+            raise ApiError(f'Ozon вернул некорректный состав отправления {number}.')
+        products = []
+        for product in raw_products:
+            if not isinstance(product, dict) or product.get('sku') in (None, ''):
+                raise ApiError(f'Ozon вернул товар без SKU в отправлении {number}.')
+            try:
+                quantity = int(product.get('quantity'))
+            except (TypeError, ValueError):
+                raise ApiError(f'Ozon вернул некорректное количество в отправлении {number}.') from None
+            if quantity < 0:
+                raise ApiError(f'Ozon вернул отрицательное количество в отправлении {number}.')
+            products.append({
+                'sku': str(product['sku']),
+                'offer_id': str(product.get('offer_id') or ''),
+                'name': str(product.get('name') or ''),
+                'quantity': quantity,
+            })
+
+        analytics = posting.get('analytics_data') or {}
+        delivery = posting.get('delivery_method') or {}
+        warehouse_id = analytics.get('warehouse_id') or delivery.get('warehouse_id')
+        warehouse_name = (
+            analytics.get('warehouse_name') or analytics.get('warehouse')
+            or delivery.get('warehouse') or delivery.get('name')
+        )
+        return {
+            'number': number,
+            'scheme': scheme,
+            'status': str(posting.get('status') or 'unknown'),
+            'substatus': str(posting.get('substatus') or ''),
+            'created_at': posting.get('created_at'),
+            'in_process_at': posting.get('in_process_at'),
+            'shipment_date': posting.get('shipment_date'),
+            'delivering_date': posting.get('delivering_date'),
+            'warehouse_id': str(warehouse_id) if warehouse_id not in (None, '') else None,
+            'warehouse_name': str(warehouse_name) if warehouse_name else None,
+            'products': products,
+        }
+
+    def _postings_for_scheme(self, path, scheme, since, until, progress):
         cursor, seen, rows = '', set(), {}
         for _ in range(10000):
-            data = self.call('/v3/posting/fbo/list', {
+            data = self.call(path, {
                 'cursor': cursor, 'limit': 100, 'sort_dir': 'ASC',
                 'filter': {'since': since.isoformat(), 'to': until.isoformat()},
                 'with': {'analytics_data': True, 'financial_data': False, 'legal_info': False},
             })
-            for posting in data['postings']:
-                rows[posting['posting_number']] = {
-                    'number': posting['posting_number'], 'status': posting['status'],
-                    'created_at': posting['created_at'],
-                    'warehouse_id': str((posting.get('analytics_data') or {}).get('warehouse_id') or '') or None,
-                    'warehouse_name': (posting.get('analytics_data') or {}).get('warehouse_name') or None,
-                    'products': [{'sku': str(p['sku']), 'offer_id': p.get('offer_id', ''),
-                                  'name': p.get('name', ''), 'quantity': int(p['quantity'])}
-                                 for p in posting['products']],
-                }
-            progress(f'История FBO: {len(rows)} отправлений')
+            batch = data.get('postings')
+            if not isinstance(batch, list):
+                raise ApiError(f'Ozon вернул некорректный список отправлений {scheme}.')
+            for posting in batch:
+                normalized = self._normalize_posting(posting, scheme)
+                rows[normalized['number']] = normalized
+            progress(f'История {scheme}: {len(rows)} отправлений')
             if not data.get('has_next', False):
-                return {'since': since.isoformat(), 'to': until.isoformat(),
-                        'warehouse_attribution': True, 'postings': list(rows.values())}
-            nxt = data.get('cursor', '')
+                return list(rows.values())
+            nxt = data.get('cursor') or ''
             if not nxt or nxt in seen:
-                raise ApiError('Повтор курсора истории. Предыдущие данные сохранены.')
+                raise ApiError(f'Ozon повторил курсор истории {scheme}.')
             seen.add(nxt)
             cursor = nxt
-        raise ApiError('История слишком велика. Уменьшите период.')
+        raise ApiError(f'История {scheme} слишком велика. Уменьшите период.')
+
+    def postings(self, days, progress):
+        until = datetime.now(timezone.utc)
+        since = until - timedelta(days=days)
+        sources = {}
+        errors = []
+        rows = {}
+        for scheme, path in (
+            ('FBO', '/v3/posting/fbo/list'),
+            ('FBS', '/v4/posting/fbs/list'),
+        ):
+            try:
+                batch = self._postings_for_scheme(path, scheme, since, until, progress)
+            except ApiError as exc:
+                sources[scheme.lower()] = {'ok': False, 'error': str(exc)}
+                errors.append(f'{scheme}: {exc}')
+                progress(f'История {scheme} недоступна: {exc}')
+                continue
+            sources[scheme.lower()] = {'ok': True, 'count': len(batch)}
+            for posting in batch:
+                rows[(scheme, posting['number'])] = posting
+
+        if not any(source.get('ok') for source in sources.values()):
+            raise ApiError('Не удалось загрузить историю отправлений FBO и FBS: ' + '; '.join(errors))
+
+        fbo_rows = [row for row in rows.values() if row['scheme'] == 'FBO']
+        warehouse_attribution = all(row.get('warehouse_id') for row in fbo_rows)
+        ordered = sorted(
+            rows.values(),
+            key=lambda row: str(row.get('created_at') or row.get('in_process_at') or ''),
+        )
+        return {
+            'since': since.isoformat(),
+            'to': until.isoformat(),
+            'warehouse_attribution': warehouse_attribution,
+            'sources': sources,
+            'errors': errors,
+            'postings': ordered,
+        }
 
     @staticmethod
     def _as_date(value):
