@@ -31,9 +31,10 @@ function Overview(){
  const {inv,state,act,sales,me}=useApp();const s=inv?.summary;const salesSyncStarted=useRef(false);
  useEffect(()=>{salesSyncStarted.current=false},[me?.active_account_id]);
  useEffect(()=>{
-  if(!state||state.job.running||sales?.error||sales?.date_to===moscowDate(0)||salesSyncStarted.current)return;
+  if(!state||state.job.running||salesSyncStarted.current)return;
+  if(sales?.date_to===moscowDate(0)&&sales?.delivery_source==='postings_last_status_change_and_verified_push')return;
   salesSyncStarted.current=true;
-  act('/sales/sync',{days:90});
+  act('/sales/sync',{days:14});
  },[sales?.at,sales?.error,state?.job.running]);
  return <><div className="overview-heading"><div><h1>Обзор кабинета</h1><p className="muted mt-2">Продажи и остатки Ozon · остатки обновлены: {date(inv?.at)}</p></div><button className="primary" disabled={!state||state.job.running} onClick={()=>act('/sync',{})}>Обновить остатки <RefreshCw size={16}/></button></div>
  <SalesHistoryChart data={sales} state={state} act={act} inv={inv}/>
@@ -71,8 +72,8 @@ function SalesHistoryChart({data,state,act,inv}){
  const busy=Boolean(state?.job?.running);
  return <section className="panel sales-chart">
   <div className="panel-title"><div><h3>Заказано товаров</h3><p className="muted mt-2">Заказы и доставленные товары по дням</p></div>
-   <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null)}}>{value} дн.</button>)}</div>
-    <button disabled={busy||!state} onClick={()=>act('/sales/sync',{days:90})}>{busy?'Загружаем…':'Обновить'}</button>
+   <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null);if(value>(data?.rows||[]).length&&!busy)act('/sales/sync',{days:value})}}>{value} дн.</button>)}</div>
+    <button disabled={busy||!state} onClick={()=>act('/sales/sync',{days:Math.max(period,(data?.rows||[]).length||14)})}>{busy?'Загружаем…':'Обновить'}</button>
    </div>
   </div>
   {data?.error&&<Notice>{data.error}</Notice>}
