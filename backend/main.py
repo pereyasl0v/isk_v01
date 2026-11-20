@@ -445,7 +445,14 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
                             f'{len(coverage.get("missing_days") or [])} дней.'
                         )
             else:
-                store.save(s['client'],'history',s['api'].postings(days,progress))
+                history_data=s['api'].postings(days,progress)
+                saved_history=store.save_history(s['client'],history_data)
+                for error in history_data.get('errors') or []:
+                    progress('Часть истории не обновлена: '+str(error))
+                progress(
+                    f"История Ozon сохранена: FBO {saved_history['counts']['fbo']} · "
+                    f"FBS {saved_history['counts']['fbs']} отправлений."
+                )
             after=s['api'].cache_counters() if hasattr(s['api'],'cache_counters') else before
             cache_hits=max(0,int(after.get('hits',0))-int(before.get('hits',0)))
             api_requests=max(0,int(after.get('api_requests',0))-int(before.get('api_requests',0)))
@@ -503,7 +510,8 @@ def inventory_history(date_from:date,date_to:date,request:Request):
         try:
             day=datetime.fromisoformat(data['at']).astimezone(MOSCOW_TZ).date().isoformat()
             daily[day]={'at':data['at'],'summary':summarize(data),'aggregated':aggregate(data),
-                        'fbs_stock_quantity':data.get('fbs_stock_quantity')}
+                        'fbs_stock_quantity':data.get('fbs_stock_quantity'),
+                        'fbs_stocks':data.get('fbs_stocks') or []}
         except (ValueError,KeyError,TypeError):
             continue
     return {'days':[{'date':day,**daily[day]} for day in sorted(daily)]}
