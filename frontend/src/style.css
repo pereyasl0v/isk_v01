@@ -27,3 +27,13 @@
 .fbo-history-table th{padding:8px 10px}
 .fbo-history-table td{padding:6px 10px}
 .fbo-history-table .pagination{margin-top:10px}
+
+.stock-history-chart{margin-top:20px}
+.stock-history-chart .panel-title{margin-bottom:14px}
+.stock-history-chart .panel-title select{max-width:220px}
+.stock-history-legend{display:flex;flex-wrap:wrap;gap:18px;margin:8px 0 12px}
+.stock-history-legend span{display:inline-flex;align-items:center;gap:7px;color:#65786c;font-size:11px}
+.stock-history-legend i{display:inline-block;width:18px;height:3px;border-radius:4px}
+.stock-history-svg-wrap{width:100%;overflow:hidden}
+.stock-history-svg{display:block;width:100%;height:auto;min-height:180px}
+@media(max-width:720px){.stock-history-chart .panel-title{align-items:flex-start}.stock-history-chart .panel-title select{max-width:48%;font-size:11px;padding:8px}.stock-history-legend{gap:10px}.stock-history-legend span{font-size:10px}.stock-history-svg{min-height:150px}}
