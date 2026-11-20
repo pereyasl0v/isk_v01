@@ -420,7 +420,7 @@ export default function BarcodeGenerator(){
   setExportError('');
   setArchiveNotice('');
   try{
-   const finalCode = barcodeEnabled?codeResult.code:'';
+   const finalCode = codeResult.valid?codeResult.code:'';
    const body = {
     name,
     code:finalCode,
