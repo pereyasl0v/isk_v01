@@ -36,14 +36,24 @@ function Overview(){
   act('/sales/sync',{days:90});
  },[sales?.at,sales?.error,state?.job.running]);
  return <><div className="overview-heading"><div><h1>Обзор кабинета</h1><p className="muted mt-2">Продажи и остатки Ozon · остатки обновлены: {date(inv?.at)}</p></div><button className="primary" disabled={!state||state.job.running} onClick={()=>act('/sync',{})}>Обновить остатки <RefreshCw size={16}/></button></div>
- <SalesHistoryChart data={sales} state={state} act={act}/>
+ <SalesHistoryChart data={sales} state={state} act={act} inv={inv}/>
  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек"/></div>
  {inv?.warning&&<Notice>{inv.warning}</Notice>}
  <div className="mt-5"><ProductCatalog/></div></>
 }
-function SalesHistoryChart({data,state,act}){
- const [period,setPeriod]=useState(14);const [hovered,setHovered]=useState(null);
- const points=(data?.rows||[]).slice(-period);
+function SalesHistoryChart({data,state,act,inv}){
+ const [period,setPeriod]=useState(14);const [hovered,setHovered]=useState(null);const [sku,setSku]=useState('all');
+ const allPoints=(data?.rows||[]).slice(-period);
+ const skuNames=new Map((inv?.products||[]).filter(p=>p.sku).map(p=>[String(p.sku),p.name||String(p.sku)]));
+ const skuRows=data?.by_sku||[];
+ const skuOptions=[...new Set([...skuNames.keys(),...skuRows.map(row=>String(row.sku))])].sort((a,b)=>(skuNames.get(a)||a).localeCompare(skuNames.get(b)||b,'ru'));
+ const selectedDays=new Map(skuRows.filter(row=>String(row.sku)===sku).map(row=>[row.date,row]));
+ const points=sku==='all'?allPoints:allPoints.map(day=>{
+  const selected=selectedDays.get(day.date);
+  return {date:day.date,ordered_units:selected?.ordered_units??0,
+   ordered_revenue:selected?.ordered_revenue??0,
+   delivered_units:data?.delivered_available?(selected?.delivered_units??0):null};
+ });
  const maxValue=Math.max(1,...points.flatMap(p=>[Number(p.ordered_units||0),...(data?.delivered_available?[Number(p.delivered_units||0)]:[])]));
  const max=Math.max(4,Math.ceil(maxValue/4)*4);
  const width=960,height=290,left=58,right=22,top=20,bottom=42,plotWidth=width-left-right,plotHeight=height-top-bottom;
@@ -61,7 +71,7 @@ function SalesHistoryChart({data,state,act}){
  const busy=Boolean(state?.job?.running);
  return <section className="panel sales-chart">
   <div className="panel-title"><div><h3>Заказано товаров</h3><p className="muted mt-2">Заказы и доставленные товары по дням</p></div>
-   <div className="sales-chart-controls"><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null)}}>{value} дн.</button>)}</div>
+   <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null)}}>{value} дн.</button>)}</div>
     <button disabled={busy||!state} onClick={()=>act('/sales/sync',{days:90})}>{busy?'Загружаем…':'Обновить'}</button>
    </div>
   </div>
@@ -72,7 +82,7 @@ function SalesHistoryChart({data,state,act}){
    <div className="sales-chart-wrap">
     {hoveredPoint&&<div className="sales-chart-tooltip" style={{left:`${Math.max(16,Math.min(84,x(hovered)/width*100))}%`}}>
      <strong>{fmtDay(hoveredPoint.date)}</strong>
-     <div><span><i className="ordered"/>Заказано</span><b>{num(hoveredPoint.ordered_units)} шт.</b></div>
+     <div><span><i className="ordered"/>Заказано</span><b>{num(hoveredPoint.ordered_units)} шт. · {num(hoveredPoint.ordered_revenue)} ₽</b></div>
      {data?.delivered_available&&<div><span><i className="delivered"/>Доставлено</span><b>{num(hoveredPoint.delivered_units)} шт.</b></div>}
     </div>}
     <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Количество заказанных и доставленных товаров по дням">
@@ -89,7 +99,7 @@ function SalesHistoryChart({data,state,act}){
     </svg>
    </div>
   </>}
-  <p className="muted mt-3">«Доставлено» — показатель графика Ozon Seller. Он не равен подтверждённому финансовому выкупу: отдельная ежедневная аналитика «Выкупы» через Seller API не предоставляется.</p>
+  <p className="muted mt-3">«Заказано» — количество и сумма заказов. «Доставлено» — отдельная метрика Ozon Seller, доступная через API при подписке Premium Plus / Premium Pro; она не равна финансовому выкупу.</p>
   <p className="muted mt-1">Обновлено: {date(data?.at)}{data?.date_from&&` · период ${fmtDay(data.date_from)}–${fmtDay(data.date_to)}`}</p>
  </section>
 }
