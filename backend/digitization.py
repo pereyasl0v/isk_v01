@@ -153,6 +153,7 @@ def summarize(snapshot):
         type_id = str(row.get('type_id', 'unknown'))
         info = type_info.get(type_id, {})
         type_name = str(row.get('type_name') or info.get('name') or type_id)
+        official_name = str(info.get('description') or type_name or type_id)
         bucket = _bucket(type_name, info.get('description', ''))
         amount = _number(row.get('amount'))
         quantity = abs(_number(row.get('quantity')))
@@ -160,8 +161,9 @@ def summarize(snapshot):
         sku = row.get('sku')
 
         by_bucket[bucket] += amount
-        diagnostic = by_type[f'{type_id}:{type_name}']
-        diagnostic['name'] = type_name
+        diagnostic_key = type_id if type_id != 'unknown' else f'unknown:{type_name}'
+        diagnostic = by_type[diagnostic_key]
+        diagnostic['name'] = official_name
         diagnostic['bucket'] = bucket
         diagnostic['count'] += 1
         diagnostic['amount'] += amount
