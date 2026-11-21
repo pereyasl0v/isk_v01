@@ -57,6 +57,10 @@ class Store:
                 payload TEXT NOT NULL,
                 PRIMARY KEY(client,day))''')
             c.execute('CREATE INDEX IF NOT EXISTS digitization_day_updated ON digitization_days(client,updated_at)')
+            c.execute('''CREATE TABLE IF NOT EXISTS digitization_morning_attempts (
+                client TEXT NOT NULL,
+                day TEXT NOT NULL,
+                PRIMARY KEY(client,day))''')
             # API cache is only an acceleration layer. Daily digitization facts are
             # the durable local analytical source and are intentionally not purged.
             c.execute('DELETE FROM api_cache WHERE updated_at < ?', (time.time()-370*86400,))
@@ -318,6 +322,24 @@ class Store:
             result.append({'id':row[0],'client_id':row[1],'roles':roles,'connected':bool(row[3]),
                            'created_at':row[4],'updated_at':row[5]})
         return result
+
+    def accounts_due_for_digitization(self,day):
+        with self.db() as c:
+            return c.execute("""SELECT a.id,a.user_id FROM ozon_accounts a
+                JOIN users u ON u.id=a.user_id
+                WHERE u.is_active=1 AND a.connected=1 AND a.api_key_ciphertext IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM digitization_days d
+                                WHERE d.client='account:'||a.id AND d.day=?)
+                AND NOT EXISTS (SELECT 1 FROM digitization_morning_attempts m
+                                WHERE m.client='account:'||a.id AND m.day=?)""",
+                (day,day)).fetchall()
+
+    def claim_morning_digitization(self,client,day):
+        with self.db() as c:
+            return c.execute("""INSERT OR IGNORE INTO digitization_morning_attempts(client,day)
+                SELECT ?,? WHERE NOT EXISTS (
+                    SELECT 1 FROM digitization_days WHERE client=? AND day=?)""",
+                (client,day,client,day)).rowcount==1
 
     def disconnect_ozon_account(self,account_id,user_id):
         with self.db() as c:

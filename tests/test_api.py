@@ -468,6 +468,51 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(data['rows'][0]['ordered_units'],7)
         self.assertEqual(data['rows'][-1]['ordered_units'],3)
 
+    def test_digitization_downloads_yesterday_at_eight_and_manual_history_once(self):
+        from datetime import timedelta
+
+        account=self.connect()
+        scope='account:'+account['account_id']
+        now=datetime.now(main.MOSCOW_TZ)
+        yesterday=now.date()-timedelta(days=1)
+        older=yesterday-timedelta(days=1)
+        at_eight=now.replace(hour=8,minute=0,second=0,microsecond=0)
+        body={'date_from':older.isoformat(),'date_to':yesterday.isoformat(),'refresh':True}
+        with patch.object(FakeOzon,'_as_date',create=True,side_effect=lambda day: day), \
+                patch.object(FakeOzon,'_closed_last_day',create=True,side_effect=lambda day: (day,False)), \
+                patch.object(main,'download_digitization_day',return_value={}) as download:
+            main.schedule_morning_digitization(at_eight-timedelta(seconds=1))
+            download.assert_not_called()
+
+            self.assertEqual(self.client.post('/api/digitization/sync',headers=HEAD,json=body).status_code,200)
+            self.assertIsNone(self.wait()['job']['error'])
+            self.assertEqual([call.args[1] for call in download.call_args_list],[older])
+
+            main.runtime_accounts.clear()
+            main.schedule_morning_digitization(at_eight)
+            self.assertIsNone(self.wait()['job']['error'])
+            self.assertEqual([call.args[1] for call in download.call_args_list],[older,yesterday])
+
+            main.schedule_morning_digitization(at_eight+timedelta(minutes=1))
+            self.assertEqual(self.client.post('/api/digitization/sync',headers=HEAD,json=body).status_code,200)
+            self.assertIsNone(self.wait()['job']['error'])
+            self.assertEqual(download.call_count,2)
+        self.assertEqual(main.store.digitization_missing_days(scope,older.isoformat(),yesterday.isoformat()),[])
+
+    def test_failed_morning_digitization_is_not_retried_that_day(self):
+        from datetime import timedelta
+
+        self.connect()
+        at_eight=datetime.now(main.MOSCOW_TZ).replace(hour=8,minute=0,second=0,microsecond=0)
+        with patch.object(FakeOzon,'_as_date',create=True,side_effect=lambda day: day), \
+                patch.object(FakeOzon,'_closed_last_day',create=True,side_effect=lambda day: (day,False)), \
+                patch.object(main,'download_digitization_day',side_effect=ApiError('Ozon недоступен')) as download:
+            main.schedule_morning_digitization(at_eight)
+            self.assertEqual(self.wait()['job']['error'],'Ozon недоступен')
+            main.runtime_accounts.clear()
+            main.schedule_morning_digitization(at_eight+timedelta(minutes=1))
+            download.assert_called_once()
+
     def test_login_attempts_are_rate_limited(self):
         bad=TestClient(main.app)
         try:

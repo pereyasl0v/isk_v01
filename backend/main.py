@@ -1,11 +1,13 @@
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import secrets
 import sqlite3
 import threading
 import time
+from contextlib import asynccontextmanager
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
@@ -39,7 +41,18 @@ try: os.chmod(DATA,0o700)
 except OSError: pass
 ENCRYPTION_KEY=load_encryption_key()
 store=Store(DATA/'inventory.sqlite3',encryption_key=ENCRYPTION_KEY)
-app=FastAPI(title='Интелектуальная система контроля (ИСК)',version='0.3.0',docs_url=None,redoc_url=None)
+@asynccontextmanager
+async def lifespan(app):
+    stop=threading.Event()
+    worker=threading.Thread(target=run_digitization_schedule,args=(stop,),daemon=True)
+    worker.start()
+    try:
+        yield
+    finally:
+        stop.set()
+
+
+app=FastAPI(title='Интелектуальная система контроля (ИСК)',version='0.3.0',docs_url=None,redoc_url=None,lifespan=lifespan)
 ALLOWED_HOSTS=[v.strip() for v in os.getenv('ISK_ALLOWED_HOSTS','127.0.0.1,localhost,testserver').split(',') if v.strip()]
 app.add_middleware(TrustedHostMiddleware,allowed_hosts=ALLOWED_HOSTS)
 runtime_accounts={}
@@ -91,7 +104,11 @@ def current(request):
         raise HTTPException(503,'На сервере не настроен ключ шифрования. Администратор должен установить Docker secret.')
     account_id=auth.get('active_account_id')
     if not account_id:raise HTTPException(409,'Сначала выберите подключённый кабинет Ozon.')
-    account=store.get_ozon_account(account_id,auth['user_id'])
+    return account_runtime(account_id,auth['user_id'])
+
+
+def account_runtime(account_id,user_id):
+    account=store.get_ozon_account(account_id,user_id)
     if not account or not account['connected'] or not account['api_key_ciphertext']:
         raise HTTPException(409,'Кабинет Ozon не подключён. Выберите другой кабинет или подключите этот заново.')
     with lock:
@@ -105,7 +122,7 @@ def current(request):
         api=Ozon(account['client_id'],api_key,
             cache_get=lambda namespace,key,max_age: store.cache_get(scope,namespace,key,max_age),
             cache_put=lambda namespace,key,value: store.cache_put(scope,namespace,key,value))
-        runtime={'user_id':auth['user_id'],'account_id':account_id,'client_id':account['client_id'],
+        runtime={'user_id':user_id,'account_id':account_id,'client_id':account['client_id'],
             'client':scope,'api':api,'roles':account['roles'],'updated_at':account['updated_at'],
             'job':{'running':False,'message':'Кабинет подключён','error':None},'logs':[]}
         runtime_accounts[account_id]=runtime
@@ -215,7 +232,6 @@ class History(BaseModel):
 class DigitizationParams(BaseModel):
     date_from:date
     date_to:date
-    refresh:bool=False
 
 
 class SalesParams(BaseModel):
@@ -560,7 +576,7 @@ def sync_order_days(api,first,today,previous,progress,refresh_today):
             'error':None,'source':'ozon_seller_api_v1_analytics_data'}
 
 
-def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False,backfill=True):
+def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=False):
     def progress(message):
         with lock:
             s['job']['message']=message
@@ -590,6 +606,8 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False,backfill=Tru
             oldest=min(covered,default=requested_first.isoformat())
             earliest=today-timedelta(days=90)
             sales_first=max(earliest,min(requested_first,date.fromisoformat(oldest)))
+        if morning and not store.claim_morning_digitization(s['client'],date_from.isoformat()):
+            return {'started':False}
         s['job']={'kind':kind,'running':True,'message':'Подключаемся к Ozon…','error':None}
     def sync_kind(kind,days):
         if kind=='inventory':
@@ -650,17 +668,15 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False,backfill=Tru
             if effective_last < first:
                 progress('В выбранном периоде пока нет закрытых дней Ozon.')
             else:
-                if refresh:
-                    target_days=requested_days(first,effective_last)
-                    progress(f'Обновляем локальные данные: {len(target_days)} дн.')
-                else:
-                    target_days=store.digitization_missing_days(
-                        s['client'],first.isoformat(),effective_last.isoformat()
-                    )
-                    if target_days:
-                        progress(f'Догружаем только отсутствующие дни: {len(target_days)}.')
-                    else:
-                        progress('Все закрытые дни выбранного периода уже есть в SQLite.')
+                # Yesterday is reserved for the 08:00 Moscow run. Manual
+                # requests may fill gaps through the day before yesterday.
+                manual_last=datetime.now(MOSCOW_TZ).date()-timedelta(days=2)
+                target_last=effective_last if morning else min(effective_last,manual_last)
+                target_days=store.digitization_missing_days(
+                    s['client'],first.isoformat(),target_last.isoformat()
+                )
+                if target_days:
+                    progress(f'Догружаем только отсутствующие дни: {len(target_days)}.')
                 for index,day_text in enumerate(target_days,1):
                     day=date.fromisoformat(day_text)
                     progress(f'День {index}/{len(target_days)} · {day_text}')
@@ -744,6 +760,28 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False,backfill=Tru
                 s['job']['running']=False
     threading.Thread(target=work,daemon=True).start()
     return {'started':True}
+
+def schedule_morning_digitization(now):
+    if not ENCRYPTION_KEY or now.hour<8:
+        return
+    day=now.date()-timedelta(days=1)
+    for account_id,user_id in store.accounts_due_for_digitization(day.isoformat()):
+        try:
+            launch(account_runtime(account_id,user_id),'digitization',
+                   date_from=day,date_to=day,morning=True)
+        except HTTPException as exc:
+            if exc.status_code!=409:
+                logging.getLogger(__name__).warning('Не удалось запустить утреннюю оцифровку: %s',exc.detail)
+
+
+def run_digitization_schedule(stop):
+    while not stop.is_set():
+        try:
+            schedule_morning_digitization(datetime.now(MOSCOW_TZ))
+        except Exception:
+            logging.getLogger(__name__).exception('Ошибка расписания оцифровки')
+        stop.wait(60-time.time()%60)
+
 
 @app.post('/api/sync')
 def sync(request:Request):
@@ -891,7 +929,7 @@ def sync_history(body:History,request:Request):
 def sync_digitization(body:DigitizationParams,request:Request):
     if body.date_to < body.date_from:
         raise HTTPException(422,'Дата окончания не может быть раньше даты начала.')
-    return launch(current(request),'digitization',date_from=body.date_from,date_to=body.date_to,refresh=body.refresh)
+    return launch(current(request),'digitization',date_from=body.date_from,date_to=body.date_to)
 
 @app.get('/api/inventory')
 def inventory(request:Request):
