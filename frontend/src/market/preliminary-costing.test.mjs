@@ -68,3 +68,12 @@ test("dimensions drive freight for the selected quantity and preserve legacy vol
   product.heightCm="";
   assert.equal(calculatePreliminaryCost(draft).products[0].volumeM3,0);
 });
+
+test("shared yuan rate applies to both purchases and to shipping",()=>{
+  const draft=sample();
+  const before=calculatePreliminaryCost(draft).products[0];
+  const after=calculatePreliminaryCost({...draft,yuanToRubRate:"15,5"}).products[0];
+  assert.ok(Math.abs(after.route1.goodsRub-before.route1.goodsRub*15.5/14.2)<1e-8);
+  assert.ok(Math.abs(after.route2.purchaseRub-before.route2.purchaseRub*15.5/11.8)<1e-8);
+  assert.ok(Math.abs(after.route2.transportRub-before.route2.transportRub*15.5/12.4)<1e-8);
+});

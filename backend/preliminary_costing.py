@@ -121,7 +121,10 @@ def clean_preliminary_cost(raw: Any) -> dict:
         key: _number(route2_raw.get(key), key, default)
         for key, default in DEFAULT_ROUTE2.items()
     }
-    return {"products": products, "route1": route1, "route2": route2}
+    result = {"products": products, "route1": route1, "route2": route2}
+    if "yuanToRubRate" in raw:
+        result["yuanToRubRate"] = _number(raw["yuanToRubRate"], "Курс юаня")
+    return result
 
 
 def _shares(products: list[dict], method: str) -> list[float]:
@@ -164,6 +167,7 @@ def calculate_preliminary_cost(data: dict) -> dict:
     ]
     r1 = data["route1"]
     r2 = data["route2"]
+    common_rate = data.get("yuanToRubRate")
     warnings = []
 
     route1_shares = _shares(products, r1["allocationMethod"])
@@ -174,7 +178,7 @@ def calculate_preliminary_cost(data: dict) -> dict:
     for product, share in zip(products, route1_shares):
         quantity = product["quantity"]
         supplier_yuan = quantity * product["unitPriceYuan"] + product["deliveryToSashaYuan"]
-        goods_rub = supplier_yuan * r1["yuanToRubRate"] * (1 + r1["purchaseMarkupPercent"] / 100)
+        goods_rub = supplier_yuan * (common_rate if common_rate is not None else r1["yuanToRubRate"]) * (1 + r1["purchaseMarkupPercent"] / 100)
         freight_rub = product["volumeM3"] * r1["freightRateRubPerM3"]
         taxable_freight = freight_rub * r1["dutyableFreightPercent"] / 100
         duty_goods = goods_rub * product["dutyPercent"] / 100
@@ -234,7 +238,7 @@ def calculate_preliminary_cost(data: dict) -> dict:
             warnings.append("Маршрут через Южные ворота: укажи вес нетто одной единицы для точного распределения доставки.")
 
     transport_usd = r2["autoFreightUsdPerKg"] * gross_weight + r2["packagingPerBoxUsd"] * r2["boxCount"]
-    transport_rub = transport_usd * r2["usdToYuanRate"] * r2["freightYuanToRubRate"]
+    transport_rub = transport_usd * r2["usdToYuanRate"] * (common_rate if common_rate is not None else r2["freightYuanToRubRate"])
     route2_shared = sum(r2[key] for key in (
         "deliveryToSpbRub", "deliveryToHomeRub", "loadersRub", "packingRub", "otherRub"
     ))
@@ -244,7 +248,7 @@ def calculate_preliminary_cost(data: dict) -> dict:
         allocated_packaging = packaging_weight * net / total_net_weight if total_net_weight > 0 else 0.0
         allocated_gross = net + allocated_packaging
         purchase_yuan = quantity * product["unitPriceYuan"] + product["deliveryToGuangzhouYuan"]
-        purchase_rub = purchase_yuan * r2["purchaseYuanToRubRate"]
+        purchase_rub = purchase_yuan * (common_rate if common_rate is not None else r2["purchaseYuanToRubRate"])
         allocated_transport = transport_rub * share
         allocated_shared = route2_shared * share
         total = purchase_rub + allocated_transport + allocated_shared

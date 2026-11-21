@@ -67,6 +67,18 @@ def sample_draft():
 
 
 class PreliminaryCostCalculationTests(unittest.TestCase):
+    def test_common_yuan_rate_applies_to_all_route_conversions(self):
+        draft = sample_draft()
+        original = calculate_preliminary_cost(clean_preliminary_cost(draft))
+        draft["yuanToRubRate"] = "15,5"
+        clean = clean_preliminary_cost(draft)
+        self.assertEqual(clean["yuanToRubRate"], 15.5)
+        result = calculate_preliminary_cost(clean)
+        before, after = original["products"][0], result["products"][0]
+        self.assertAlmostEqual(after["route1"]["goodsRub"], before["route1"]["goodsRub"] * 15.5 / 14.2)
+        self.assertAlmostEqual(after["route2"]["purchaseRub"], before["route2"]["purchaseRub"] * 15.5 / 11.8)
+        self.assertAlmostEqual(after["route2"]["transportRub"], before["route2"]["transportRub"] * 15.5 / 12.4)
+
     def test_dimensions_override_archived_volume_for_freight_and_allocation(self):
         draft = sample_draft()
         draft["products"] = draft["products"][:2]

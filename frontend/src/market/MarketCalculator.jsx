@@ -232,11 +232,12 @@ export default function MarketCalculator() {
     setArchiveError("");
     try {
       const result = await request("/preliminary-costs/" + encodeURIComponent(id));
-      setDraft(result.data);
+      const legacyRates = result.data.yuanToRubRate == null;
+      setDraft({ ...result.data, yuanToRubRate: result.data.yuanToRubRate ?? result.data.route1.yuanToRubRate });
       setCalculationName(result.name);
       setRecordId(result.id);
       setArchiveOpen(false);
-      setNotice("Открыт сохранённый расчёт. Можешь изменить параметры и сохранить его повторно.");
+      setNotice(legacyRates ? "Для обоих маршрутов применён сохранённый курс Ростова." : "Открыт сохранённый расчёт.");
       setError("");
     } catch (requestError) {
       setArchiveError(requestError.message || "Не удалось открыть расчёт.");
@@ -281,6 +282,13 @@ export default function MarketCalculator() {
     {notice && <div className="mc-alert mc-alert-success" role="status"><CheckCircle2 size={17} />{notice}</div>}
 
     <section className="mc-panel">
+      <div className="mc-section-heading"><h2>Общие параметры</h2></div>
+      <div className="mc-field-grid">
+        <NumberField label="Курс юаня" value={draft.yuanToRubRate} onChange={value => setDraft(current => ({ ...current, yuanToRubRate: value }))} unit="₽ за ¥" />
+      </div>
+    </section>
+
+    <section className="mc-panel">
       <div className="mc-section-heading">
         <div><h2>Товары</h2></div>
         <button type="button" className="mc-button mc-button-light" onClick={addProduct}><Plus size={16} /> Добавить товар</button>
@@ -309,9 +317,7 @@ export default function MarketCalculator() {
           <BatchOutput label="Объём партии" value={volume > 0 ? volumeFormat.format(volume) + " м³" : "—"} />
           <BatchOutput label="Вес нетто партии" value={netWeight > 0 ? volumeFormat.format(netWeight) + " кг" : "—"} />
           <BatchOutput label="Стоимость товара в юанях" value={volumeFormat.format(goodsYuan) + " ¥"} />
-          <BatchOutput label="Стоимость товара в рублях без доставки и надбавок" value={
-            <>Ростов: {money(goodsYuan * n(draft.route1.yuanToRubRate))} · Южные ворота: {money(goodsYuan * n(draft.route2.purchaseYuanToRubRate))}</>
-          } />
+          <BatchOutput label="Стоимость товара в рублях без доставки и надбавок" value={money(goodsYuan * n(draft.yuanToRubRate))} />
         </div>
         <details className="mc-formula-note">
           <summary>Дополнительные параметры товара</summary>
@@ -334,7 +340,6 @@ export default function MarketCalculator() {
           <p>Китай → Ростов → Санкт-Петербург</p>
         </div>
         <div className="mc-field-grid">
-          <NumberField label="Курс юаня" value={draft.route1.yuanToRubRate} onChange={value => updateRoute("route1", "yuanToRubRate", value)} unit="₽ за ¥" />
           <NumberField label="Наценка к оплате товара" value={draft.route1.purchaseMarkupPercent} onChange={value => updateRoute("route1", "purchaseMarkupPercent", value)} unit="%" step="0.1" />
           <NumberField label="Доставка до Ростова" value={draft.route1.freightRateRubPerM3} onChange={value => updateRoute("route1", "freightRateRubPerM3", value)} unit="₽ / м³" help="В файле «2»: 17 000 × 95 ÷ 65" />
           <NumberField label="Доля доставки под пошлину" value={draft.route1.dutyableFreightPercent} onChange={value => updateRoute("route1", "dutyableFreightPercent", value)} unit="%" step="0.1" />
@@ -359,9 +364,7 @@ export default function MarketCalculator() {
           <p>Китай → Южные ворота → Москва → Санкт-Петербург</p>
         </div>
         <div className="mc-field-grid">
-          <NumberField label="Курс юаня для закупки" value={draft.route2.purchaseYuanToRubRate} onChange={value => updateRoute("route2", "purchaseYuanToRubRate", value)} unit="₽ за ¥" />
           <NumberField label="Курс доллара в юани" value={draft.route2.usdToYuanRate} onChange={value => updateRoute("route2", "usdToYuanRate", value)} unit="¥ за $" />
-          <NumberField label="Курс юаня для доставки" value={draft.route2.freightYuanToRubRate} onChange={value => updateRoute("route2", "freightYuanToRubRate", value)} unit="₽ за ¥" />
           <NumberField label="Автодоставка за килограмм" value={draft.route2.autoFreightUsdPerKg} onChange={value => updateRoute("route2", "autoFreightUsdPerKg", value)} unit="$ / кг" />
           <NumberField label="Упаковка за коробку" value={draft.route2.packagingPerBoxUsd} onChange={value => updateRoute("route2", "packagingPerBoxUsd", value)} unit="$" />
           <NumberField label="Количество коробок" value={draft.route2.boxCount} onChange={value => updateRoute("route2", "boxCount", value)} unit="шт." step="1" />

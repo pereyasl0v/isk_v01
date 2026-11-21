@@ -47,6 +47,7 @@ export const createProduct = () => ({
 });
 
 export const createDraft = () => ({
+  yuanToRubRate: DEFAULT_ROUTE1.yuanToRubRate,
   products: [createProduct()],
   route1: { ...DEFAULT_ROUTE1 },
   route2: { ...DEFAULT_ROUTE2 },
@@ -91,6 +92,7 @@ export function calculatePreliminaryCost(draft) {
     : [];
   const route1 = { ...DEFAULT_ROUTE1, ...(draft?.route1 || {}) };
   const route2 = { ...DEFAULT_ROUTE2, ...(draft?.route2 || {}) };
+  const commonRate = draft?.yuanToRubRate;
   if (!products.length) return { products: [], summary: null, warnings: [] };
 
   const warnings = [];
@@ -101,7 +103,7 @@ export function calculatePreliminaryCost(draft) {
   const route1Rows = products.map((product, index) => {
     const quantity = Math.max(1, n(product.quantity));
     const supplierTotalYuan = quantity * n(product.unitPriceYuan) + n(product.deliveryToSashaYuan);
-    const goodsRub = supplierTotalYuan * n(route1.yuanToRubRate)
+    const goodsRub = supplierTotalYuan * n(commonRate ?? route1.yuanToRubRate)
       * (1 + n(route1.purchaseMarkupPercent) / 100);
     const freightToRostovRub = n(product.volumeM3) * n(route1.freightRateRubPerM3);
     const taxableFreightRub = freightToRostovRub * n(route1.dutyableFreightPercent) / 100;
@@ -157,7 +159,7 @@ export function calculatePreliminaryCost(draft) {
 
   const transportUsd = n(route2.autoFreightUsdPerKg) * grossWeight
     + n(route2.packagingPerBoxUsd) * n(route2.boxCount);
-  const transportRub = transportUsd * n(route2.usdToYuanRate) * n(route2.freightYuanToRubRate);
+  const transportRub = transportUsd * n(route2.usdToYuanRate) * n(commonRate ?? route2.freightYuanToRubRate);
   const route2Shared = n(route2.deliveryToSpbRub) + n(route2.deliveryToHomeRub)
     + n(route2.loadersRub) + n(route2.packingRub) + n(route2.otherRub);
 
@@ -167,7 +169,7 @@ export function calculatePreliminaryCost(draft) {
     const allocatedPackagingKg = totalNetWeight > 0 ? packagingWeight * netWeightKg / totalNetWeight : 0;
     const allocatedGrossWeightKg = netWeightKg + allocatedPackagingKg;
     const purchaseTotalYuan = quantity * n(product.unitPriceYuan) + n(product.deliveryToGuangzhouYuan);
-    const purchaseRub = purchaseTotalYuan * n(route2.purchaseYuanToRubRate);
+    const purchaseRub = purchaseTotalYuan * n(commonRate ?? route2.purchaseYuanToRubRate);
     const allocatedTransportRub = transportRub * route2Shares[index];
     const sharedExpensesRub = route2Shared * route2Shares[index];
     const totalRub = purchaseRub + allocatedTransportRub + sharedExpensesRub;
