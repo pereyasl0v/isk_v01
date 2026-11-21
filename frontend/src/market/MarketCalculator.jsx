@@ -59,7 +59,7 @@ function TextField({ label, value, onChange, placeholder = "", maxLength }) {
   </label>;
 }
 
-function Breakdown({ product }) {
+function Breakdown({ product, showProductTotals }) {
   const a = product.route1;
   const b = product.route2;
   return <details className="mc-breakdown">
@@ -76,8 +76,7 @@ function Breakdown({ product }) {
           ["НДС на доставку", a.vatFreightRub],
           ["Мой налог", a.ownTaxRub],
         ].map(([label, value]) => <div className="mc-breakdown-row" key={label}><span>{label}</span><b>{money(value)}</b></div>)}
-        <div className="mc-breakdown-total"><span>Итого за партию</span><b>{money(a.totalRub)}</b></div>
-        <div className="mc-breakdown-total"><span>За 1 шт.</span><b>{money(a.costPerUnit)}</b></div>
+        {showProductTotals && <div className="mc-breakdown-total"><span>Итого за партию</span><b>{money(a.totalRub)}</b></div>}
       </div>
       <div>
         <h4>Через Южные ворота</h4>
@@ -86,8 +85,7 @@ function Breakdown({ product }) {
           ["Доля автодоставки и упаковки", b.transportRub],
         ].map(([label, value]) => <div className="mc-breakdown-row" key={label}><span>{label}</span><b>{money(value)}</b></div>)}
         <div className="mc-breakdown-row"><span>Доля веса партии</span><b>{percent(b.allocationShare * 100)}</b></div>
-        <div className="mc-breakdown-total"><span>Итого за партию</span><b>{money(b.totalRub)}</b></div>
-        <div className="mc-breakdown-total"><span>За 1 шт.</span><b>{money(b.costPerUnit)}</b></div>
+        {showProductTotals && <div className="mc-breakdown-total"><span>Итого за партию</span><b>{money(b.totalRub)}</b></div>}
       </div>
     </div>
   </details>;
@@ -254,6 +252,7 @@ export default function MarketCalculator() {
     }
   };
 
+  const multipleProducts = calculated.products.length > 1;
   const route1Cheaper = calculated.summary?.cheaperRoute === "rostov";
   const route2Cheaper = calculated.summary?.cheaperRoute === "south_gates";
 
@@ -360,12 +359,12 @@ export default function MarketCalculator() {
       {calculated.summary && <div className="mc-comparison-grid">
         <article className={"mc-result-card mc-result-rostov" + (route1Cheaper ? " mc-result-best" : "")}>
           <div className="mc-result-top"><span>Китай → Ростов</span>{route1Cheaper && <b>ВЫГОДНЕЕ</b>}</div>
-          <strong>{money(calculated.summary.route1.averageCostPerUnit)} <small>/ шт. в среднем</small></strong>
+          <strong>{money(calculated.summary.route1.averageCostPerUnit)} <small>{multipleProducts ? "/ шт. в среднем" : "/ шт."}</small></strong>
           <div className="mc-result-total"><span>Полная стоимость партии</span><b>{money(calculated.summary.route1.totalRub)}</b></div>
         </article>
         <article className={"mc-result-card mc-result-south" + (route2Cheaper ? " mc-result-best" : "")}>
           <div className="mc-result-top"><span>Китай → Южные ворота (Москва)</span>{route2Cheaper && <b>ВЫГОДНЕЕ</b>}</div>
-          <strong>{money(calculated.summary.route2.averageCostPerUnit)} <small>/ шт. в среднем</small></strong>
+          <strong>{money(calculated.summary.route2.averageCostPerUnit)} <small>{multipleProducts ? "/ шт. в среднем" : "/ шт."}</small></strong>
           <div className="mc-result-total"><span>Полная стоимость партии</span><b>{money(calculated.summary.route2.totalRub)}</b></div>
         </article>
       </div>}
@@ -383,15 +382,15 @@ export default function MarketCalculator() {
           <h3>{product.name.trim() || "Без названия"}</h3>
           <p>{product.article && <span>Артикул {product.article}</span>}<span>{quantity(product.quantity)} шт.</span></p>
         </div>
-        <dl className="mc-unit-costs">
+        {multipleProducts && <dl className="mc-unit-costs">
           <div><dt>Через Ростов</dt><dd>{money(product.route1.costPerUnit)} / шт.</dd></div>
           <div><dt>Через Южные ворота</dt><dd>{money(product.route2.costPerUnit)} / шт.</dd></div>
-        </dl>
-        {product.differencePerUnit !== 0 && <p className="mc-unit-difference">
+        </dl>}
+        {multipleProducts && product.differencePerUnit !== 0 && <p className="mc-unit-difference">
           {product.differencePerUnit > 0 ? "Южные ворота дешевле на " : "Ростов дешевле на "}
           <strong>{money(Math.abs(product.differencePerUnit))} / шт.</strong>
         </p>}
-        <Breakdown product={product} />
+        <Breakdown product={product} showProductTotals={multipleProducts} />
       </article>)}
       {!calculated.products.length && <div className="mc-empty-results"><Package size={27} /><strong>{validContainerVolume ? "Добавь товары, чтобы увидеть сравнение" : "Укажите полезный объём контейнера больше нуля"}</strong><span>Результаты пересчитываются автоматически при изменении параметров.</span></div>}
     </section>
