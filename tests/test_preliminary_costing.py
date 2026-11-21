@@ -67,6 +67,17 @@ def sample_draft():
 
 
 class PreliminaryCostCalculationTests(unittest.TestCase):
+    def test_selected_route_uses_its_own_rate_and_ignores_other_route(self):
+        draft = sample_draft()
+        draft.update(selectedRoute="route2", yuanToRubRate=99)
+        draft["route1"].update(containerCostUsd=17_000, containerVolumeM3=0)
+        draft["route2"]["purchaseYuanToRubRate"] = 10
+        result = calculate_preliminary_cost(clean_preliminary_cost(draft))
+        self.assertEqual(set(result["summary"]), {"route2"})
+        self.assertAlmostEqual(result["products"][0]["route2"]["purchaseRub"], (800 * 3.6 + 340) * 10)
+        self.assertAlmostEqual(result["summary"]["route2"]["transportRub"], (291 * 3.2 + 18) * 6.8 * 10)
+        self.assertNotIn("route1", result["products"][0])
+
     def test_packaging_percentage_replaces_manual_gross_and_extra_expenses(self):
         draft = sample_draft()
         draft["packagingWeightPercent"] = 10

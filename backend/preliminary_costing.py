@@ -118,7 +118,7 @@ def clean_preliminary_cost(raw: Any) -> dict:
     if "containerCostUsd" in route1_raw or "containerVolumeM3" in route1_raw:
         route1["containerCostUsd"] = _number(route1_raw.get("containerCostUsd"), "Стоимость контейнера")
         volume = _number(route1_raw.get("containerVolumeM3"), "Полезный объём контейнера")
-        if volume <= 0:
+        if volume <= 0 and raw.get("selectedRoute") != "route2":
             raise ValueError("Укажите полезный объём контейнера больше нуля.")
         route1["containerVolumeM3"] = volume
     route1["allocationMethod"] = str(route1_raw.get("allocationMethod") or "volume")
@@ -138,6 +138,11 @@ def clean_preliminary_cost(raw: Any) -> dict:
         result["yuanToRubRate"] = _number(raw["yuanToRubRate"], "Курс юаня")
     if "packagingWeightPercent" in raw:
         result["packagingWeightPercent"] = _number(raw["packagingWeightPercent"], "Вес упаковки от нетто")
+    if "selectedRoute" in raw:
+        route = raw["selectedRoute"]
+        if route not in ("route1", "route2"):
+            raise ValueError("Выберите маршрут доставки.")
+        result["selectedRoute"] = route
     return result
 
 
@@ -181,148 +186,146 @@ def calculate_preliminary_cost(data: dict) -> dict:
     ]
     r1 = data["route1"]
     r2 = data["route2"]
-    usd_rate = r1.get("usdToRubRate", DEFAULT_ROSTOV_USD_RATE)
-    if "containerCostUsd" in r1:
-        freight_rate = r1["containerCostUsd"] * usd_rate / r1["containerVolumeM3"]
-    else:
-        freight_rate = r1["freightRateRubPerM3"] * (usd_rate / DEFAULT_ROSTOV_USD_RATE)
-    common_rate = data.get("yuanToRubRate")
+    selected_route = data.get("selectedRoute")
+    common_rate = None if selected_route else data.get("yuanToRubRate")
+    packaging_percent = data.get("packagingWeightPercent")
+    total_quantity = sum(p["quantity"] for p in products)
     warnings = []
 
-    packaging_percent = data.get("packagingWeightPercent")
-    route1_shares = _shares(products, r1["allocationMethod"])
-    route1_shared = sum(r1[key] for key in (
-        "deliveryToSpbRub", "loadersRub", "unloadersRub", "otherRub"
-    )) if packaging_percent is None else 0
-    route1_rows = []
-    for product, share in zip(products, route1_shares):
-        quantity = product["quantity"]
-        supplier_yuan = quantity * product["unitPriceYuan"] + product["deliveryToSashaYuan"]
-        goods_rub = supplier_yuan * (common_rate if common_rate is not None else r1["yuanToRubRate"]) * (1 + r1["purchaseMarkupPercent"] / 100)
-        freight_rub = product["volumeM3"] * freight_rate
-        taxable_freight = freight_rub * r1["dutyableFreightPercent"] / 100
-        duty_goods = goods_rub * product["dutyPercent"] / 100
-        duty_freight = taxable_freight * product["dutyPercent"] / 100
-        vat_goods = goods_rub * r1["vatPercent"] / 100
-        vat_freight = taxable_freight * r1["vatPercent"] / 100
-        tax_base = freight_rub + goods_rub + duty_goods + duty_freight + vat_goods + vat_freight
-        own_tax = tax_base * r1["ownTaxPercent"] / 100
-        extra = route1_shared * share
-        base_total = tax_base + own_tax
-        total = base_total + extra
-        route1_rows.append({
-            "id": product["id"],
-            "supplierTotalYuan": supplier_yuan,
-            "goodsRub": goods_rub,
-            "freightToRostovRub": freight_rub,
-            "taxableFreightRub": taxable_freight,
-            "dutyGoodsRub": duty_goods,
-            "dutyFreightRub": duty_freight,
-            "vatGoodsRub": vat_goods,
-            "vatFreightRub": vat_freight,
-            "ownTaxRub": own_tax,
-            "allocatedAdditionalRub": extra,
-            "allocationShare": share,
-            "totalRub": total,
-            "costPerUnit": total / quantity,
-        })
-        if freight_rate and product["volumeM3"] <= 0:
-            warnings.append(f"«{product['name']}»: укажите длину, ширину и высоту одной штуки для расчёта доставки через Ростов.")
+    def calculate_rostov():
+        usd_rate = r1.get("usdToRubRate", DEFAULT_ROSTOV_USD_RATE)
+        if "containerCostUsd" in r1:
+            freight_rate = r1["containerCostUsd"] * usd_rate / r1["containerVolumeM3"]
+        else:
+            freight_rate = r1["freightRateRubPerM3"] * (usd_rate / DEFAULT_ROSTOV_USD_RATE)
+        route1_shares = _shares(products, r1["allocationMethod"])
+        route1_shared = sum(r1[key] for key in (
+            "deliveryToSpbRub", "loadersRub", "unloadersRub", "otherRub"
+        )) if packaging_percent is None else 0
+        route1_rows = []
+        for product, share in zip(products, route1_shares):
+            quantity = product["quantity"]
+            supplier_yuan = quantity * product["unitPriceYuan"] + product["deliveryToSashaYuan"]
+            goods_rub = supplier_yuan * (common_rate if common_rate is not None else r1["yuanToRubRate"]) * (1 + r1["purchaseMarkupPercent"] / 100)
+            freight_rub = product["volumeM3"] * freight_rate
+            taxable_freight = freight_rub * r1["dutyableFreightPercent"] / 100
+            duty_goods = goods_rub * product["dutyPercent"] / 100
+            duty_freight = taxable_freight * product["dutyPercent"] / 100
+            vat_goods = goods_rub * r1["vatPercent"] / 100
+            vat_freight = taxable_freight * r1["vatPercent"] / 100
+            tax_base = freight_rub + goods_rub + duty_goods + duty_freight + vat_goods + vat_freight
+            own_tax = tax_base * r1["ownTaxPercent"] / 100
+            extra = route1_shared * share
+            base_total = tax_base + own_tax
+            total = base_total + extra
+            route1_rows.append({
+                "id": product["id"],
+                "supplierTotalYuan": supplier_yuan,
+                "goodsRub": goods_rub,
+                "freightToRostovRub": freight_rub,
+                "taxableFreightRub": taxable_freight,
+                "dutyGoodsRub": duty_goods,
+                "dutyFreightRub": duty_freight,
+                "vatGoodsRub": vat_goods,
+                "vatFreightRub": vat_freight,
+                "ownTaxRub": own_tax,
+                "allocatedAdditionalRub": extra,
+                "allocationShare": share,
+                "totalRub": total,
+                "costPerUnit": total / quantity,
+            })
+            if freight_rate and product["volumeM3"] <= 0:
+                warnings.append(f"«{product['name']}»: укажите длину, ширину и высоту одной штуки для расчёта доставки через Ростов.")
 
-    total_quantity = sum(p["quantity"] for p in products)
-    route1_total = sum(row["totalRub"] for row in route1_rows)
-    route1_summary = {
-        "totalRub": route1_total,
-        "averageCostPerUnit": route1_total / total_quantity if total_quantity else 0.0,
-        "sharedExpensesRub": route1_shared,
-        "totalQuantity": total_quantity,
-    }
+        route1_total = sum(row["totalRub"] for row in route1_rows)
+        route1_summary = {
+            "totalRub": route1_total,
+            "averageCostPerUnit": route1_total / total_quantity if total_quantity else 0.0,
+            "sharedExpensesRub": route1_shared,
+            "totalQuantity": total_quantity,
+        }
+        return route1_rows, route1_summary
 
-    net_weights = [p["netWeightKg"] for p in products]
-    total_net_weight = sum(net_weights)
-    if packaging_percent is None:
-        gross_weight = r2["grossWeightKg"] or total_net_weight
-    else:
-        gross_weight = total_net_weight * (1 + packaging_percent / 100)
-    if gross_weight < total_net_weight:
-        warnings.append("Маршрут через Южные ворота: брутто меньше суммарного нетто. Для расчёта использован вес нетто.")
-        gross_weight = total_net_weight
-    packaging_weight = max(0.0, gross_weight - total_net_weight)
-    if gross_weight <= 0:
-        route2_shares = _shares(products, "quantity")
-        warnings.append("Маршрут через Южные ворота: укажи вес нетто товара и брутто всей партии для точного распределения доставки.")
-    else:
-        route2_shares = [
-            (net + (packaging_weight * net / total_net_weight if total_net_weight > 0 else 0.0)) / gross_weight
-            for net in net_weights
-        ]
-        if total_net_weight <= 0:
+    def calculate_south_gates():
+        net_weights = [p["netWeightKg"] for p in products]
+        total_net_weight = sum(net_weights)
+        if packaging_percent is None:
+            gross_weight = r2["grossWeightKg"] or total_net_weight
+        else:
+            gross_weight = total_net_weight * (1 + packaging_percent / 100)
+        if gross_weight < total_net_weight:
+            warnings.append("Маршрут через Южные ворота: брутто меньше суммарного нетто. Для расчёта использован вес нетто.")
+            gross_weight = total_net_weight
+        packaging_weight = max(0.0, gross_weight - total_net_weight)
+        if gross_weight <= 0:
             route2_shares = _shares(products, "quantity")
-            warnings.append("Маршрут через Южные ворота: укажи вес нетто одной единицы для точного распределения доставки.")
+            warnings.append("Маршрут через Южные ворота: укажи вес нетто товара и брутто всей партии для точного распределения доставки.")
+        else:
+            route2_shares = [
+                (net + (packaging_weight * net / total_net_weight if total_net_weight > 0 else 0.0)) / gross_weight
+                for net in net_weights
+            ]
+            if total_net_weight <= 0:
+                route2_shares = _shares(products, "quantity")
+                warnings.append("Маршрут через Южные ворота: укажи вес нетто одной единицы для точного распределения доставки.")
 
-    transport_usd = r2["autoFreightUsdPerKg"] * gross_weight + r2["packagingPerBoxUsd"] * r2["boxCount"]
-    transport_rub = transport_usd * r2["usdToYuanRate"] * (common_rate if common_rate is not None else r2["freightYuanToRubRate"])
-    route2_shared = sum(r2[key] for key in (
-        "deliveryToSpbRub", "deliveryToHomeRub", "loadersRub", "packingRub", "otherRub"
-    )) if packaging_percent is None else 0
-    route2_rows = []
-    for product, net, share in zip(products, net_weights, route2_shares):
-        quantity = product["quantity"]
-        allocated_packaging = packaging_weight * net / total_net_weight if total_net_weight > 0 else 0.0
-        allocated_gross = net + allocated_packaging
-        purchase_yuan = quantity * product["unitPriceYuan"] + product["deliveryToGuangzhouYuan"]
-        purchase_rub = purchase_yuan * (common_rate if common_rate is not None else r2["purchaseYuanToRubRate"])
-        allocated_transport = transport_rub * share
-        allocated_shared = route2_shared * share
-        total = purchase_rub + allocated_transport + allocated_shared
-        route2_rows.append({
-            "id": product["id"],
-            "netWeightKg": net,
-            "allocatedPackagingKg": allocated_packaging,
-            "allocatedGrossWeightKg": allocated_gross,
-            "allocationShare": share,
-            "purchaseTotalYuan": purchase_yuan,
-            "purchaseRub": purchase_rub,
-            "transportRub": allocated_transport,
-            "sharedExpensesRub": allocated_shared,
-            "totalRub": total,
-            "costPerUnit": total / quantity,
-        })
-        if (r2["autoFreightUsdPerKg"] or r2["packagingPerBoxUsd"]) and gross_weight <= 0:
-            warnings.append(f"«{product['name']}»: недостаточно данных о весе для расчёта автодоставки.")
+        transport_usd = r2["autoFreightUsdPerKg"] * gross_weight + r2["packagingPerBoxUsd"] * r2["boxCount"]
+        transport_rub = transport_usd * r2["usdToYuanRate"] * (r2["purchaseYuanToRubRate"] if selected_route else common_rate if common_rate is not None else r2["freightYuanToRubRate"])
+        route2_shared = sum(r2[key] for key in (
+            "deliveryToSpbRub", "deliveryToHomeRub", "loadersRub", "packingRub", "otherRub"
+        )) if packaging_percent is None else 0
+        route2_rows = []
+        for product, net, share in zip(products, net_weights, route2_shares):
+            quantity = product["quantity"]
+            allocated_packaging = packaging_weight * net / total_net_weight if total_net_weight > 0 else 0.0
+            allocated_gross = net + allocated_packaging
+            purchase_yuan = quantity * product["unitPriceYuan"] + product["deliveryToGuangzhouYuan"]
+            purchase_rub = purchase_yuan * (common_rate if common_rate is not None else r2["purchaseYuanToRubRate"])
+            allocated_transport = transport_rub * share
+            allocated_shared = route2_shared * share
+            total = purchase_rub + allocated_transport + allocated_shared
+            route2_rows.append({
+                "id": product["id"],
+                "netWeightKg": net,
+                "allocatedPackagingKg": allocated_packaging,
+                "allocatedGrossWeightKg": allocated_gross,
+                "allocationShare": share,
+                "purchaseTotalYuan": purchase_yuan,
+                "purchaseRub": purchase_rub,
+                "transportRub": allocated_transport,
+                "sharedExpensesRub": allocated_shared,
+                "totalRub": total,
+                "costPerUnit": total / quantity,
+            })
+            if (r2["autoFreightUsdPerKg"] or r2["packagingPerBoxUsd"]) and gross_weight <= 0:
+                warnings.append(f"«{product['name']}»: недостаточно данных о весе для расчёта автодоставки.")
 
-    route2_total = sum(row["totalRub"] for row in route2_rows)
-    route2_summary = {
-        "totalRub": route2_total,
-        "averageCostPerUnit": route2_total / total_quantity if total_quantity else 0.0,
-        "transportRub": transport_rub,
-        "sharedExpensesRub": route2_shared,
-        "grossWeightKg": gross_weight,
-        "netWeightKg": total_net_weight,
-        "totalQuantity": total_quantity,
-    }
-    if route1_total < route2_total:
-        cheaper = "rostov"
-    elif route2_total < route1_total:
-        cheaper = "south_gates"
-    else:
-        cheaper = None
+        route2_total = sum(row["totalRub"] for row in route2_rows)
+        route2_summary = {
+            "totalRub": route2_total,
+            "averageCostPerUnit": route2_total / total_quantity if total_quantity else 0.0,
+            "transportRub": transport_rub,
+            "sharedExpensesRub": route2_shared,
+            "grossWeightKg": gross_weight,
+            "netWeightKg": total_net_weight,
+            "totalQuantity": total_quantity,
+        }
+        return route2_rows, route2_summary
 
-    return {
-        "products": [
-            {
-                **product,
-                "route1": route1_row,
-                "route2": route2_row,
-                "differencePerUnit": route1_row["costPerUnit"] - route2_row["costPerUnit"],
-            }
-            for product, route1_row, route2_row in zip(products, route1_rows, route2_rows)
-        ],
-        "summary": {
-            "route1": route1_summary,
-            "route2": route2_summary,
-            "cheaperRoute": cheaper,
-            "differenceRub": abs(route1_total - route2_total),
-        },
-        "warnings": list(dict.fromkeys(warnings)),
-    }
+    routes = {}
+    if selected_route != "route2":
+        routes["route1"] = calculate_rostov()
+    if selected_route != "route1":
+        routes["route2"] = calculate_south_gates()
+    summary = {route: result for route, (_, result) in routes.items()}
+    rows = [
+        {**product, **{route: values[index] for route, (values, _) in routes.items()}}
+        for index, product in enumerate(products)
+    ]
+    if selected_route is None:
+        difference = summary["route1"]["totalRub"] - summary["route2"]["totalRub"]
+        summary["cheaperRoute"] = "rostov" if difference < 0 else "south_gates" if difference > 0 else None
+        summary["differenceRub"] = abs(difference)
+        for row in rows:
+            row["differencePerUnit"] = row["route1"]["costPerUnit"] - row["route2"]["costPerUnit"]
+    return {"products": rows, "summary": summary, "warnings": list(dict.fromkeys(warnings))}

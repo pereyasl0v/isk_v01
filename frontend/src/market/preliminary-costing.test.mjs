@@ -99,3 +99,21 @@ test("packaging percentage derives gross weight and excludes removed expenses",(
   assert.equal(summary.route1.sharedExpensesRub,0);
   assert.equal(summary.route2.sharedExpensesRub,0);
 });
+
+test("only the selected route contributes results and warnings",()=>{
+  const draft=sample();
+  draft.selectedRoute="route1";
+  draft.products=[{...draft.products[0],unitNetWeightG:0,netWeightKg:0}];
+  const result=calculatePreliminaryCost(draft);
+  assert.deepEqual(Object.keys(result.summary),["route1"]);
+  assert.equal(result.warnings.length,0);
+  draft.selectedRoute="route2";
+  draft.yuanToRubRate=99;
+  draft.route2.purchaseYuanToRubRate=10;
+  const south=calculatePreliminaryCost(draft);
+  assert.deepEqual(Object.keys(south.summary),["route2"]);
+  assert.equal(south.products[0].route2.purchaseRub,32200);
+  assert.ok(Math.abs(south.summary.route2.transportRub-(291*3.2+18)*6.8*10)<1e-8);
+  draft.selectedRoute="";
+  assert.equal(calculatePreliminaryCost(draft).summary,null);
+});

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Archive, Plus, Trash2, Save, RotateCcw, Search, X,
-  Package, CheckCircle2, AlertCircle, ChevronDown,
+  Package, AlertCircle, ChevronDown,
 } from "lucide-react";
 import { DEFAULT_PACKAGING_WEIGHT_PERCENT, grossWeightWithPackaging, DEFAULT_CONTAINER_VOLUME_M3, DEFAULT_ROSTOV_USD_RATE, rostovFreightRateRubPerM3, batchNetWeightKg, batchVolumeM3, calculatePreliminaryCost, createDraft, createProduct, n } from "./preliminary-costing.mjs";
 
@@ -59,33 +59,29 @@ function TextField({ label, value, onChange, placeholder = "", maxLength }) {
   </label>;
 }
 
-function Breakdown({ product, showProductTotals }) {
-  const a = product.route1;
-  const b = product.route2;
+const routeNames = { route1: "Через Ростов", route2: "Через Южные ворота" };
+
+function Breakdown({ product, route, showProductTotals }) {
+  const cost = product[route];
+  const expenses = route === "route1" ? [
+    ["Товар и доставка до Саши", cost.goodsRub],
+    ["Доставка до Ростова", cost.freightToRostovRub],
+    ["Пошлина на товар", cost.dutyGoodsRub],
+    ["Пошлина на доставку", cost.dutyFreightRub],
+    ["НДС на товар", cost.vatGoodsRub],
+    ["НДС на доставку", cost.vatFreightRub],
+    ["Мой налог", cost.ownTaxRub],
+  ] : [
+    ["Первая оплата поставщику", cost.purchaseRub],
+    ["Доля автодоставки и упаковки", cost.transportRub],
+  ];
   return <details className="mc-breakdown">
     <summary>Состав себестоимости <ChevronDown size={16} aria-hidden="true" /></summary>
-    <div className="mc-breakdown-grid">
+    <div className="mc-breakdown-grid mc-single-route">
       <div>
-        <h4>Через Ростов</h4>
-        {[
-          ["Товар и доставка до Саши", a.goodsRub],
-          ["Доставка до Ростова", a.freightToRostovRub],
-          ["Пошлина на товар", a.dutyGoodsRub],
-          ["Пошлина на доставку", a.dutyFreightRub],
-          ["НДС на товар", a.vatGoodsRub],
-          ["НДС на доставку", a.vatFreightRub],
-          ["Мой налог", a.ownTaxRub],
-        ].map(([label, value]) => <div className="mc-breakdown-row" key={label}><span>{label}</span><b>{money(value)}</b></div>)}
-        {showProductTotals && <div className="mc-breakdown-total"><span>Итого за партию</span><b>{money(a.totalRub)}</b></div>}
-      </div>
-      <div>
-        <h4>Через Южные ворота</h4>
-        {[
-          ["Первая оплата поставщику", b.purchaseRub],
-          ["Доля автодоставки и упаковки", b.transportRub],
-        ].map(([label, value]) => <div className="mc-breakdown-row" key={label}><span>{label}</span><b>{money(value)}</b></div>)}
-        <div className="mc-breakdown-row"><span>Доля веса партии</span><b>{percent(b.allocationShare * 100)}</b></div>
-        {showProductTotals && <div className="mc-breakdown-total"><span>Итого за партию</span><b>{money(b.totalRub)}</b></div>}
+        {expenses.map(([label, value]) => <div className="mc-breakdown-row" key={label}><span>{label}</span><b>{money(value)}</b></div>)}
+        {route === "route2" && <div className="mc-breakdown-row"><span>Доля веса партии</span><b>{percent(cost.allocationShare * 100)}</b></div>}
+        {showProductTotals && <div className="mc-breakdown-total"><span>Итого за партию</span><b>{money(cost.totalRub)}</b></div>}
       </div>
     </div>
   </details>;
@@ -105,11 +101,13 @@ export default function MarketCalculator() {
   const [loadingId, setLoadingId] = useState(null);
 
   const validProducts = draft.products.filter(product => product.name.trim() && n(product.quantity) >= 1);
-  const validContainerVolume = n(draft.route1.containerVolumeM3) > 0;
+  const route = draft.selectedRoute;
+  const validContainerVolume = route !== "route1" || n(draft.route1.containerVolumeM3) > 0;
+  const yuanRate = route === "route1" ? draft.route1.yuanToRubRate : draft.route2.purchaseYuanToRubRate;
   const calculationDraft = useMemo(() => ({
     ...draft,
-    products: validContainerVolume ? draft.products.filter(product => product.name.trim() && n(product.quantity) >= 1) : [],
-  }), [draft, validContainerVolume]);
+    products: route && validContainerVolume ? draft.products.filter(product => product.name.trim() && n(product.quantity) >= 1) : [],
+  }), [draft, route, validContainerVolume]);
   const calculated = useMemo(() => calculatePreliminaryCost(calculationDraft), [calculationDraft]);
 
   const updateProduct = (id, key, value) => {
@@ -212,22 +210,27 @@ export default function MarketCalculator() {
     setArchiveError("");
     try {
       const result = await request("/preliminary-costs/" + encodeURIComponent(id));
-      const legacyRates = result.data.yuanToRubRate == null;
+      const { yuanToRubRate: oldCommonRate, ...saved } = result.data;
       const route1 = result.data.route1;
       setDraft({
-        ...result.data,
-        yuanToRubRate: result.data.yuanToRubRate ?? route1.yuanToRubRate,
+        ...saved,
+        selectedRoute: saved.selectedRoute ?? "",
         packagingWeightPercent: result.data.packagingWeightPercent ?? DEFAULT_PACKAGING_WEIGHT_PERCENT,
         route1: {
           ...route1,
+          yuanToRubRate: oldCommonRate ?? route1.yuanToRubRate,
           containerCostUsd: route1.containerCostUsd ?? route1.freightRateRubPerM3 * DEFAULT_CONTAINER_VOLUME_M3 / DEFAULT_ROSTOV_USD_RATE,
           containerVolumeM3: route1.containerVolumeM3 ?? DEFAULT_CONTAINER_VOLUME_M3,
+        },
+        route2: {
+          ...saved.route2,
+          purchaseYuanToRubRate: oldCommonRate ?? saved.route2.purchaseYuanToRubRate,
         },
       });
       setRecordId(result.id);
       setArchiveOpen(false);
       const notices = [];
-      if (legacyRates) notices.push("Для обоих маршрутов применён сохранённый курс Ростова.");
+
       if (result.data.packagingWeightPercent == null) {
         notices.push("Расчёт обновлён: брутто учитывает 10% упаковки. Ранее введённые дополнительные расходы исключены.");
       }
@@ -253,8 +256,7 @@ export default function MarketCalculator() {
   };
 
   const multipleProducts = calculated.products.length > 1;
-  const route1Cheaper = calculated.summary?.cheaperRoute === "rostov";
-  const route2Cheaper = calculated.summary?.cheaperRoute === "south_gates";
+  const result = calculated.summary?.[route];
 
   return <div className="mc-page">
     <div className="mc-header">
@@ -264,13 +266,23 @@ export default function MarketCalculator() {
       </div>
       <div className="mc-header-actions">
         <button type="button" className="mc-button mc-button-light" onClick={openArchive}><Archive size={16} /> Архив расчётов</button>
-        <button type="button" className="mc-button mc-button-primary" onClick={save} disabled={saving || !validProducts.length || !validContainerVolume}><Save size={16} /> {saving ? "Сохраняем…" : recordId ? "Сохранить изменения" : "Сохранить расчёт"}</button>
+        <button type="button" className="mc-button mc-button-primary" onClick={save} disabled={saving || !validProducts.length || !route || !validContainerVolume}><Save size={16} /> {saving ? "Сохраняем…" : recordId ? "Сохранить изменения" : "Сохранить расчёт"}</button>
         <button type="button" className="mc-icon-button" onClick={reset} title="Новый расчёт" aria-label="Новый расчёт"><RotateCcw size={17} /></button>
       </div>
     </div>
 
     {error && <div className="mc-alert mc-alert-error" role="alert"><AlertCircle size={17} />{error}</div>}
-    {notice && <div className="mc-alert mc-alert-success" role="status"><CheckCircle2 size={17} />{notice}</div>}
+    {notice && <div className="mc-alert mc-alert-success" role="status">{notice}</div>}
+
+    <section className="mc-panel">
+      <label className="mc-field mc-route-select">
+        <span>Маршрут доставки</span>
+        <select value={route} onChange={event => setDraft(current => ({ ...current, selectedRoute: event.target.value }))}>
+          <option value="">Выберите маршрут</option>
+          {Object.entries(routeNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
+        </select>
+      </label>
+    </section>
 
     <section className="mc-panel">
       <div className="mc-section-heading">
@@ -296,7 +308,6 @@ export default function MarketCalculator() {
           <NumberField label="Ширина одной штуки" value={product.widthCm || ""} onChange={value => updateProduct(product.id, "widthCm", value)} unit="см" />
           <NumberField label="Высота одной штуки" value={product.heightCm || ""} onChange={value => updateProduct(product.id, "heightCm", value)} unit="см" />
           <NumberField label="Вес нетто одной штуки" value={product.unitNetWeightG} onChange={value => updateProduct(product.id, "unitNetWeightG", value)} unit="г" help="Для расчёта маршрута через Южные ворота" />
-          {index === 0 && <NumberField label="Курс юаня" value={draft.yuanToRubRate} onChange={value => setDraft(current => ({ ...current, yuanToRubRate: value }))} unit="₽ за ¥" help="Для всех товаров и обоих маршрутов" />}
           {index === 0 && <NumberField label="Вес упаковки от нетто" value={draft.packagingWeightPercent} onChange={value => setDraft(current => ({ ...current, packagingWeightPercent: value }))} unit="%" help="Для всех товаров. Брутто = нетто + вес упаковки." />}
         </div>
         <div className="mc-field-grid mc-batch-totals" aria-label="Параметры партии">
@@ -304,13 +315,13 @@ export default function MarketCalculator() {
           <BatchOutput label="Вес нетто партии" value={netWeight > 0 ? volumeFormat.format(netWeight) + " кг" : "—"} />
           <BatchOutput label="Вес брутто партии" value={netWeight > 0 ? volumeFormat.format(grossWeightWithPackaging(netWeight, draft.packagingWeightPercent)) + " кг" : "—"} />
           <BatchOutput label="Стоимость товара в юанях" value={volumeFormat.format(goodsYuan) + " ¥"} />
-          <BatchOutput label="Стоимость товара в рублях без доставки и надбавок" value={money(goodsYuan * n(draft.yuanToRubRate))} />
+          {route && <BatchOutput label="Стоимость товара в рублях без доставки и надбавок" value={money(goodsYuan * n(yuanRate))} />}
         </div>
       </article>;
       })}
     </section>
 
-    <div className="mc-routes-grid">
+    {route === "route1" &&
       <section className="mc-panel mc-route-panel mc-route-rostov">
         <div className="mc-route-heading">
           <span className="mc-route-number">МАРШРУТ 1</span>
@@ -318,6 +329,7 @@ export default function MarketCalculator() {
           <p>Китай → Ростов</p>
         </div>
         <div className="mc-field-grid">
+          <NumberField label="Курс юаня" value={draft.route1.yuanToRubRate} onChange={value => updateRoute("route1", "yuanToRubRate", value)} unit="₽ за ¥" />
           <NumberField label="Наценка к оплате товара" value={draft.route1.purchaseMarkupPercent} onChange={value => updateRoute("route1", "purchaseMarkupPercent", value)} unit="%" step="0.1" />
           <NumberField label="Стоимость перевозки контейнера" value={draft.route1.containerCostUsd} onChange={value => updateRoute("route1", "containerCostUsd", value)} unit="$" />
           <NumberField label="Полезный объём контейнера" value={draft.route1.containerVolumeM3} onChange={value => updateRoute("route1", "containerVolumeM3", value)} unit="м³" />
@@ -327,45 +339,32 @@ export default function MarketCalculator() {
           <NumberField label="НДС" value={draft.route1.vatPercent} onChange={value => updateRoute("route1", "vatPercent", value)} unit="%" step="0.1" />
           <NumberField label="Мой налог" value={draft.route1.ownTaxPercent} onChange={value => updateRoute("route1", "ownTaxPercent", value)} unit="%" step="0.1" help="По формуле из файла «2»" />
         </div>
-      </section>
+      </section>}
 
-      <section className="mc-panel mc-route-panel mc-route-south">
+    {route === "route2" && <section className="mc-panel mc-route-panel mc-route-south">
         <div className="mc-route-heading">
           <span className="mc-route-number">МАРШРУТ 2</span>
           <h2>Через Южные ворота</h2>
           <p>Китай → Южные ворота (Москва)</p>
         </div>
         <div className="mc-field-grid">
+          <NumberField label="Курс юаня" value={draft.route2.purchaseYuanToRubRate} onChange={value => updateRoute("route2", "purchaseYuanToRubRate", value)} unit="₽ за ¥" />
           <NumberField label="Курс доллара в юани" value={draft.route2.usdToYuanRate} onChange={value => updateRoute("route2", "usdToYuanRate", value)} unit="¥ за $" />
           <NumberField label="Автодоставка за килограмм" value={draft.route2.autoFreightUsdPerKg} onChange={value => updateRoute("route2", "autoFreightUsdPerKg", value)} unit="$ / кг" />
           <NumberField label="Упаковка за коробку" value={draft.route2.packagingPerBoxUsd} onChange={value => updateRoute("route2", "packagingPerBoxUsd", value)} unit="$" />
           <NumberField label="Количество коробок" value={draft.route2.boxCount} onChange={value => updateRoute("route2", "boxCount", value)} unit="шт." step="1" />
         </div>
-      </section>
-    </div>
+      </section>}
 
-    <section className="mc-results-section">
+    {route && <section className="mc-results-section">
       <div className="mc-results-heading">
-        <div><h2>Сравнение себестоимости</h2></div>
+        <div><h2>Себестоимость</h2></div>
       </div>
-      {calculated.summary && <div className="mc-comparison-grid">
-        <article className={"mc-result-card mc-result-rostov" + (route1Cheaper ? " mc-result-best" : "")}>
-          <div className="mc-result-top"><span>Китай → Ростов</span>{route1Cheaper && <b>ВЫГОДНЕЕ</b>}</div>
-          <strong>{money(calculated.summary.route1.averageCostPerUnit)} <small>{multipleProducts ? "/ шт. в среднем" : "/ шт."}</small></strong>
-          <div className="mc-result-total"><span>Полная стоимость партии</span><b>{money(calculated.summary.route1.totalRub)}</b></div>
-        </article>
-        <article className={"mc-result-card mc-result-south" + (route2Cheaper ? " mc-result-best" : "")}>
-          <div className="mc-result-top"><span>Китай → Южные ворота (Москва)</span>{route2Cheaper && <b>ВЫГОДНЕЕ</b>}</div>
-          <strong>{money(calculated.summary.route2.averageCostPerUnit)} <small>{multipleProducts ? "/ шт. в среднем" : "/ шт."}</small></strong>
-          <div className="mc-result-total"><span>Полная стоимость партии</span><b>{money(calculated.summary.route2.totalRub)}</b></div>
-        </article>
-      </div>}
-
-      {calculated.summary && <div className="mc-result-difference">
-        {calculated.summary.cheaperRoute
-          ? <><CheckCircle2 size={17} /> Разница между маршрутами на всю партию: <b>{money(calculated.summary.differenceRub)}</b>. Выгоднее {route1Cheaper ? "маршрут через Ростов" : "маршрут через Южные ворота"}.</>
-          : <>При текущих параметрах стоимость двух маршрутов одинаковая.</>}
-      </div>}
+      {result && <article className={"mc-result-card " + (route === "route1" ? "mc-result-rostov" : "mc-result-south")}>
+        <div className="mc-result-top"><span>{routeNames[route]}</span></div>
+        <strong>{money(result.averageCostPerUnit)} <small>{multipleProducts ? "/ шт. в среднем" : "/ шт."}</small></strong>
+        <div className="mc-result-total"><span>Полная стоимость партии</span><b>{money(result.totalRub)}</b></div>
+      </article>}
 
       {calculated.warnings.length > 0 && <div className="mc-alert mc-alert-warning"><AlertCircle size={17} /><div>{calculated.warnings.map((warning, index) => <div key={index}>{warning}</div>)}</div></div>}
 
@@ -374,18 +373,11 @@ export default function MarketCalculator() {
           <h3>{product.name.trim() || "Без названия"}</h3>
           <p>{product.article && <span>Артикул {product.article}</span>}<span>{quantity(product.quantity)} шт.</span></p>
         </div>
-        {multipleProducts && <dl className="mc-unit-costs">
-          <div><dt>Через Ростов</dt><dd>{money(product.route1.costPerUnit)} / шт.</dd></div>
-          <div><dt>Через Южные ворота</dt><dd>{money(product.route2.costPerUnit)} / шт.</dd></div>
-        </dl>}
-        {multipleProducts && product.differencePerUnit !== 0 && <p className="mc-unit-difference">
-          {product.differencePerUnit > 0 ? "Южные ворота дешевле на " : "Ростов дешевле на "}
-          <strong>{money(Math.abs(product.differencePerUnit))} / шт.</strong>
-        </p>}
-        <Breakdown product={product} showProductTotals={multipleProducts} />
+        {multipleProducts && <p className="mc-unit-difference">{money(product[route].costPerUnit)} / шт.</p>}
+        <Breakdown product={product} route={route} showProductTotals={multipleProducts} />
       </article>)}
-      {!calculated.products.length && <div className="mc-empty-results"><Package size={27} /><strong>{validContainerVolume ? "Добавь товары, чтобы увидеть сравнение" : "Укажите полезный объём контейнера больше нуля"}</strong><span>Результаты пересчитываются автоматически при изменении параметров.</span></div>}
-    </section>
+      {!calculated.products.length && <div className="mc-empty-results"><Package size={27} /><strong>{validContainerVolume ? "Добавь товары, чтобы увидеть себестоимость" : "Укажите полезный объём контейнера больше нуля"}</strong><span>Результаты пересчитываются автоматически при изменении параметров.</span></div>}
+    </section>}
 
     {archiveOpen && <div className="mc-archive-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setArchiveOpen(false); }}>
       <section className="mc-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="mc-archive-title">
