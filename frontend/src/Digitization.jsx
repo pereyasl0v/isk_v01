@@ -352,7 +352,7 @@ export default function Digitization({state,digi,act}){
    {productCosts.error&&<div className="notice" role="alert"><span>{productCosts.error}</span>
     {!productCosts.loaded&&!productCosts.loading&&<button type="button" onClick={productCosts.retryLoad}>Повторить загрузку</button>}
    </div>}
-   {productRows.length>0?<ScrollTable label="Продажи и себестоимость по артикулам" stickyColumn><table><thead><tr>
+   {productRows.length>0?<ScrollTable label="Продажи и себестоимость по артикулам" stickyColumn><table className="digitization-sales-table"><thead><tr>
     <th>Товар</th><th>Артикул</th><th>Себестоимость, ₽</th><th>Себестоимость (капитализация) / 1 шт.</th>
     <th>Продажи, шт.</th><th>Реализация</th><th>Продажи</th><th>Доля в общей выручке</th><th>Себестоимость продаж</th>
    </tr></thead><tbody>

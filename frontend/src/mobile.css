@@ -254,3 +254,46 @@
  .digitization-calendar-legend { flex-wrap: wrap; }
  .digitization-calendar-legend small { margin-left: 0; }
 }
+
+@media (max-width: 760px) {
+ .digitization-content .metric { display: flex; flex-direction: column; }
+ .digitization-content .metric > strong { font-size: clamp(20px, 5.5vw, 28px); }
+ .digitization-content .metric-comparison {
+  margin-top: auto;
+  margin-block-end: 0;
+  min-height: 106px;
+  gap: 5px;
+ }
+ .digitization-content .metric > small { margin-bottom: 10px; }
+ .digitization-content .metric-comparison-top,
+ .digitization-content .metric-comparison-change {
+  display: grid;
+  gap: 4px;
+ }
+ .digitization-content .metric-comparison-change {
+  grid-template-columns: max-content 1fr;
+ }
+ .digitization-content .metric-comparison-top strong {
+  font-size: 12px;
+  font-weight: 550;
+  white-space: normal;
+ }
+ .digitization-content .metric-comparison-change .metric-comparison-delta {
+  grid-column: 1 / -1;
+  font-size: 15px;
+ }
+ .digitization-content .metric-comparison-percent { justify-self: start; margin-left: 0; }
+ .digitization-content .metric-comparison-arrow { justify-self: start; }
+
+ .digitization-sales-table { min-width: 1060px; }
+ .digitization-sales-table tr > :first-child {
+  width: 152px;
+  min-width: 152px;
+  overflow-wrap: break-word;
+ }
+ .digitization-sales-table tr > :nth-child(2) {
+  min-width: 106px;
+  white-space: nowrap;
+ }
+ .digitization-sales-table tr > :not(:first-child) { white-space: nowrap; }
+}
