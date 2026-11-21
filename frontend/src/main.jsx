@@ -203,53 +203,6 @@ function SalesHistoryChart({data,state,act,inv}){
   </>}
  </section>
 }
-function InventoryHistoryChart({data,inv}){
- const [period,setPeriod]=useState(30);const [sku,setSku]=useState('all');
- const days=(data?.days||[]).slice(-period);
- const skuNames=new Map((inv?.products||[]).map(p=>[String(p.sku),p.name||String(p.sku)]));
- const skuValues=[...new Set((data?.days||[]).flatMap(day=>(day.aggregated||[]).map(row=>String(row.sku))))].sort();
- const points=days.map(day=>{
-  const row=sku==='all'?day.summary:(day.aggregated||[]).find(item=>String(item.sku)===sku);
-  return {date:day.date,available:row?.available??null,preparing:row?.preparing??null,transit:row?.transit??null};
- });
- const series=[{key:'available',label:'Доступно к продаже',stroke:'#287b58'},{key:'preparing',label:'Готовится к продаже',stroke:'#d49a32'},{key:'transit',label:'В пути на Ozon',stroke:'#4284c5'}];
- const max=Math.max(1,...points.flatMap(point=>series.map(item=>point[item.key]).filter(value=>typeof value==='number'&&Number.isFinite(value))));
- const width=960,height=290,left=58,right=22,top=18,bottom=42,plotWidth=width-left-right,plotHeight=height-top-bottom;
- const x=index=>left+(points.length<=1?plotWidth/2:index*plotWidth/(points.length-1));
- const y=value=>top+plotHeight-(value/max)*plotHeight;
- const dayGap=(first,last)=>(Date.parse(last+'T00:00:00Z')-Date.parse(first+'T00:00:00Z'))/86400000;
- const segments=key=>{
-  const output=[];let current=[];let previousDate=null;
-  for(let index=0;index<points.length;index++){
-   const point=points[index],value=point[key];
-   if(value===null||value===undefined||!Number.isFinite(value)){
-    if(current.length)output.push(current);current=[];previousDate=point.date;continue;
-   }
-   if(previousDate&&dayGap(previousDate,point.date)>1){if(current.length)output.push(current);current=[];}
-   current.push({x:x(index),y:y(value),value,date:point.date,index});
-   previousDate=point.date;
-  }
-  if(current.length)output.push(current);
-  return output;
- };
- const hasValues=points.some(point=>series.some(item=>typeof point[item.key]==='number'&&Number.isFinite(point[item.key])));
- const tickIndexes=[...new Set([0,Math.floor((points.length-1)/2),points.length-1])].filter(index=>index>=0);
- return <section className="panel stock-history-chart">
-  <div className="panel-title"><div><h3>Динамика остатков FBO</h3><p className="muted mt-2">История фактических снимков из Ozon Seller API</p></div>
-   <div className="flex gap-2"><select aria-label="Товар для графика" value={sku} onChange={e=>setSku(e.target.value)}><option value="all">Все товары</option>{skuValues.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><select aria-label="Период графика" value={period} onChange={e=>setPeriod(Number(e.target.value))}><option value={7}>7 дней</option><option value={30}>30 дней</option><option value={90}>90 дней</option></select></div>
-  </div>
-  {!hasValues?<Empty text="Истории остатков пока недостаточно" help="График появится после успешных обновлений остатков. Система не дорисовывает значения за дни без снимков."/>:<>
-   <div className="stock-history-legend">{series.map(item=><span key={item.key}><i style={{background:item.stroke}}/>{item.label}</span>)}</div>
-   <div className="stock-history-svg-wrap"><svg className="stock-history-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="История остатков по выбранному товару">
-    {[0,.25,.5,.75,1].map(fraction=><g key={fraction}><line x1={left} x2={width-right} y1={top+plotHeight*(1-fraction)} y2={top+plotHeight*(1-fraction)} stroke="#e8eeea" strokeWidth="1"/><text x={left-10} y={top+plotHeight*(1-fraction)+4} textAnchor="end" fontSize="11" fill="#829087">{Math.round(max*fraction).toLocaleString('ru-RU')}</text></g>)}
-    {series.map(item=>segments(item.key).map((segment,index)=><polyline key={item.key+'-'+index} fill="none" stroke={item.stroke} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={segment.map(point=>point.x+','+point.y).join(' ')}/>))}
-    {points.map((point,index)=>series.map(item=>{const value=point[item.key];return typeof value==='number'&&Number.isFinite(value)?<circle key={item.key+'-'+point.date} cx={x(index)} cy={y(value)} r="4" fill={item.stroke} stroke="#fff" strokeWidth="2"><title>{point.date} · {item.label}: {num(value)}</title></circle>:null;}))}
-    {tickIndexes.map(index=><text key={index} x={x(index)} y={height-12} textAnchor={index===0?'start':index===points.length-1?'end':'middle'} fontSize="11" fill="#829087">{points[index]?.date?.slice(5).split('-').reverse().join('.')}</text>)}
-   </svg></div>
-  </>}
-  <p className="muted mt-3">Точка — последнее успешное обновление за календарный день по Москве. Если обновлений не было, на графике остаётся разрыв: значения не интерполируются.</p>
- </section>
-}
 function ProductCatalog(){
  const {inv,me}=useApp();
  const [q,setQ]=useState('');
@@ -275,24 +228,16 @@ function ProductCatalog(){
  </>;
 }
 function Stocks(){
- const {inv,stockHistory}=useApp();const [q,setQ]=useState('');const [raw,setRaw]=useState(false);const [only,setOnly]=useState(true);
+ const {inv}=useApp();const [q,setQ]=useState('');const [raw,setRaw]=useState(false);const [only,setOnly]=useState(true);
  const warehouseNames=new Map((inv?.analytics||[]).map(r=>[String(r.warehouse_id),r.warehouse_name]));
  const source=raw?(inv?.stocks||[]).map(r=>({...r,warehouse_name:warehouseNames.get(String(r.warehouse_id))})):(inv?.analytics||[]);
  const groups=groupStocks(inv?.products||[],source,raw);
  const shown=groups.map(g=>({...g,visible:g.rows.filter(r=>!only||(raw?r.present>0||r.reserved>0:r.available_stock_count>0))}))
   .filter(g=>g.visible.length&&[g.name,g.offer,...g.skus,...g.visible.map(r=>`${r.warehouse_name||''} ${r.warehouse_id}`)].join(' ').toLowerCase().includes(q.toLowerCase()));
- const productNames=new Map((inv?.products||[]).map(p=>[String(p.sku),p.name]));
- const fbsRows=(inv?.fbs_stocks||[]).map(row=>({...row,product_name:productNames.get(String(row.sku))||row.name||'Товар'}));
  return <div className="flex flex-col gap-5"><section className="panel"><div className="panel-title"><h3>Остатки FBO</h3><div className="segmented"><button className={!raw?'selected':''} onClick={()=>setRaw(false)}>Доступные остатки</button><button className={raw?'selected':''} onClick={()=>setRaw(true)}>Учёт и резервы</button></div></div>
  <div className="filters"><Filter value={q} set={setQ}/><label className="check"><input type="checkbox" checked={only} onChange={e=>setOnly(e.target.checked)}/> Только склады с остатком</label></div>
  {!raw&&inv?.analytics===null?<Empty text="Остатки пока недоступны" help="Обновите данные. Если загрузка не удаётся, проверьте разрешение на чтение аналитики у ключа Ozon."/>:!shown.length?<Empty text="Карточки не найдены" help="Проверьте загрузку, поиск и фильтр остатков."/>:<div className="fbo-stock-list">{shown.map(g=><details className="stock-card" key={g.key}><summary><div className="stock-title"><strong>{g.name}</strong><span className="sku">SKU {g.skus.join(', ')}</span><small>Артикул: {g.offer}</small></div><div className="stock-total"><strong>{num(g.total)} <small>ед.</small></strong><span>{raw?'На складах':'Доступно к продаже'}</span></div><span className="expand-arrow">⌄</span></summary><div className="stock-details">{raw&&<p className="muted mb-4">Учётное количество и резерв показаны раздельно. Доступное к продаже количество находится на вкладке «Доступные остатки».</p>}<Table rows={g.visible} columns={raw?[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["present","На складе, ед.",num],["reserved","В резерве, ед.",num]]:[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["available_stock_count","Доступно, ед.",num],["valid_stock_count","Готовится к продаже, ед.",num],["transit_stock_count","В пути на Ozon, ед.",num],["requested_stock_count","В заявках, ед.",num],["inbound_replenishment","В перемещении, ед.",num],["stock_not_being_sold","Снято с продажи, ед.",num]]}/></div></details>)}</div>}
  </section>
- <section className="panel">
-  <div className="panel-title"><h3>Остатки FBS</h3><span className="badge">{inv?.fbs_stock_quantity===null||inv?.fbs_stock_quantity===undefined?'Не загружены':num(inv.fbs_stock_quantity)+' свободных ед.'}</span></div>
-  {inv?.fbs_stock_error&&<Notice>Не удалось получить FBS-остатки: {inv.fbs_stock_error}</Notice>}
-  {fbsRows.length?<Table rows={fbsRows} columns={[["product_name","Товар"],["offer_id","Артикул"],["sku","SKU"],["warehouse_name","Склад",(v)=><span>{v||'Склад продавца'}</span>],["free_stock","Свободно, ед.",num],["present","На складе, ед.",num],["reserved","В резерве, ед.",num]]}/>:<Empty text={inv?.fbs_stock_quantity===0?'Свободных остатков FBS нет':'Остатки FBS пока не загружены'} help="FBS-остатки запрашиваются отдельно от FBO при обновлении данных кабинета."/>}
- </section>
- <InventoryHistoryChart data={stockHistory} inv={inv}/>
  <History/></div>
 }
 function History(){
@@ -390,13 +335,13 @@ function AdminUsers(){
 const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/barcodes','Штрихкоды',Barcode],['/market-calculator','Расчёт себестоимости',Calculator],['/stocks','Остатки и история Ozon',Warehouse],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
 function RequireAccount({children}){const {me}=useApp();return me?.active_account_id?children:<Navigate to="/connection" replace/>}
 function App(){
- const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);const [stockHistory,setStockHistory]=useState(null);const [sales,setSales]=useState(null);
+ const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);const [sales,setSales]=useState(null);
  const [error,setError]=useState('');const [loading,setLoading]=useState(true);const [authChecked,setAuthChecked]=useState(false);const wasRunning=useRef(false);
- async function loadData(){const first=moscowDate(89),last=moscowDate(0);const [i,h,d,sh,sa]=await Promise.all([api('/inventory'),api('/history'),api('/digitization'),api('/inventory/history?date_from='+first+'&date_to='+last),api('/sales')]);setInv(i);setHist(h);setDigi(d);setStockHistory(sh);setSales(sa)}
- function clearData(){setState(null);setInv(null);setHist(null);setDigi(null);setStockHistory(null);setSales(null)}
+ async function loadData(){const [i,h,d,sa]=await Promise.all([api('/inventory'),api('/history'),api('/digitization'),api('/sales')]);setInv(i);setHist(h);setDigi(d);setSales(sa)}
+ function clearData(){setState(null);setInv(null);setHist(null);setDigi(null);setSales(null)}
  async function reload(){
   try{const auth=await api('/auth/me');setMe(auth);
-   if(auth.active_account_id){const first=moscowDate(89),last=moscowDate(0);const [s,i,h,d,sh,sa]=await Promise.all([api('/state'),api('/inventory'),api('/history'),api('/digitization'),api('/inventory/history?date_from='+first+'&date_to='+last),api('/sales')]);setState(s);setInv(i);setHist(h);setDigi(d);setStockHistory(sh);setSales(sa)}
+   if(auth.active_account_id){const [s,i,h,d,sa]=await Promise.all([api('/state'),api('/inventory'),api('/history'),api('/digitization'),api('/sales')]);setState(s);setInv(i);setHist(h);setDigi(d);setSales(sa)}
    else clearData();
   }catch(e){if(e.status===401){setMe(null);clearData()}else if(e.status!==409)setError(e.message)}
   finally{setAuthChecked(true);setLoading(false)}
@@ -413,7 +358,7 @@ function App(){
  if(!authChecked||loading)return <div className="auth-screen"><div className="auth-card">Загружаем ИСК…</div></div>;
  if(!me)return <LoginScreen onSuccess={reload}/>;
  const navItems=me.user.role==='admin'?[...nav,['/admin/users','Пользователи',Users]]:nav;
- return <Context.Provider value={{me,state,setState,inv,hist,digi,stockHistory,sales,reload,act,setError}}>
+ return <Context.Provider value={{me,state,setState,inv,hist,digi,sales,reload,act,setError}}>
   <div className="shell"><aside className="sidebar"><div className="brand"><div className="brand-icon"><Boxes size={25}/></div><div className="isk-brand">ИСК</div></div>
    <nav>{navItems.map(([path,label,Icon])=><NavLink key={path} to={path} end={path==='/'} className={({isActive})=>'nav-item '+(isActive?'active':'')}><Icon size={19}/>{label}</NavLink>)}</nav>
    <div className="sidebar-footer"><span className="status-dot"/>{me.user.username}</div>
