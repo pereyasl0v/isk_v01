@@ -361,6 +361,32 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(r.status_code,422)
         self.assertNotIn(secret,r.text)
 
+    def test_product_costs_persist_per_account_and_import_only_missing_skus(self):
+        first=self.connect(client_id='123')['account_id']
+        second=self.connect(client_id='456')['account_id']
+        path=f'/api/accounts/{first}/product-costs'
+        other_path=f'/api/accounts/{second}/product-costs'
+        self.assertEqual(self.client.get(path).json(),{'costs':{}})
+        self.assertEqual(self.client.put(path+'/100',headers=HEAD,json={'cost':0}).status_code,200)
+        legacy={'costs':{'100':{'cost':50},'101':{'cost':15,'fulfillment':5,'vat':2,'own_stock':3}}}
+        imported=self.client.post(path+'/import',headers=HEAD,json=legacy)
+        self.assertEqual(imported.status_code,200,imported.text)
+        self.assertEqual(imported.json()['costs']['100']['cost'],0)
+        row=self.client.put(path+'/101',headers=HEAD,json={'cost':17.5})
+        self.assertEqual(row.json(),{'cost':17.5,'fulfillment':5,'vat':2,'own_stock':3})
+        self.assertEqual(self.client.put(path+'/101',headers=HEAD,json={'cost':-1}).status_code,422)
+        self.assertEqual(self.client.put(path+'/101',headers=HEAD,json={'cost':None}).status_code,200)
+        self.assertEqual(self.client.post(path+'/import',headers=HEAD,json=legacy).json()['costs']['101']['cost'],None)
+        self.assertEqual(self.client.get(other_path).json(),{'costs':{}})
+
+        main.store=Store(Path(self.tmp.name)/'db.sqlite',encryption_key=main.ENCRYPTION_KEY)
+        self.assertEqual(self.client.get(path).json()['costs']['101'],{'cost':None,'fulfillment':5,'vat':2,'own_stock':3})
+        main.store.create_user('other-costs',hash_password(ADMIN_PASSWORD),'user')
+        with TestClient(main.app) as other:
+            self.login(other,'other-costs',ADMIN_PASSWORD)
+            self.assertEqual(other.get(path).status_code,404)
+            self.assertEqual(other.put(path+'/100',headers=HEAD,json={'cost':100}).status_code,404)
+
     def test_sync_and_replenishment_use_account_scope(self):
         account=self.connect()
         scope='account:'+account['account_id']

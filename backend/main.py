@@ -8,12 +8,13 @@ import threading
 import time
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from pathlib import Path
-from fastapi import FastAPI, Request, Response, HTTPException, Depends, BackgroundTasks
+from typing import Annotated
+from fastapi import FastAPI, Request, Response, HTTPException, Depends, BackgroundTasks, Path as ApiPath
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, FiniteFloat, SecretStr
 from .security import (SESSION_TTL_SECONDS, decrypt_secret, encrypt_secret, hash_password,
                        load_encryption_key, token_digest, valid_username, verify_password)
 from .ozon import Ozon, ApiError, MOSCOW_TZ
@@ -115,6 +116,51 @@ def require_admin(request):
     auth=authenticated(request)
     if auth['user']['role']!='admin':raise HTTPException(403,'Доступ разрешён только администратору.')
     return auth
+
+
+def owned_ozon_account(account_id: str,request: Request):
+    auth=authenticated(request)
+    if not store.get_ozon_account(account_id,auth["user_id"]):
+        raise HTTPException(404,"Кабинет Ozon не найден.")
+    return account_id
+
+
+ProductCostAmount = Annotated[FiniteFloat, Field(ge=0,le=1_000_000_000)]
+ProductCostSku = Annotated[str, Field(pattern=r"^[0-9]{1,30}$")]
+
+
+class ProductCostUpdate(BaseModel):
+    cost: ProductCostAmount | None
+
+
+class LegacyProductCost(BaseModel):
+    cost: ProductCostAmount
+    fulfillment: ProductCostAmount = 0
+    vat: ProductCostAmount = 0
+    own_stock: ProductCostAmount = 0
+
+
+class LegacyProductCosts(BaseModel):
+    costs: dict[ProductCostSku,LegacyProductCost] = Field(max_length=20_000)
+
+
+@app.get("/api/accounts/{account_id}/product-costs")
+def digitization_product_costs(account_id: Annotated[str, Depends(owned_ozon_account)]):
+    return {"costs":store.digitization_product_costs(account_id)}
+
+
+@app.put("/api/accounts/{account_id}/product-costs/{sku}")
+def update_digitization_product_cost(body: ProductCostUpdate,
+                                     account_id: Annotated[str, Depends(owned_ozon_account)],
+                                     sku: Annotated[str, ApiPath(pattern=r"^[0-9]{1,30}$")]):
+    return store.save_digitization_product_cost(account_id,sku,body.cost)
+
+
+@app.post("/api/accounts/{account_id}/product-costs/import")
+def import_digitization_product_costs(body: LegacyProductCosts,
+                                      account_id: Annotated[str, Depends(owned_ozon_account)]):
+    store.import_digitization_product_costs(account_id,{sku:data.model_dump() for sku,data in body.costs.items()})
+    return {"costs":store.digitization_product_costs(account_id)}
 
 
 def public_account(account):

@@ -77,6 +77,10 @@ class Store:
                 updated_at TEXT NOT NULL, UNIQUE(user_id,client_id),
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)''')
             c.execute('CREATE INDEX IF NOT EXISTS ozon_account_user ON ozon_accounts(user_id,connected)')
+            c.execute("""CREATE TABLE IF NOT EXISTS digitization_product_costs (
+                account_id TEXT NOT NULL, sku TEXT NOT NULL, payload TEXT NOT NULL,
+                PRIMARY KEY(account_id,sku),
+                FOREIGN KEY(account_id) REFERENCES ozon_accounts(id) ON DELETE CASCADE)""")
             c.execute('''CREATE TABLE IF NOT EXISTS costing_workspaces (
                 user_id TEXT PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL, payload TEXT NOT NULL,
@@ -129,6 +133,38 @@ class Store:
 
     def _decode_payload(self,value):
         return decrypt_payload(value,self.encryption_key)
+
+    def digitization_product_costs(self,account_id):
+        with self.db() as c:
+            rows=c.execute(
+                "SELECT sku,payload FROM digitization_product_costs WHERE account_id=?",
+                (account_id,),
+            ).fetchall()
+        return {sku:self._decode_payload(payload) for sku,payload in rows}
+
+    def save_digitization_product_cost(self,account_id,sku,cost):
+        with self.db() as c:
+            c.execute("BEGIN IMMEDIATE")
+            row=c.execute(
+                "SELECT payload FROM digitization_product_costs WHERE account_id=? AND sku=?",
+                (account_id,sku),
+            ).fetchone()
+            data=self._decode_payload(row[0]) if row else {}
+            data["cost"]=cost
+            c.execute(
+                """INSERT INTO digitization_product_costs(account_id,sku,payload) VALUES(?,?,?)
+                   ON CONFLICT(account_id,sku) DO UPDATE SET payload=excluded.payload""",
+                (account_id,sku,self._encode_payload(data)),
+            )
+        return data
+
+    def import_digitization_product_costs(self,account_id,rows):
+        with self.db() as c:
+            c.executemany(
+                """INSERT INTO digitization_product_costs(account_id,sku,payload) VALUES(?,?,?)
+                   ON CONFLICT(account_id,sku) DO NOTHING""",
+                ((account_id,sku,self._encode_payload(data)) for sku,data in rows.items()),
+            )
 
     def create_user(self,username,password_hash,role='user'):
         user_id=uuid.uuid4().hex

@@ -426,7 +426,7 @@ function App(){
      <Route path="/connection" element={<Connection/>}/>
      <Route path="/admin/users" element={me.user.role==='admin'?<AdminUsers/>:<Navigate to="/" replace/>}/>
      <Route path="/" element={<RequireAccount><Overview/></RequireAccount>}/>
-     <Route path="/digitization" element={<RequireAccount><DigitizationCached state={state} digi={digi} act={act}/></RequireAccount>}/>
+     <Route path="/digitization" element={<RequireAccount><DigitizationCached key={me.active_account_id} state={state?.account_id===me.active_account_id?state:null} digi={digi} act={act}/></RequireAccount>}/>
      <Route path="/barcodes" element={<BarcodeGenerator/>}/>
      <Route path="/market-calculator" element={<MarketPage/>}/>
      <Route path="/purchase-shipments" element={<PurchaseShipments/>}/>

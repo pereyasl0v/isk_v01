@@ -77,7 +77,7 @@ export function calculateDigitizationPeriodMetrics(digi, costs = {}, settings = 
   const foreignCommission = number(c.marketplace_buyout_commission);
 
   const soldRows = (digi.products || []).filter(row => number(row.sales_quantity) !== 0);
-  const hasCost = row => Object.prototype.hasOwnProperty.call(costs, String(row.sku));
+  const hasCost = row => costs[String(row.sku)]?.cost != null;
   const allSoldCosts = soldRows.length > 0 && soldRows.every(hasCost);
   const unitCost = sku => number(costs[String(sku)]?.cost) + number(costs[String(sku)]?.fulfillment);
   const cogs = allSoldCosts

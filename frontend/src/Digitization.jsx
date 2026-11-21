@@ -1,6 +1,7 @@
 import ScrollTable from "./ScrollTable";
 import React, {useEffect, useMemo, useState} from 'react';
 import {BarChart3, RefreshCw, WalletCards, ReceiptText, Truck, Boxes, AlertTriangle, Calculator, ArrowUpRight, ArrowDownRight, Minus} from 'lucide-react';
+import {useProductCosts} from './digitization-product-costs';
 import {currentInventoryMetrics} from './inventory-capitalization.mjs';
 import {previousPeriodRange, compareMetric, comparisonTone, calculateDigitizationPeriodMetrics} from './digitization-comparison.mjs';
 
@@ -66,9 +67,9 @@ export default function Digitization({state,digi,act}){
  const [comparisonDigi,setComparisonDigi]=useState(null);
  const [comparisonInventoryHistory,setComparisonInventoryHistory]=useState([]);
  const [comparisonState,setComparisonState]=useState({loading:true,available:false,error:'',coverage:{}});
- const costKey=`isk-digitization-costs-${client}`;
  const settingsKey=`isk-digitization-settings-${client}`;
- const [costs,setCosts]=useState({});
+ const productCosts=useProductCosts(state.account_id,client);
+ const {costs}=productCosts;
  const [settings,setSettings]=useState({taxRate:6,vatRate:0,operationalExpenses:0,operationalIncome:0});
  const periodEnd=digi?.effective_to||digi?.to;
  const comparisonRange=useMemo(()=>previousPeriodRange(digi?.since,periodEnd),[digi?.since,periodEnd]);
@@ -85,9 +86,8 @@ export default function Digitization({state,digi,act}){
  };
 
  useEffect(()=>{
-  setCosts(localRead(costKey,{}));
   setSettings({...{taxRate:6,vatRate:0,operationalExpenses:0,operationalIncome:0},...localRead(settingsKey,{})});
- },[costKey,settingsKey]);
+ },[settingsKey]);
 
  useEffect(()=>{
   if(!state)return;
@@ -169,14 +169,6 @@ export default function Digitization({state,digi,act}){
   return()=>{live=false};
  },[state?.client_id,state?.job?.running,comparisonRange?.from,comparisonRange?.to,digi?.at,showComparisons]);
 
- const saveCost=(sku,field,value)=>{
-  setCosts(prev=>{
-   const old=prev[sku]||{};
-   const next={...prev,[sku]:{cost:n(old.cost),fulfillment:n(old.fulfillment),vat:n(old.vat),own_stock:n(old.own_stock),[field]:n(value)}};
-   localStorage.setItem(costKey,JSON.stringify(next));
-   return next;
-  });
- };
  const saveSetting=(field,value)=>{
   setSettings(prev=>{const next={...prev,[field]:n(value)};localStorage.setItem(settingsKey,JSON.stringify(next));return next});
  };
@@ -206,7 +198,7 @@ export default function Digitization({state,digi,act}){
  const foreignCommission=n(c.marketplace_buyout_commission);
 
  const soldRows=(digi?.products||[]).filter(r=>n(r.sales_quantity)!==0);
- const hasCost=sku=>Object.prototype.hasOwnProperty.call(costs,String(sku));
+ const hasCost=sku=>costs[String(sku)]?.cost!=null;
  const costCoverage=soldRows.filter(r=>hasCost(r.sku)).length;
  const allSoldCosts=soldRows.length>0&&costCoverage===soldRows.length;
  const saleUnitCost=sku=>n(costs[String(sku)]?.cost)+n(costs[String(sku)]?.fulfillment);
@@ -350,7 +342,16 @@ export default function Digitization({state,digi,act}){
   </div>
 
   <section className="panel mb-5">
-   <div className="panel-title"><h3>Продажи и себестоимость по артикулам</h3></div>
+   <div className="panel-title">
+    <h3>Продажи и себестоимость по артикулам</h3>
+    {productCosts.legacy&&productCosts.loaded&&<button type="button" disabled={productCosts.importing||productCosts.saving||Object.keys(productCosts.drafts).length>0} onClick={productCosts.importLegacy}>
+     {productCosts.importing?'Переносим…':'Перенести себестоимость из браузера'}
+    </button>}
+   </div>
+   {(productCosts.loading||productCosts.saving)&&<p className="muted mb-3" role="status">{productCosts.loading?'Загружаем себестоимость…':'Сохраняем себестоимость…'}</p>}
+   {productCosts.error&&<div className="notice" role="alert"><span>{productCosts.error}</span>
+    {!productCosts.loaded&&!productCosts.loading&&<button type="button" onClick={productCosts.retryLoad}>Повторить загрузку</button>}
+   </div>}
    {productRows.length>0?<ScrollTable label="Продажи и себестоимость по артикулам" stickyColumn><table><thead><tr>
     <th>Товар</th><th>Артикул</th><th>Себестоимость, ₽</th><th>Себестоимость (капитализация) / 1 шт.</th>
     <th>Продажи, шт.</th><th>Реализация</th><th>Продажи</th><th>Доля в общей выручке</th><th>Себестоимость продаж</th>
@@ -360,7 +361,11 @@ export default function Digitization({state,digi,act}){
      const capitalization=unitCost===null?null:money(stockUnitCost(sku));
      return <tr key={sku}>
       <td>{name}</td><td>{article}</td>
-      <td><input aria-label={`Себестоимость, ₽ — ${name}`} style={{width:120}} type="number" min="0" step="0.01" value={costs[sku]?.cost??''} placeholder="0" onChange={e=>saveCost(sku,'cost',e.target.value)}/></td>
+      <td><input aria-label={`Себестоимость, ₽ — ${name}`} style={{width:120}} type="number" min="0" step="0.01" max="1000000000" value={productCosts.drafts[sku]??costs[sku]?.cost??''} placeholder="—"
+       disabled={!productCosts.loaded||productCosts.importing||productCosts.pending[sku]}
+       onChange={e=>productCosts.edit(sku,e.currentTarget.value)}
+       onBlur={e=>productCosts.save(sku,e.currentTarget.value,e.currentTarget.validity.badInput)}
+       onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur()}}/></td>
       <td>{unitCost??'—'}{capitalization!==unitCost&&<> ({capitalization})</>}</td>
       <td>{count(sales?.sales_quantity)}</td><td>{money(sales?.realization)}</td><td>{money(sales?.sales_amount)}</td>
       <td>{sales&&realization?pct(round(n(sales.realization)/realization*100)):'—'}</td>

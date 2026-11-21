@@ -34,7 +34,7 @@ export function currentInventoryMetrics(inventory, costs = {}) {
     ? inventory.aggregated.filter(row => number(row.capitalization_quantity) > 0)
     : [];
   const missingCostSkus = activeStock
-    .filter(row => !Object.prototype.hasOwnProperty.call(costs, String(row.sku)))
+    .filter(row => costs[String(row.sku)]?.cost == null)
     .map(row => String(row.sku));
 
   const capitalizationCost = complete && outboundFieldsAvailable && missingCostSkus.length === 0
