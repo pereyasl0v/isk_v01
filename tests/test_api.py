@@ -374,6 +374,41 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(r.status_code,200,r.text)
         self.assertEqual(r.json()['items'][0]['total']['state'],'no_orders')
 
+    def test_account_sync_reuses_saved_order_days_and_updates_recent_history(self):
+        from datetime import datetime, timedelta, timezone
+
+        account=self.connect()
+        scope='account:'+account['account_id']
+        first,today=main.sales_chart_period(14)
+        now=datetime.now(timezone.utc).isoformat()
+        sources={scheme:{'ok':True,'last_success_at':now} for scheme in ('fbo','fbs')}
+        main.store.save(scope,'history',{'sources':sources,'postings':[]})
+        main.store.save(scope,'sales_analytics',{
+            'rows':[{'date':(first+timedelta(days=i)).isoformat(),'ordered_units':7}
+                    for i in range(13)],
+            'by_sku':[],
+        })
+        for i in range(14):
+            day=(first+timedelta(days=i)).isoformat()
+            main.store.save_digitization_day(scope,day,{})
+
+        yesterday=today-timedelta(days=1)
+        with patch.object(FakeOzon,'postings',autospec=True,return_value={
+            'postings':[],'sources':sources,
+        }) as postings, patch.object(FakeOzon,'daily_sales',create=True,return_value={
+            'rows':[{'date':day.isoformat(),'ordered_units':3} for day in (yesterday,today)],
+            'by_sku':[],
+        }) as orders, patch.object(main,'delivered_snapshot',return_value={}), \
+                patch.object(main,'download_digitization_day') as finance:
+            self.assertEqual(self.client.post('/api/account/sync',headers=HEAD,json={}).status_code,200)
+            self.assertIsNone(self.wait()['job']['error'])
+        self.assertEqual(postings.call_args.args[1],2)
+        self.assertEqual(orders.call_args.args[:2],(yesterday,today))
+        orders.assert_called_once()
+        finance.assert_not_called()
+        self.assertEqual(main.store.latest(scope,'sales_analytics')['rows'][0]['ordered_units'],7)
+        self.assertEqual(self.client.get('/api/inventory').json()['summary']['available'],10)
+
     def test_login_attempts_are_rate_limited(self):
         bad=TestClient(main.app)
         try:

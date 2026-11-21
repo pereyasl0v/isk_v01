@@ -10,13 +10,11 @@ import ProductDetails from './ProductDetails';
 import BarcodeGenerator from './BarcodeGenerator';
 import {statusLabel,roleLabel,groupStocks} from './presentation';
 import {salesChartWindow,salesRangeTotals,salesTickIndexes} from './sales-chart-range.mjs';
-import {getDigitizationPeriod} from './digitization-period.mjs';
 
 const Context=createContext(null);
 const nf=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
 const num=v=>v===null||v===undefined?'—':nf.format(v);
 const date=v=>v?new Date(v).toLocaleString('ru-RU'):'Ещё не загружено';
-function moscowDate(daysAgo=0){const value=new Date(Date.now()+3*60*60*1000);value.setUTCDate(value.getUTCDate()-daysAgo);return value.toISOString().slice(0,10)}
 async function api(path,body){
  const r=await fetch('/api'+path,{credentials:'same-origin',method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'Content-Type':'application/json','X-Local-App':'fbo'},body:body===undefined?undefined:JSON.stringify(body)});
  const data=await r.json(); if(!r.ok){const e=new Error(data.detail||'Запрос не выполнен');e.status=r.status;throw e;}return data;
@@ -31,16 +29,8 @@ function Table({columns,rows,empty='Нет строк для отображен�
 function Filter({value,set,placeholder='Поиск по названию, артикулу или SKU'}){return <label className="search"><Search size={17}/><input aria-label="Поиск" value={value} onChange={e=>set(e.target.value)} placeholder={placeholder}/></label>}
 function Card({label,value,note,icon:Icon=Package}){return <div className="metric"><div className="metric-top"><span>{label}</span><Icon size={19}/></div><strong>{num(value)}</strong><small>{note}</small></div>}
 function Overview(){
- const {inv,state,act,sales,me}=useApp();const s=inv?.summary;const salesSyncStarted=useRef(false);
- useEffect(()=>{salesSyncStarted.current=false},[me?.active_account_id]);
- useEffect(()=>{
-  if(!state||state.job.running||salesSyncStarted.current)return;
-  const twoWeeks=getDigitizationPeriod(14);
-  if(sales?.date_to===moscowDate(0)&&sales?.date_from<=twoWeeks.from&&(sales?.rows?.length||0)>=15)return;
-  salesSyncStarted.current=true;
-  act('/sales/sync',{days:14});
- },[sales?.at,sales?.error,state?.job.running]);
- return <><div className="overview-heading"><div><h1>Обзор кабинета</h1><p className="muted mt-2">Продажи и остатки Ozon · остатки обновлены: {date(inv?.at)}</p></div><button className="primary" disabled={!state||state.job.running} onClick={()=>act('/sync',{})}>Обновить остатки <RefreshCw size={16}/></button></div>
+ const {inv,state,act,sales}=useApp();const s=inv?.summary;
+ return <><div className="overview-heading"><div><h1>Обзор кабинета</h1><p className="muted mt-2">Продажи и остатки Ozon</p></div></div>
  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек"/></div>
  <SalesHistoryChart data={sales} state={state} act={act} inv={inv}/>
  {inv?.warning&&<Notice>{inv.warning}</Notice>}
@@ -161,7 +151,6 @@ function SalesHistoryChart({data,state,act,inv}){
  return <section className="panel sales-chart">
   <div className="panel-title"><div><h3>Заказано товаров</h3></div>
    <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null);setSelectedRange(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null);setSelectedRange(null);if(needsSalesSync(value)){if(busy)pendingPeriodSync.current=value;else act('/sales/sync',{days:value})}else pendingPeriodSync.current=null}}>{value} дн.</button>)}</div>
-    <button disabled={busy||!state} onClick={()=>act('/sales/sync',{days:Math.min(90,Math.max(period,(data?.rows||[]).length-1,14))})}>{busy?'Загружаем…':'Обновить'}</button>
    </div>
   </div>
   {data?.error&&<Notice>{data.error}</Notice>}
@@ -241,8 +230,8 @@ function Stocks(){
  <History/></div>
 }
 function History(){
- const {hist,state,act}=useApp();
- const [days,setDays]=useState(90);const [q,setQ]=useState('');const [status,setStatus]=useState('');const [scheme,setScheme]=useState('all');
+ const {hist}=useApp();
+ const [q,setQ]=useState('');const [status,setStatus]=useState('');const [scheme,setScheme]=useState('all');
  const postings=hist?.postings||[];
  const scoped=postings.filter(p=>scheme==='all'||String(p.scheme||'FBO').toUpperCase()===scheme);
  const rows=scoped.filter(p=>String(p.number||'').includes(q)&&(!status||p.status===status)).map(p=>({
@@ -257,7 +246,6 @@ function History(){
  const statuses=[...new Set(scoped.map(p=>p.status).filter(Boolean))].sort();
  return <section className="panel">
   <div className="panel-title"><div><h3>История отправлений Ozon</h3><p className="muted mt-2">FBO: {num(counts.fbo)} · FBS: {num(counts.fbs)}</p></div>
-   <div className="flex gap-2"><select aria-label="Период загрузки" value={days} onChange={e=>setDays(Number(e.target.value))}><option value={30}>30 дней</option><option value={90}>90 дней</option><option value={180}>180 дней</option><option value={365}>365 дней</option></select><button className="primary" disabled={!state||state.job.running} onClick={()=>act('/history/sync',{days})}>Обновить историю</button></div>
   </div>
   <p className="muted mb-4">Последняя проверка: {date(hist?.at)}{hist?.since&&` · охват ${date(hist.since)} — ${date(hist.to)}`}</p>
   {hist?.errors?.length>0&&<Notice>Не все данные удалось обновить: {hist.errors.join('; ')}. Ранее сохранённая история оставлена.</Notice>}
@@ -362,7 +350,7 @@ function App(){
   <div className="shell"><aside className="sidebar"><div className="brand"><div className="brand-icon"><Boxes size={25}/></div><div className="isk-brand">ИСК</div></div>
    <nav>{navItems.map(([path,label,Icon])=><NavLink key={path} to={path} end={path==='/'} className={({isActive})=>'nav-item '+(isActive?'active':'')}><Icon size={19}/>{label}</NavLink>)}</nav>
    <div className="sidebar-footer"><span className="status-dot"/>{me.user.username}</div>
-  </aside><main><header><div className="header-actions" style={{marginLeft:"auto"}}><NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink><button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button></div></header>
+  </aside><main><header><div className="header-actions" style={{marginLeft:"auto"}}><NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink>{state&&<><span className="muted account-stock-date">{inv?.at?'Остатки: '+new Date(inv.at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}):'Остатки ещё не загружены'}</span><button className="primary" disabled={state.job.running} onClick={()=>act('/account/sync',{})}><RefreshCw size={16} className={state.job.running?'animate-spin':''}/> {state.job.running?'Обновляем…':'Обновить'}</button></>}<button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button></div></header>
    <div className="workspace">
     {error&&<div role="alert"><Notice>{error}<button className="ml-3" onClick={()=>setError('')}>Закрыть</button></Notice></div>}
     {state?.job.running&&<div className="progress"><RefreshCw size={17} className="animate-spin"/>{state.job.message}</div>}{state?.job.error&&<Notice>{state.job.error}</Notice>}

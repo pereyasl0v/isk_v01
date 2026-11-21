@@ -172,9 +172,7 @@ export default function DigitizationCached({state,digi,act}){
 
  const refresh=()=>{
   if(!state||state.job.running||invalid||!dateFrom||!dateTo)return;
-  // Missing period: download only absent closed days. Fully local period: an
-  // explicit click refreshes selected days because the user asked Ozon for it.
-  act('/digitization/sync',{date_from:dateFrom,date_to:dateTo,refresh:cacheState.daily||legacy});
+  act('/digitization/sync',{date_from:dateFrom,date_to:dateTo});
  };
 
  const selectCalendarDay=day=>{
@@ -217,7 +215,6 @@ export default function DigitizationCached({state,digi,act}){
  let buttonText='Загрузить из Ozon';
  if(state?.job.running)buttonText='Обновляем…';
  else if(legacy)buttonText='Разложить по дням';
- else if(cacheState.daily)buttonText='Обновить период';
  else if(missing.length)buttonText='Догрузить '+missing.length+' дн.';
 
  return <div className="digitization-cache-page">
@@ -273,9 +270,9 @@ export default function DigitizationCached({state,digi,act}){
        </aside>
       </div>}
      </div>
-     <button className="primary digitization-refresh" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={refresh}>
+     {!cacheState.daily&&!cacheState.loading&&<button className="primary digitization-refresh" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={refresh}>
       <RefreshCw size={15} className={state?.job.running?'animate-spin':''}/>{buttonText}
-     </button>
+     </button>}
     </div>
     <div className={'digitization-cache-status '+(cacheState.daily?'hit':cacheState.loading?'loading':legacy?'legacy':'miss')}>
      {cacheState.daily?<CircleCheck size={15}/>:cacheState.loading?<RefreshCw size={15} className="animate-spin"/>:<Database size={15}/>}
