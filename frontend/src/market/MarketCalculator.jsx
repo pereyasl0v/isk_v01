@@ -282,19 +282,12 @@ export default function MarketCalculator() {
     {notice && <div className="mc-alert mc-alert-success" role="status"><CheckCircle2 size={17} />{notice}</div>}
 
     <section className="mc-panel">
-      <div className="mc-section-heading"><h2>Общие параметры</h2></div>
-      <div className="mc-field-grid">
-        <NumberField label="Курс юаня" value={draft.yuanToRubRate} onChange={value => setDraft(current => ({ ...current, yuanToRubRate: value }))} unit="₽ за ¥" />
-      </div>
-    </section>
-
-    <section className="mc-panel">
       <div className="mc-section-heading">
-        <div><h2>Товары</h2></div>
+        <div><h2>Общие параметры</h2></div>
         <button type="button" className="mc-button mc-button-light" onClick={addProduct}><Plus size={16} /> Добавить товар</button>
       </div>
 
-      {draft.products.map(product => {
+      {draft.products.map((product, index) => {
         const volume = batchVolumeM3(product);
         const netWeight = batchNetWeightKg(product);
         const goodsYuan = n(product.unitPriceYuan) * n(product.quantity);
@@ -312,6 +305,7 @@ export default function MarketCalculator() {
           <NumberField label="Ширина одной штуки" value={product.widthCm || ""} onChange={value => updateProduct(product.id, "widthCm", value)} unit="см" />
           <NumberField label="Высота одной штуки" value={product.heightCm || ""} onChange={value => updateProduct(product.id, "heightCm", value)} unit="см" />
           <NumberField label="Вес нетто одной штуки" value={product.unitNetWeightG} onChange={value => updateProduct(product.id, "unitNetWeightG", value)} unit="г" help="Для расчёта маршрута через Южные ворота" />
+          {index === 0 && <NumberField label="Курс юаня" value={draft.yuanToRubRate} onChange={value => setDraft(current => ({ ...current, yuanToRubRate: value }))} unit="₽ за ¥" help="Для всех товаров и обоих маршрутов" />}
         </div>
         <div className="mc-field-grid mc-batch-totals" aria-label="Параметры партии">
           <BatchOutput label="Объём партии" value={volume > 0 ? volumeFormat.format(volume) + " м³" : "—"} />
