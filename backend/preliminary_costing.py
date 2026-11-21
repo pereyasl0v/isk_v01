@@ -270,7 +270,7 @@ def calculate_preliminary_cost(data: dict) -> dict:
                 warnings.append("Маршрут через Южные ворота: укажи вес нетто одной единицы для точного распределения доставки.")
 
         transport_usd = r2["autoFreightUsdPerKg"] * gross_weight + r2["packagingPerBoxUsd"] * r2["boxCount"]
-        transport_rub = transport_usd * r2["usdToYuanRate"] * (r2["purchaseYuanToRubRate"] if selected_route else common_rate if common_rate is not None else r2["freightYuanToRubRate"])
+        transport_rub = transport_usd * r2["usdToYuanRate"] * (common_rate if common_rate is not None else r2["freightYuanToRubRate"])
         route2_shared = sum(r2[key] for key in (
             "deliveryToSpbRub", "deliveryToHomeRub", "loadersRub", "packingRub", "otherRub"
         )) if packaging_percent is None else 0

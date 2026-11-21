@@ -190,7 +190,7 @@ export function calculatePreliminaryCost(draft) {
 
     const transportUsd = n(route2.autoFreightUsdPerKg) * grossWeight
       + n(route2.packagingPerBoxUsd) * n(route2.boxCount);
-    const transportRub = transportUsd * n(route2.usdToYuanRate) * n(selectedRoute ? route2.purchaseYuanToRubRate : commonRate ?? route2.freightYuanToRubRate);
+    const transportRub = transportUsd * n(route2.usdToYuanRate) * n(commonRate ?? route2.freightYuanToRubRate);
     const route2Shared = packagingPercent == null
       ? n(route2.deliveryToSpbRub) + n(route2.deliveryToHomeRub) + n(route2.loadersRub) + n(route2.packingRub) + n(route2.otherRub)
       : 0;
