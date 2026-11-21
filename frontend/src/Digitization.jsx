@@ -356,9 +356,9 @@ export default function Digitization({state,digi,act}){
 
   <section className="panel mb-5">
    <div className="panel-title"><div><h3>Себестоимость товаров</h3><p className="muted mt-2">Себестоимость продаж считается по формуле TrueStats: количество продаж × (СС + ФФ). НДС используется для капитализации остатков: (СС + ФФ + НДС) × остаток.</p></div><span className="badge">{costCoverage}/{soldRows.length} проданных SKU заполнено</span></div>
-   <div className="table-scroll"><table><thead><tr><th>Товар</th><th>SKU</th><th>Себестоимость, ₽</th><th>Фулфилмент, ₽</th><th>НДС, ₽</th><th>Мои склады, шт</th><th>СС продаж / 1 шт.</th><th>Капитализация / 1 шт.</th></tr></thead><tbody>
+   <div className="table-scroll"><table><thead><tr><th>Товар</th><th>SKU</th><th>Себестоимость, ₽</th><th>СС продаж / 1 шт.</th><th>Капитализация / 1 шт.</th></tr></thead><tbody>
     {costRows.map(row=><tr key={row.sku}><td>{row.name||row.offer_id||'Товар'}</td><td>{row.sku}</td>
-     {['cost','fulfillment','vat','own_stock'].map(field=><td key={field}><input style={{width:120}} type="number" min="0" step={field==='own_stock'?'1':'0.01'} value={costs[row.sku]?.[field]??''} placeholder="0" onChange={e=>saveCost(row.sku,field,e.target.value)}/></td>)}
+     <td><input aria-label="Себестоимость, ₽" style={{width:120}} type="number" min="0" step="0.01" value={costs[row.sku]?.cost??''} placeholder="0" onChange={e=>saveCost(row.sku,'cost',e.target.value)}/></td>
      <td>{hasCost(row.sku)?money(saleUnitCost(row.sku)):'—'}</td><td>{hasCost(row.sku)?money(stockUnitCost(row.sku)):'—'}</td></tr>)}
    </tbody></table></div>
    {!costRows.length&&<div className="empty"><Calculator size={34}/><h3>Нет товаров</h3><p>Сначала обновите товары и оцифровку.</p></div>}
