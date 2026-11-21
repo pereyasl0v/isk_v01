@@ -3,7 +3,7 @@ import {
   Archive, Plus, Trash2, Save, RotateCcw, Search, X,
   Package, CheckCircle2, AlertCircle, ChevronDown,
 } from "lucide-react";
-import { calculatePreliminaryCost, createDraft, createProduct, n } from "./preliminary-costing.mjs";
+import { batchVolumeM3, calculatePreliminaryCost, createDraft, createProduct, n } from "./preliminary-costing.mjs";
 
 async function request(path, method = "GET", body) {
   const response = await fetch("/api" + path, {
@@ -21,6 +21,7 @@ const money = value => new Intl.NumberFormat("ru-RU", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 }).format(Number.isFinite(Number(value)) ? Number(value) : 0) + " ₽";
+const volumeFormat = new Intl.NumberFormat("ru-RU", { maximumSignificantDigits: 8 });
 const quantity = value => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n(value));
 const percent = value => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(n(value)) + "%";
 const formatDate = value => {
@@ -291,7 +292,13 @@ export default function MarketCalculator() {
           <NumberField label="Доставка до Саши, всего" value={product.deliveryToSashaYuan} onChange={value => updateProduct(product.id, "deliveryToSashaYuan", value)} unit="¥" help="Для маршрута через Ростов" />
           <NumberField label="Доставка до Гуанчжоу, всего" value={product.deliveryToGuangzhouYuan} onChange={value => updateProduct(product.id, "deliveryToGuangzhouYuan", value)} unit="¥" help="Для маршрута через Южные ворота" />
           <NumberField label="Пошлина по товару" value={product.dutyPercent} onChange={value => updateProduct(product.id, "dutyPercent", value)} unit="%" step="0.1" />
-          <NumberField label="Объём всей партии" value={product.volumeM3} onChange={value => updateProduct(product.id, "volumeM3", value)} unit="м³" min="0.1" help="Минимум 0,1 м³ по файлу «2»; 0 оставь, если объём пока неизвестен" />
+          <NumberField label="Длина одной штуки" value={product.lengthCm || ""} onChange={value => updateProduct(product.id, "lengthCm", value)} unit="см" />
+          <NumberField label="Ширина одной штуки" value={product.widthCm || ""} onChange={value => updateProduct(product.id, "widthCm", value)} unit="см" />
+          <NumberField label="Высота одной штуки" value={product.heightCm || ""} onChange={value => updateProduct(product.id, "heightCm", value)} unit="см" />
+          <label className="mc-field">
+            <span>Объём всей партии</span>
+            <output aria-live="polite">{batchVolumeM3(product) > 0 ? volumeFormat.format(batchVolumeM3(product)) + " м³" : "—"}</output>
+          </label>
           <NumberField label="Вес брутто всей партии" value={product.grossWeightKg} onChange={value => updateProduct(product.id, "grossWeightKg", value)} unit="кг" />
           <NumberField label="Вес нетто всей партии" value={product.netWeightKg} onChange={value => updateProduct(product.id, "netWeightKg", value)} unit="кг" help="Для распределения доп. расходов через Ростов" />
           <NumberField label="Вес нетто одной штуки" value={product.unitNetWeightG} onChange={value => updateProduct(product.id, "unitNetWeightG", value)} unit="г" help="Для расчёта маршрута через Южные ворота" />

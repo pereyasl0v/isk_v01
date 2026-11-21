@@ -41,6 +41,9 @@ PRODUCT_NUMBER_FIELDS = (
     "deliveryToGuangzhouYuan",
     "dutyPercent",
     "volumeM3",
+    "lengthCm",
+    "widthCm",
+    "heightCm",
     "grossWeightKg",
     "netWeightKg",
     "unitNetWeightG",
@@ -93,8 +96,9 @@ def clean_preliminary_cost(raw: Any) -> dict:
         }
         for field in PRODUCT_NUMBER_FIELDS:
             clean[field] = _number(item.get(field), field)
-        if 0 < clean["volumeM3"] < 0.1:
-            raise ValueError(f"Объём товара «{name}» в файле «2» указан минимум 0,1 м³.")
+        has_dimensions = any(clean[field] for field in ("lengthCm", "widthCm", "heightCm"))
+        if not has_dimensions and 0 < clean["volumeM3"] < 0.1:
+            raise ValueError(f"Сохранённый ручной объём товара «{name}» должен быть не меньше 0,1 м³.")
         if clean["dutyPercent"] > 100:
             raise ValueError(f"Пошлина для товара «{name}» не может быть больше 100%.")
         products.append(clean)
@@ -139,8 +143,15 @@ def _shares(products: list[dict], method: str) -> list[float]:
     return [weight / total for weight in weights] if total else [0.0 for _ in products]
 
 
+def _batch_volume_m3(product: dict) -> float:
+    length, width, height = (product.get(field, 0) for field in ("lengthCm", "widthCm", "heightCm"))
+    if not any((length, width, height)):
+        return product["volumeM3"]
+    return length * width * height * product["quantity"] / 1_000_000
+
+
 def calculate_preliminary_cost(data: dict) -> dict:
-    products = data["products"]
+    products = [{**product, "volumeM3": _batch_volume_m3(product)} for product in data["products"]]
     r1 = data["route1"]
     r2 = data["route2"]
     warnings = []
@@ -182,7 +193,7 @@ def calculate_preliminary_cost(data: dict) -> dict:
             "costPerUnit": total / quantity,
         })
         if r1["freightRateRubPerM3"] and product["volumeM3"] <= 0:
-            warnings.append(f"«{product['name']}»: укажи объём партии для расчёта доставки через Ростов.")
+            warnings.append(f"«{product['name']}»: укажите длину, ширину и высоту одной штуки для расчёта доставки через Ростов.")
 
     total_quantity = sum(p["quantity"] for p in products)
     route1_total = sum(row["totalRub"] for row in route1_rows)

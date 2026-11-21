@@ -37,6 +37,9 @@ export const createProduct = () => ({
   deliveryToSashaYuan: 0,
   deliveryToGuangzhouYuan: 0,
   dutyPercent: 6.5,
+  lengthCm: "",
+  widthCm: "",
+  heightCm: "",
   volumeM3: 0,
   grossWeightKg: 0,
   netWeightKg: 0,
@@ -53,6 +56,12 @@ export const n = value => {
   const parsed = Number(String(value ?? 0).replace(",", "."));
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 };
+
+export function batchVolumeM3(product) {
+  const dimensions = [product.lengthCm, product.widthCm, product.heightCm].map(n);
+  if (dimensions.every(value => value === 0)) return n(product.volumeM3);
+  return dimensions.reduce((volume, size) => volume * size, n(product.quantity)) / 1_000_000;
+}
 
 function shares(products, method) {
   let weights;
@@ -71,7 +80,9 @@ function shares(products, method) {
 }
 
 export function calculatePreliminaryCost(draft) {
-  const products = Array.isArray(draft?.products) ? draft.products : [];
+  const products = Array.isArray(draft?.products)
+    ? draft.products.map(product => ({ ...product, volumeM3: batchVolumeM3(product) }))
+    : [];
   const route1 = { ...DEFAULT_ROUTE1, ...(draft?.route1 || {}) };
   const route2 = { ...DEFAULT_ROUTE2, ...(draft?.route2 || {}) };
   if (!products.length) return { products: [], summary: null, warnings: [] };
@@ -97,7 +108,7 @@ export function calculatePreliminaryCost(draft) {
     const allocatedAdditionalRub = route1Shared * route1Shares[index];
     const totalRub = taxBase + ownTaxRub + allocatedAdditionalRub;
     if (n(route1.freightRateRubPerM3) && !n(product.volumeM3)) {
-      warnings.push("«" + (product.name || "Без названия") + "»: укажи объём партии для расчёта доставки через Ростов.");
+      warnings.push("«" + (product.name || "Без названия") + "»: укажите длину, ширину и высоту одной штуки для расчёта доставки через Ростов.");
     }
     return {
       id: product.id,
