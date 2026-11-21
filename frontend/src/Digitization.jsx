@@ -356,7 +356,7 @@ export default function Digitization({state,digi,act}){
   </div>
 
   <section className="panel mb-5">
-   <div className="panel-title"><div><h3>Себестоимость товаров</h3><p className="muted mt-2">Себестоимость продаж считается по формуле TrueStats: количество продаж × (СС + ФФ). НДС используется для капитализации остатков: (СС + ФФ + НДС) × остаток.</p></div><span className="badge">{costCoverage}/{soldRows.length} проданных SKU заполнено</span></div>
+   <div className="panel-title"><h3>Себестоимость товаров</h3></div>
    <div className="table-scroll"><table><thead><tr><th>Товар</th><th>Артикул</th><th>Себестоимость, ₽</th><th>Себестоимость (капитализация) / 1 шт.</th></tr></thead><tbody>
     {costRows.map(row=><tr key={row.sku}><td>{row.name||row.offer_id||'Товар'}</td><td>{catalogBySku.get(String(row.sku))?.id??'—'}</td>
      <td><input aria-label="Себестоимость, ₽" style={{width:120}} type="number" min="0" step="0.01" value={costs[row.sku]?.cost??''} placeholder="0" onChange={e=>saveCost(row.sku,'cost',e.target.value)}/></td>
@@ -369,7 +369,7 @@ export default function Digitization({state,digi,act}){
   </section>
 
   <section className="panel mb-5">
-   <div className="panel-title"><div><h3>Налоги и операционные расходы</h3><p className="muted mt-2">Для текущего примера используется УСН «Доходы»: налоговая база строится из продаж и официальных компенсаций с учётом комиссии зарубежных выкупов.</p></div><span className="badge">Настройки сохраняются локально</span></div>
+   <div className="panel-title"><h3>Налоги и операционные расходы</h3></div>
    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
     <label className="field">УСН, %<input type="number" min="0" step="0.01" value={settings.taxRate} onChange={e=>saveSetting('taxRate',e.target.value)}/></label>
     <label className="field">НДС, %<input type="number" min="0" step="0.01" value={settings.vatRate} onChange={e=>saveSetting('vatRate',e.target.value)}/></label>
@@ -382,7 +382,7 @@ export default function Digitization({state,digi,act}){
 
   
 
-  <section className="panel mb-5"><div className="panel-title"><h3>По артикулам</h3><span className="badge">Продажи + себестоимость</span></div><SimpleTable rows={productRows.slice(0,200)} empty="Нет товарных строк" columns={[
+  <section className="panel mb-5"><div className="panel-title"><h3>По артикулам</h3></div><SimpleTable rows={productRows.slice(0,200)} empty="Нет товарных строк" columns={[
    ['name','Товар'],['article','Артикул'],['sales_quantity','Продажи, шт',count],['realization','Реализация',money],['sales_amount','Продажи',money],['share','Доля в общей выручке',pct],['unit_cost','СС+ФФ / шт',money],['cogs','Себестоимость продаж',money],
   ]}/></section>
 
