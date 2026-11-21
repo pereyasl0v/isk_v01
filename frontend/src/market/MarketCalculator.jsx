@@ -326,7 +326,7 @@ export default function MarketCalculator() {
         </div>
         <div className="mc-field-grid">
           <NumberField label="Наценка к оплате товара" value={draft.route1.purchaseMarkupPercent} onChange={value => updateRoute("route1", "purchaseMarkupPercent", value)} unit="%" step="0.1" />
-          <NumberField label="Доставка до Ростова" value={draft.route1.freightRateRubPerM3} onChange={value => updateRoute("route1", "freightRateRubPerM3", value)} unit="₽ / м³" help="В файле «2»: 17 000 × 95 ÷ 65" />
+          <NumberField label="Доставка до Ростова" value={draft.route1.freightRateRubPerM3} onChange={value => updateRoute("route1", "freightRateRubPerM3", value)} unit="₽ / м³" help="В файле «2»: 17 000 × 95 ÷ 65, где 95 ₽ за $ — курс доллара" />
           <NumberField label="Доля доставки под пошлину" value={draft.route1.dutyableFreightPercent} onChange={value => updateRoute("route1", "dutyableFreightPercent", value)} unit="%" step="0.1" />
           <NumberField label="НДС" value={draft.route1.vatPercent} onChange={value => updateRoute("route1", "vatPercent", value)} unit="%" step="0.1" />
           <NumberField label="Мой налог" value={draft.route1.ownTaxPercent} onChange={value => updateRoute("route1", "ownTaxPercent", value)} unit="%" step="0.1" help="По формуле из файла «2»" />
