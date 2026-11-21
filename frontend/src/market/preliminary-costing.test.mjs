@@ -89,3 +89,13 @@ test("Rostov freight uses container price, dollar rate and usable volume",()=>{
   Object.assign(draft.route1,{containerCostUsd:20000,usdToRubRate:100,containerVolumeM3:50});
   assert.equal(calculatePreliminaryCost(draft).products[0].route1.freightToRostovRub,12000);
 });
+
+test("packaging percentage derives gross weight and excludes removed expenses",()=>{
+  const draft=sample();
+  draft.packagingWeightPercent=10;
+  draft.route1.deliveryToSpbRub=5000;
+  const {summary}=calculatePreliminaryCost(draft);
+  assert.ok(Math.abs(summary.route2.grossWeightKg-280.9*1.1)<1e-8);
+  assert.equal(summary.route1.sharedExpensesRub,0);
+  assert.equal(summary.route2.sharedExpensesRub,0);
+});

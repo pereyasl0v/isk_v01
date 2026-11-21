@@ -50,7 +50,10 @@ export const createProduct = () => ({
   unitNetWeightG: 0,
 });
 
+export const DEFAULT_PACKAGING_WEIGHT_PERCENT = 10;
+
 export const createDraft = () => ({
+  packagingWeightPercent: DEFAULT_PACKAGING_WEIGHT_PERCENT,
   yuanToRubRate: DEFAULT_ROUTE1.yuanToRubRate,
   products: [createProduct()],
   route1: { ...DEFAULT_ROUTE1, usdToRubRate: DEFAULT_ROSTOV_USD_RATE,
@@ -84,6 +87,10 @@ export function rostovFreightRateRubPerM3(route) {
   return n(route.freightRateRubPerM3) * (n(rate) / DEFAULT_ROSTOV_USD_RATE);
 }
 
+export function grossWeightWithPackaging(netWeight, packagingWeightPercent) {
+  return netWeight * (1 + n(packagingWeightPercent) / 100);
+}
+
 function shares(products, method) {
   let weights;
   if (method === "volume") weights = products.map(product => n(product.volumeM3));
@@ -111,9 +118,11 @@ export function calculatePreliminaryCost(draft) {
   if (!products.length) return { products: [], summary: null, warnings: [] };
 
   const warnings = [];
+  const packagingPercent = draft?.packagingWeightPercent;
   const route1Shares = shares(products, route1.allocationMethod);
-  const route1Shared = n(route1.deliveryToSpbRub) + n(route1.loadersRub)
-    + n(route1.unloadersRub) + n(route1.otherRub);
+  const route1Shared = packagingPercent == null
+    ? n(route1.deliveryToSpbRub) + n(route1.loadersRub) + n(route1.unloadersRub) + n(route1.otherRub)
+    : 0;
 
   const route1Rows = products.map((product, index) => {
     const quantity = Math.max(1, n(product.quantity));
@@ -156,7 +165,9 @@ export function calculatePreliminaryCost(draft) {
 
   const netWeights = products.map(product => product.netWeightKg);
   const totalNetWeight = netWeights.reduce((sum, value) => sum + value, 0);
-  let grossWeight = n(route2.grossWeightKg) || totalNetWeight;
+  let grossWeight = packagingPercent == null
+    ? n(route2.grossWeightKg) || totalNetWeight
+    : grossWeightWithPackaging(totalNetWeight, packagingPercent);
   if (grossWeight < totalNetWeight) {
     warnings.push("Маршрут через Южные ворота: брутто меньше суммарного нетто. Для расчёта использован вес нетто.");
     grossWeight = totalNetWeight;
@@ -165,7 +176,7 @@ export function calculatePreliminaryCost(draft) {
   let route2Shares;
   if (grossWeight <= 0 || totalNetWeight <= 0) {
     route2Shares = shares(products, "quantity");
-    warnings.push("Маршрут через Южные ворота: укажи вес нетто товара и брутто всей партии для точного распределения доставки.");
+    warnings.push("Маршрут через Южные ворота: укажите вес нетто товаров для расчёта доставки.");
   } else {
     route2Shares = netWeights.map(net =>
       (net + packagingWeight * net / totalNetWeight) / grossWeight
@@ -175,8 +186,9 @@ export function calculatePreliminaryCost(draft) {
   const transportUsd = n(route2.autoFreightUsdPerKg) * grossWeight
     + n(route2.packagingPerBoxUsd) * n(route2.boxCount);
   const transportRub = transportUsd * n(route2.usdToYuanRate) * n(commonRate ?? route2.freightYuanToRubRate);
-  const route2Shared = n(route2.deliveryToSpbRub) + n(route2.deliveryToHomeRub)
-    + n(route2.loadersRub) + n(route2.packingRub) + n(route2.otherRub);
+  const route2Shared = packagingPercent == null
+    ? n(route2.deliveryToSpbRub) + n(route2.deliveryToHomeRub) + n(route2.loadersRub) + n(route2.packingRub) + n(route2.otherRub)
+    : 0;
 
   const route2Rows = products.map((product, index) => {
     const quantity = Math.max(1, n(product.quantity));

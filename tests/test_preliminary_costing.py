@@ -67,6 +67,16 @@ def sample_draft():
 
 
 class PreliminaryCostCalculationTests(unittest.TestCase):
+    def test_packaging_percentage_replaces_manual_gross_and_extra_expenses(self):
+        draft = sample_draft()
+        draft["packagingWeightPercent"] = 10
+        draft["route1"]["deliveryToSpbRub"] = 5_000
+        clean = clean_preliminary_cost(draft)
+        summary = calculate_preliminary_cost(clean)["summary"]
+        self.assertAlmostEqual(summary["route2"]["grossWeightKg"], 280.9 * 1.1)
+        self.assertEqual(summary["route1"]["sharedExpensesRub"], 0)
+        self.assertEqual(summary["route2"]["sharedExpensesRub"], 0)
+
     def test_rostov_freight_uses_container_parameters(self):
         draft = sample_draft()
         draft["route1"].update(containerCostUsd=20_000, usdToRubRate=100, containerVolumeM3=50)

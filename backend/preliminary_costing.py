@@ -136,6 +136,8 @@ def clean_preliminary_cost(raw: Any) -> dict:
     result = {"products": products, "route1": route1, "route2": route2}
     if "yuanToRubRate" in raw:
         result["yuanToRubRate"] = _number(raw["yuanToRubRate"], "Курс юаня")
+    if "packagingWeightPercent" in raw:
+        result["packagingWeightPercent"] = _number(raw["packagingWeightPercent"], "Вес упаковки от нетто")
     return result
 
 
@@ -187,10 +189,11 @@ def calculate_preliminary_cost(data: dict) -> dict:
     common_rate = data.get("yuanToRubRate")
     warnings = []
 
+    packaging_percent = data.get("packagingWeightPercent")
     route1_shares = _shares(products, r1["allocationMethod"])
     route1_shared = sum(r1[key] for key in (
         "deliveryToSpbRub", "loadersRub", "unloadersRub", "otherRub"
-    ))
+    )) if packaging_percent is None else 0
     route1_rows = []
     for product, share in zip(products, route1_shares):
         quantity = product["quantity"]
@@ -237,7 +240,10 @@ def calculate_preliminary_cost(data: dict) -> dict:
 
     net_weights = [p["netWeightKg"] for p in products]
     total_net_weight = sum(net_weights)
-    gross_weight = r2["grossWeightKg"] or total_net_weight
+    if packaging_percent is None:
+        gross_weight = r2["grossWeightKg"] or total_net_weight
+    else:
+        gross_weight = total_net_weight * (1 + packaging_percent / 100)
     if gross_weight < total_net_weight:
         warnings.append("Маршрут через Южные ворота: брутто меньше суммарного нетто. Для расчёта использован вес нетто.")
         gross_weight = total_net_weight
@@ -258,7 +264,7 @@ def calculate_preliminary_cost(data: dict) -> dict:
     transport_rub = transport_usd * r2["usdToYuanRate"] * (common_rate if common_rate is not None else r2["freightYuanToRubRate"])
     route2_shared = sum(r2[key] for key in (
         "deliveryToSpbRub", "deliveryToHomeRub", "loadersRub", "packingRub", "otherRub"
-    ))
+    )) if packaging_percent is None else 0
     route2_rows = []
     for product, net, share in zip(products, net_weights, route2_shares):
         quantity = product["quantity"]
