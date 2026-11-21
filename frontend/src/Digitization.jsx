@@ -274,20 +274,13 @@ export default function Digitization({state,digi,act}){
  const comparisonTurnoverOrders=stockQty!==null&&comparisonRange?.days&&n(previousMetrics?.ordersQuantity)>0?round(n(stockQty)/(n(previousMetrics.ordersQuantity)/comparisonRange.days)):null;
  const dateLabel=value=>value?new Date(value+'T00:00:00Z').toLocaleDateString('ru-RU',{timeZone:'UTC',day:'2-digit',month:'2-digit',year:'numeric'}):'—';
 
- const catalogBySku=new Map((inventory?.products||[]).map(p=>[String(p.sku),p]));
- const costRows=[...new Map([
-  ...(inventory?.products||[]).filter(p=>p.sku).map(p=>[String(p.sku),{sku:String(p.sku),name:p.name||'',offer_id:p.offer_id||''}]),
-  ...soldRows.map(r=>[String(r.sku),{sku:String(r.sku),name:catalogBySku.get(String(r.sku))?.name||'',offer_id:catalogBySku.get(String(r.sku))?.offer_id||''}])
- ]).values()].sort((a,b)=>(a.name||a.sku).localeCompare(b.name||b.sku,'ru'));
-
- const productRows=(digi?.products||[]).map(row=>({
-  ...row,
-  name:catalogBySku.get(String(row.sku))?.name||'',
-  article:catalogBySku.get(String(row.sku))?.id??'—',
-  share:realization?round(n(row.realization)/realization*100):null,
-  unit_cost:hasCost(row.sku)?round(saleUnitCost(row.sku)):null,
-  cogs:hasCost(row.sku)?round(n(row.sales_quantity)*saleUnitCost(row.sku)):null,
- }));
+ const catalogBySku=new Map((inventory?.products||[]).filter(p=>p.sku).map(p=>[String(p.sku),p]));
+ const salesBySku=new Map((digi?.products||[]).filter(row=>row.sku).map(row=>[String(row.sku),row]));
+ const productRows=[...new Set([...catalogBySku.keys(),...salesBySku.keys()])]
+  .map(sku=>{
+   const product=catalogBySku.get(sku);
+   return {sku,name:product?.name||product?.offer_id||'Товар',article:product?.id??'—',sales:salesBySku.get(sku)};
+  }).sort((a,b)=>a.name.localeCompare(b.name,'ru'));
  const missingProfitCosts=soldRows.length-costCoverage;
  const operations=digi?.operation_types||[];
 
@@ -356,16 +349,24 @@ export default function Digitization({state,digi,act}){
   </div>
 
   <section className="panel mb-5">
-   <div className="panel-title"><h3>Себестоимость товаров</h3></div>
-   <div className="table-scroll"><table><thead><tr><th>Товар</th><th>Артикул</th><th>Себестоимость, ₽</th><th>Себестоимость (капитализация) / 1 шт.</th></tr></thead><tbody>
-    {costRows.map(row=><tr key={row.sku}><td>{row.name||row.offer_id||'Товар'}</td><td>{catalogBySku.get(String(row.sku))?.id??'—'}</td>
-     <td><input aria-label="Себестоимость, ₽" style={{width:120}} type="number" min="0" step="0.01" value={costs[row.sku]?.cost??''} placeholder="0" onChange={e=>saveCost(row.sku,'cost',e.target.value)}/></td>
-     <td>{hasCost(row.sku)?<>
-      {money(saleUnitCost(row.sku))}
-      {money(saleUnitCost(row.sku))!==money(stockUnitCost(row.sku))&&<> ({money(stockUnitCost(row.sku))})</>}
-     </>:'—'}</td></tr>)}
-   </tbody></table></div>
-   {!costRows.length&&<div className="empty"><Calculator size={34}/><h3>Нет товаров</h3><p>Сначала обновите товары и оцифровку.</p></div>}
+   <div className="panel-title"><h3>Продажи и себестоимость по артикулам</h3></div>
+   {productRows.length>0?<div className="table-scroll"><table><thead><tr>
+    <th>Товар</th><th>Артикул</th><th>Себестоимость, ₽</th><th>Себестоимость (капитализация) / 1 шт.</th>
+    <th>Продажи, шт.</th><th>Реализация</th><th>Продажи</th><th>Доля в общей выручке</th><th>Себестоимость продаж</th>
+   </tr></thead><tbody>
+    {productRows.map(({sku,name,article,sales})=>{
+     const unitCost=hasCost(sku)?money(saleUnitCost(sku)):null;
+     const capitalization=unitCost===null?null:money(stockUnitCost(sku));
+     return <tr key={sku}>
+      <td>{name}</td><td>{article}</td>
+      <td><input aria-label={`Себестоимость, ₽ — ${name}`} style={{width:120}} type="number" min="0" step="0.01" value={costs[sku]?.cost??''} placeholder="0" onChange={e=>saveCost(sku,'cost',e.target.value)}/></td>
+      <td>{unitCost??'—'}{capitalization!==unitCost&&<> ({capitalization})</>}</td>
+      <td>{count(sales?.sales_quantity)}</td><td>{money(sales?.realization)}</td><td>{money(sales?.sales_amount)}</td>
+      <td>{sales&&realization?pct(round(n(sales.realization)/realization*100)):'—'}</td>
+      <td>{sales&&unitCost!==null?money(round(n(sales.sales_quantity)*saleUnitCost(sku))):'—'}</td>
+     </tr>;
+    })}
+   </tbody></table></div>:<div className="empty"><Calculator size={34}/><h3>Нет товаров</h3><p>Сначала обновите товары и оцифровку.</p></div>}
   </section>
 
   <section className="panel mb-5">
@@ -377,16 +378,6 @@ export default function Digitization({state,digi,act}){
     <label className="field">Официальные опер. доходы, ₽<input type="number" min="0" step="0.01" value={settings.operationalIncome} onChange={e=>saveSetting('operationalIncome',e.target.value)}/></label>
    </div>
   </section>
-
-  
-
-  
-
-  <section className="panel mb-5"><div className="panel-title"><h3>По артикулам</h3></div><SimpleTable rows={productRows.slice(0,200)} empty="Нет товарных строк" columns={[
-   ['name','Товар'],['article','Артикул'],['sales_quantity','Продажи, шт',count],['realization','Реализация',money],['sales_amount','Продажи',money],['share','Доля в общей выручке',pct],['unit_cost','СС+ФФ / шт',money],['cogs','Себестоимость продаж',money],
-  ]}/></section>
-
-
 
   <section className="panel"><div className="panel-title"><h3>Начисления Ozon по типам операций</h3></div><SimpleTable rows={operations} empty="Нет начислений" columns={[["name","Официальное название операции"],["count","Строк"],["amount","Сумма итого",money]]}/></section>
  </ComparisonVisibilityContext.Provider>
