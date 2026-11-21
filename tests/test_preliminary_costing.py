@@ -70,12 +70,14 @@ class PreliminaryCostCalculationTests(unittest.TestCase):
     def test_dimensions_override_archived_volume_for_freight_and_allocation(self):
         draft = sample_draft()
         draft["products"] = draft["products"][:2]
-        draft["products"][0].update(lengthCm="2,5", widthCm=4, heightCm=5, quantity=1_000)
+        draft["products"][0].update(lengthCm="2,5", widthCm=4, heightCm=5, quantity=1_000, unitNetWeightG=15)
         draft["route1"].update(freightRateRubPerM3=1_000, deliveryToSpbRub=700)
         clean = clean_preliminary_cost(draft)
         self.assertEqual(clean["products"][0]["lengthCm"], 2.5)
         first, legacy = calculate_preliminary_cost(clean)["products"]
         self.assertAlmostEqual(first["volumeM3"], 0.05)
+        self.assertEqual(first["netWeightKg"], 15)
+        self.assertEqual(first["route2"]["netWeightKg"], 15)
         self.assertAlmostEqual(first["route1"]["freightToRostovRub"], 50)
         self.assertAlmostEqual(first["route1"]["allocatedAdditionalRub"], 100)
         self.assertAlmostEqual(legacy["volumeM3"], 0.3)

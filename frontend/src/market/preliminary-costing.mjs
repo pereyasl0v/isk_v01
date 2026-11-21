@@ -63,11 +63,17 @@ export function batchVolumeM3(product) {
   return dimensions.reduce((volume, size) => volume * size, n(product.quantity)) / 1_000_000;
 }
 
+export function batchNetWeightKg(product) {
+  return n(product.unitNetWeightG) > 0
+    ? n(product.unitNetWeightG) * n(product.quantity) / 1000
+    : n(product.netWeightKg);
+}
+
 function shares(products, method) {
   let weights;
   if (method === "volume") weights = products.map(product => n(product.volumeM3));
   else if (method === "weight") weights = products.map(product =>
-    n(product.grossWeightKg) || n(product.netWeightKg) || n(product.unitNetWeightG) * n(product.quantity) / 1000
+    n(product.grossWeightKg) || product.netWeightKg
   );
   else if (method === "value") weights = products.map(product => n(product.unitPriceYuan) * n(product.quantity));
   else weights = products.map(product => n(product.quantity));
@@ -81,7 +87,7 @@ function shares(products, method) {
 
 export function calculatePreliminaryCost(draft) {
   const products = Array.isArray(draft?.products)
-    ? draft.products.map(product => ({ ...product, volumeM3: batchVolumeM3(product) }))
+    ? draft.products.map(product => ({ ...product, volumeM3: batchVolumeM3(product), netWeightKg: batchNetWeightKg(product) }))
     : [];
   const route1 = { ...DEFAULT_ROUTE1, ...(draft?.route1 || {}) };
   const route2 = { ...DEFAULT_ROUTE2, ...(draft?.route2 || {}) };
@@ -131,7 +137,7 @@ export function calculatePreliminaryCost(draft) {
   const totalQuantity = products.reduce((sum, product) => sum + Math.max(1, n(product.quantity)), 0);
   const route1Total = route1Rows.reduce((sum, row) => sum + row.totalRub, 0);
 
-  const netWeights = products.map(product => n(product.unitNetWeightG) * n(product.quantity) / 1000);
+  const netWeights = products.map(product => product.netWeightKg);
   const totalNetWeight = netWeights.reduce((sum, value) => sum + value, 0);
   let grossWeight = n(route2.grossWeightKg) || totalNetWeight;
   if (grossWeight < totalNetWeight) {

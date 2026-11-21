@@ -173,3 +173,5 @@
 }
 
 .mc .mc-field output{display:flex;align-items:center;min-height:42px;padding:8px 10px;border:1px solid #dce5de;border-radius:8px;background:#f2f7f3;font-size:14px;font-weight:700}
+
+.mc .mc-batch-totals{margin-top:12px}

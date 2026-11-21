@@ -42,7 +42,7 @@ test("Rostov route allocates shared local delivery and handling exactly once",()
 
 test("weight allocation falls back safely when source weights are absent",()=>{
   const draft=sample();
-  draft.products.forEach(product=>{product.unitNetWeightG=0});
+  draft.products.forEach(product=>{product.unitNetWeightG=0; product.netWeightKg=0});
   draft.route2.grossWeightKg=0;
   const result=calculatePreliminaryCost(draft);
   assert.ok(Math.abs(result.products.reduce((sum,row)=>sum+row.route2.allocationShare,0)-1)<1e-9);
@@ -53,15 +53,18 @@ test("dimensions drive freight for the selected quantity and preserve legacy vol
   const draft=sample();
   const [product,legacy]=draft.products;
   draft.products=[product,legacy];
-  Object.assign(product,{lengthCm:"2,5",widthCm:4,heightCm:5,quantity:1000});
+  Object.assign(product,{lengthCm:"2,5",widthCm:4,heightCm:5,quantity:1000,unitNetWeightG:15});
   Object.assign(draft.route1,{freightRateRubPerM3:1000,deliveryToSpbRub:700});
   const [first,second]=calculatePreliminaryCost(draft).products;
   assert.equal(first.volumeM3,0.05);
+  assert.equal(first.netWeightKg,15);
+  assert.equal(first.route2.netWeightKg,15);
   assert.equal(first.route1.freightToRostovRub,50);
   assert.ok(Math.abs(first.route1.allocatedAdditionalRub-100)<1e-8);
   assert.equal(second.volumeM3,0.3);
   product.quantity=2000;
   assert.equal(calculatePreliminaryCost(draft).products[0].volumeM3,0.1);
+  assert.equal(calculatePreliminaryCost(draft).products[0].netWeightKg,30);
   product.heightCm="";
   assert.equal(calculatePreliminaryCost(draft).products[0].volumeM3,0);
 });

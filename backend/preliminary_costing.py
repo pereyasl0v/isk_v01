@@ -129,7 +129,7 @@ def _shares(products: list[dict], method: str) -> list[float]:
         weights = [p["volumeM3"] for p in products]
     elif method == "weight":
         weights = [
-            p["grossWeightKg"] or (p["netWeightKg"] or p["unitNetWeightG"] * p["quantity"] / 1000)
+            p["grossWeightKg"] or p["netWeightKg"]
             for p in products
         ]
     elif method == "value":
@@ -151,7 +151,17 @@ def _batch_volume_m3(product: dict) -> float:
 
 
 def calculate_preliminary_cost(data: dict) -> dict:
-    products = [{**product, "volumeM3": _batch_volume_m3(product)} for product in data["products"]]
+    products = [
+        {
+            **product,
+            "volumeM3": _batch_volume_m3(product),
+            "netWeightKg": (
+                product["unitNetWeightG"] * product["quantity"] / 1000
+                if product["unitNetWeightG"] > 0 else product["netWeightKg"]
+            ),
+        }
+        for product in data["products"]
+    ]
     r1 = data["route1"]
     r2 = data["route2"]
     warnings = []
@@ -204,7 +214,7 @@ def calculate_preliminary_cost(data: dict) -> dict:
         "totalQuantity": total_quantity,
     }
 
-    net_weights = [p["unitNetWeightG"] * p["quantity"] / 1000 for p in products]
+    net_weights = [p["netWeightKg"] for p in products]
     total_net_weight = sum(net_weights)
     gross_weight = r2["grossWeightKg"] or total_net_weight
     if gross_weight < total_net_weight:

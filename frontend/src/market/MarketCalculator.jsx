@@ -3,7 +3,7 @@ import {
   Archive, Plus, Trash2, Save, RotateCcw, Search, X,
   Package, CheckCircle2, AlertCircle, ChevronDown,
 } from "lucide-react";
-import { batchVolumeM3, calculatePreliminaryCost, createDraft, createProduct, n } from "./preliminary-costing.mjs";
+import { batchNetWeightKg, batchVolumeM3, calculatePreliminaryCost, createDraft, createProduct, n } from "./preliminary-costing.mjs";
 
 async function request(path, method = "GET", body) {
   const response = await fetch("/api" + path, {
@@ -43,6 +43,13 @@ function NumberField({ label, value, onChange, unit, step = "any", min = 0, help
       {unit && <small>{unit}</small>}
     </div>
     {help && <em>{help}</em>}
+  </label>;
+}
+
+function BatchOutput({ label, value }) {
+  return <label className="mc-field">
+    <span>{label}</span>
+    <output>{value}</output>
   </label>;
 }
 
@@ -279,7 +286,11 @@ export default function MarketCalculator() {
         <button type="button" className="mc-button mc-button-light" onClick={addProduct}><Plus size={16} /> Добавить товар</button>
       </div>
 
-      {draft.products.map(product => <article className="mc-product-card" key={product.id}>
+      {draft.products.map(product => {
+        const volume = batchVolumeM3(product);
+        const netWeight = batchNetWeightKg(product);
+        const goodsYuan = n(product.unitPriceYuan) * n(product.quantity);
+        return <article className="mc-product-card" key={product.id}>
         <div className="mc-product-heading">
           <strong>{product.name.trim() || "Новый товар"}</strong>
           <button type="button" className="mc-remove-button" onClick={() => removeProduct(product.id)} title="Удалить товар" aria-label="Удалить товар"><Trash2 size={16} /></button>
@@ -289,21 +300,30 @@ export default function MarketCalculator() {
           <TextField label="Артикул / код" value={product.article} onChange={value => updateProduct(product.id, "article", value)} placeholder="Необязательно" maxLength={80} />
           <NumberField label="Количество" value={product.quantity} onChange={value => updateProduct(product.id, "quantity", value)} unit="шт." step="1" min="1" />
           <NumberField label="Цена за 1 штуку" value={product.unitPriceYuan} onChange={value => updateProduct(product.id, "unitPriceYuan", value)} unit="¥" />
-          <NumberField label="Доставка до Саши, всего" value={product.deliveryToSashaYuan} onChange={value => updateProduct(product.id, "deliveryToSashaYuan", value)} unit="¥" help="Для маршрута через Ростов" />
-          <NumberField label="Доставка до Гуанчжоу, всего" value={product.deliveryToGuangzhouYuan} onChange={value => updateProduct(product.id, "deliveryToGuangzhouYuan", value)} unit="¥" help="Для маршрута через Южные ворота" />
-          <NumberField label="Пошлина по товару" value={product.dutyPercent} onChange={value => updateProduct(product.id, "dutyPercent", value)} unit="%" step="0.1" />
           <NumberField label="Длина одной штуки" value={product.lengthCm || ""} onChange={value => updateProduct(product.id, "lengthCm", value)} unit="см" />
           <NumberField label="Ширина одной штуки" value={product.widthCm || ""} onChange={value => updateProduct(product.id, "widthCm", value)} unit="см" />
           <NumberField label="Высота одной штуки" value={product.heightCm || ""} onChange={value => updateProduct(product.id, "heightCm", value)} unit="см" />
-          <label className="mc-field">
-            <span>Объём всей партии</span>
-            <output aria-live="polite">{batchVolumeM3(product) > 0 ? volumeFormat.format(batchVolumeM3(product)) + " м³" : "—"}</output>
-          </label>
-          <NumberField label="Вес брутто всей партии" value={product.grossWeightKg} onChange={value => updateProduct(product.id, "grossWeightKg", value)} unit="кг" />
-          <NumberField label="Вес нетто всей партии" value={product.netWeightKg} onChange={value => updateProduct(product.id, "netWeightKg", value)} unit="кг" help="Для распределения доп. расходов через Ростов" />
           <NumberField label="Вес нетто одной штуки" value={product.unitNetWeightG} onChange={value => updateProduct(product.id, "unitNetWeightG", value)} unit="г" help="Для расчёта маршрута через Южные ворота" />
         </div>
-      </article>)}
+        <div className="mc-field-grid mc-batch-totals" aria-label="Параметры партии">
+          <BatchOutput label="Объём партии" value={volume > 0 ? volumeFormat.format(volume) + " м³" : "—"} />
+          <BatchOutput label="Вес нетто партии" value={netWeight > 0 ? volumeFormat.format(netWeight) + " кг" : "—"} />
+          <BatchOutput label="Стоимость товара в юанях" value={volumeFormat.format(goodsYuan) + " ¥"} />
+          <BatchOutput label="Стоимость товара в рублях без доставки и надбавок" value={
+            <>Ростов: {money(goodsYuan * n(draft.route1.yuanToRubRate))} · Южные ворота: {money(goodsYuan * n(draft.route2.purchaseYuanToRubRate))}</>
+          } />
+        </div>
+        <details className="mc-formula-note">
+          <summary>Дополнительные параметры товара</summary>
+          <div className="mc-field-grid mc-batch-totals">
+            <NumberField label="Доставка до Саши, всего" value={product.deliveryToSashaYuan} onChange={value => updateProduct(product.id, "deliveryToSashaYuan", value)} unit="¥" help="Для маршрута через Ростов" />
+            <NumberField label="Доставка до Гуанчжоу, всего" value={product.deliveryToGuangzhouYuan} onChange={value => updateProduct(product.id, "deliveryToGuangzhouYuan", value)} unit="¥" help="Для маршрута через Южные ворота" />
+            <NumberField label="Пошлина по товару" value={product.dutyPercent} onChange={value => updateProduct(product.id, "dutyPercent", value)} unit="%" step="0.1" />
+            <NumberField label="Вес брутто всей партии" value={product.grossWeightKg} onChange={value => updateProduct(product.id, "grossWeightKg", value)} unit="кг" />
+          </div>
+        </details>
+      </article>;
+      })}
     </section>
 
     <div className="mc-routes-grid">
