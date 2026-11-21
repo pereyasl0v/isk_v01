@@ -109,5 +109,9 @@
 
 .forecast-period{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .forecast-period-dates{margin:0;text-align:right}
+.header-refresh{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .account-stock-date{white-space:nowrap}
-@media(max-width:680px){.forecast-period{align-items:flex-start}.forecast-period-dates{text-align:left}main>header:has(.account-stock-date){height:auto;min-height:60px;padding-block:8px}.header-actions:has(.account-stock-date){flex-wrap:wrap}.account-stock-date{order:1;flex-basis:100%;text-align:right}}
+@media(max-width:680px){.forecast-period{align-items:flex-start}.forecast-period-dates{text-align:left}}
+@media(max-width:760px){
+ main>header:has(.header-refresh){height:auto;min-height:60px;padding-block:8px;flex-wrap:wrap;gap:8px}
+}
