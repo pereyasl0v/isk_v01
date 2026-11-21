@@ -83,3 +83,9 @@ test("Rostov freight uses the entered dollar rate with a saved tariff",()=>{
   Object.assign(draft.route1,{freightRateRubPerM3:19000,usdToRubRate:100});
   assert.ok(Math.abs(calculatePreliminaryCost(draft).products[0].route1.freightToRostovRub-6000)<1e-8);
 });
+
+test("Rostov freight uses container price, dollar rate and usable volume",()=>{
+  const draft=sample();
+  Object.assign(draft.route1,{containerCostUsd:20000,usdToRubRate:100,containerVolumeM3:50});
+  assert.equal(calculatePreliminaryCost(draft).products[0].route1.freightToRostovRub,12000);
+});

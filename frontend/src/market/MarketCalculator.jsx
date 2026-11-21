@@ -3,7 +3,7 @@ import {
   Archive, Plus, Trash2, Save, RotateCcw, Search, X,
   Package, CheckCircle2, AlertCircle, ChevronDown,
 } from "lucide-react";
-import { DEFAULT_ROSTOV_USD_RATE, rostovFreightRateRubPerM3, batchNetWeightKg, batchVolumeM3, calculatePreliminaryCost, createDraft, createProduct, n } from "./preliminary-costing.mjs";
+import { DEFAULT_CONTAINER_VOLUME_M3, DEFAULT_ROSTOV_USD_RATE, rostovFreightRateRubPerM3, batchNetWeightKg, batchVolumeM3, calculatePreliminaryCost, createDraft, createProduct, n } from "./preliminary-costing.mjs";
 
 async function request(path, method = "GET", body) {
   const response = await fetch("/api" + path, {
@@ -122,10 +122,11 @@ export default function MarketCalculator() {
   const [loadingId, setLoadingId] = useState(null);
 
   const validProducts = draft.products.filter(product => product.name.trim() && n(product.quantity) >= 1);
+  const validContainerVolume = n(draft.route1.containerVolumeM3) > 0;
   const calculationDraft = useMemo(() => ({
     ...draft,
-    products: draft.products.filter(product => product.name.trim() && n(product.quantity) >= 1),
-  }), [draft]);
+    products: validContainerVolume ? draft.products.filter(product => product.name.trim() && n(product.quantity) >= 1) : [],
+  }), [draft, validContainerVolume]);
   const calculated = useMemo(() => calculatePreliminaryCost(calculationDraft), [calculationDraft]);
 
   const updateProduct = (id, key, value) => {
@@ -229,7 +230,16 @@ export default function MarketCalculator() {
     try {
       const result = await request("/preliminary-costs/" + encodeURIComponent(id));
       const legacyRates = result.data.yuanToRubRate == null;
-      setDraft({ ...result.data, yuanToRubRate: result.data.yuanToRubRate ?? result.data.route1.yuanToRubRate });
+      const route1 = result.data.route1;
+      setDraft({
+        ...result.data,
+        yuanToRubRate: result.data.yuanToRubRate ?? route1.yuanToRubRate,
+        route1: {
+          ...route1,
+          containerCostUsd: route1.containerCostUsd ?? route1.freightRateRubPerM3 * DEFAULT_CONTAINER_VOLUME_M3 / DEFAULT_ROSTOV_USD_RATE,
+          containerVolumeM3: route1.containerVolumeM3 ?? DEFAULT_CONTAINER_VOLUME_M3,
+        },
+      });
       setRecordId(result.id);
       setArchiveOpen(false);
       setNotice(legacyRates ? "Для обоих маршрутов применён сохранённый курс Ростова." : "Открыт сохранённый расчёт.");
@@ -264,7 +274,7 @@ export default function MarketCalculator() {
       </div>
       <div className="mc-header-actions">
         <button type="button" className="mc-button mc-button-light" onClick={openArchive}><Archive size={16} /> Архив расчётов</button>
-        <button type="button" className="mc-button mc-button-primary" onClick={save} disabled={saving || !validProducts.length}><Save size={16} /> {saving ? "Сохраняем…" : recordId ? "Сохранить изменения" : "Сохранить расчёт"}</button>
+        <button type="button" className="mc-button mc-button-primary" onClick={save} disabled={saving || !validProducts.length || !validContainerVolume}><Save size={16} /> {saving ? "Сохраняем…" : recordId ? "Сохранить изменения" : "Сохранить расчёт"}</button>
         <button type="button" className="mc-icon-button" onClick={reset} title="Новый расчёт" aria-label="Новый расчёт"><RotateCcw size={17} /></button>
       </div>
     </div>
@@ -326,8 +336,10 @@ export default function MarketCalculator() {
         </div>
         <div className="mc-field-grid">
           <NumberField label="Наценка к оплате товара" value={draft.route1.purchaseMarkupPercent} onChange={value => updateRoute("route1", "purchaseMarkupPercent", value)} unit="%" step="0.1" />
+          <NumberField label="Стоимость перевозки контейнера" value={draft.route1.containerCostUsd} onChange={value => updateRoute("route1", "containerCostUsd", value)} unit="$" />
+          <NumberField label="Полезный объём контейнера" value={draft.route1.containerVolumeM3} onChange={value => updateRoute("route1", "containerVolumeM3", value)} unit="м³" />
           <NumberField label="Курс доллара для Ростова" value={draft.route1.usdToRubRate ?? DEFAULT_ROSTOV_USD_RATE} onChange={value => updateRoute("route1", "usdToRubRate", value)} unit="₽ за $" />
-          <BatchOutput label="Доставка до Ростова, ₽/м³" value={money(rostovFreightRateRubPerM3(draft.route1))} />
+          <BatchOutput label="Доставка до Ростова, ₽/м³" value={validContainerVolume ? money(rostovFreightRateRubPerM3(draft.route1)) : "—"} />
           <NumberField label="Доля доставки под пошлину" value={draft.route1.dutyableFreightPercent} onChange={value => updateRoute("route1", "dutyableFreightPercent", value)} unit="%" step="0.1" />
           <NumberField label="НДС" value={draft.route1.vatPercent} onChange={value => updateRoute("route1", "vatPercent", value)} unit="%" step="0.1" />
           <NumberField label="Мой налог" value={draft.route1.ownTaxPercent} onChange={value => updateRoute("route1", "ownTaxPercent", value)} unit="%" step="0.1" help="По формуле из файла «2»" />
@@ -400,7 +412,7 @@ export default function MarketCalculator() {
         </p>}
         <Breakdown product={product} />
       </article>)}
-      {!calculated.products.length && <div className="mc-empty-results"><Package size={27} /><strong>Добавь товары, чтобы увидеть сравнение</strong><span>Результаты пересчитываются автоматически при изменении параметров.</span></div>}
+      {!calculated.products.length && <div className="mc-empty-results"><Package size={27} /><strong>{validContainerVolume ? "Добавь товары, чтобы увидеть сравнение" : "Укажите полезный объём контейнера больше нуля"}</strong><span>Результаты пересчитываются автоматически при изменении параметров.</span></div>}
     </section>
 
     {archiveOpen && <div className="mc-archive-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setArchiveOpen(false); }}>

@@ -1,10 +1,12 @@
 export const DEFAULT_ROSTOV_USD_RATE = 95;
+export const DEFAULT_CONTAINER_VOLUME_M3 = 65;
+const DEFAULT_CONTAINER_COST_USD = 17000;
 
 export const DEFAULT_ROUTE1 = {
   yuanToRubRate: 14.2,
   purchaseMarkupPercent: 7,
   // Source workbook: 17,000 * 95 / 65 * product volume.
-  freightRateRubPerM3: 17000 * DEFAULT_ROSTOV_USD_RATE / 65,
+  freightRateRubPerM3: DEFAULT_CONTAINER_COST_USD * DEFAULT_ROSTOV_USD_RATE / DEFAULT_CONTAINER_VOLUME_M3,
   dutyableFreightPercent: 60,
   vatPercent: 22,
   ownTaxPercent: 20,
@@ -51,7 +53,8 @@ export const createProduct = () => ({
 export const createDraft = () => ({
   yuanToRubRate: DEFAULT_ROUTE1.yuanToRubRate,
   products: [createProduct()],
-  route1: { ...DEFAULT_ROUTE1, usdToRubRate: DEFAULT_ROSTOV_USD_RATE },
+  route1: { ...DEFAULT_ROUTE1, usdToRubRate: DEFAULT_ROSTOV_USD_RATE,
+    containerCostUsd: DEFAULT_CONTAINER_COST_USD, containerVolumeM3: DEFAULT_CONTAINER_VOLUME_M3 },
   route2: { ...DEFAULT_ROUTE2 },
 });
 
@@ -74,6 +77,10 @@ export function batchNetWeightKg(product) {
 
 export function rostovFreightRateRubPerM3(route) {
   const rate = route.usdToRubRate ?? DEFAULT_ROSTOV_USD_RATE;
+  if (route.containerCostUsd != null) {
+    const volume = n(route.containerVolumeM3 ?? DEFAULT_CONTAINER_VOLUME_M3);
+    return volume > 0 ? n(route.containerCostUsd) * n(rate) / volume : 0;
+  }
   return n(route.freightRateRubPerM3) * (n(rate) / DEFAULT_ROSTOV_USD_RATE);
 }
 

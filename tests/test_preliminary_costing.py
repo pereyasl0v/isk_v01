@@ -67,6 +67,16 @@ def sample_draft():
 
 
 class PreliminaryCostCalculationTests(unittest.TestCase):
+    def test_rostov_freight_uses_container_parameters(self):
+        draft = sample_draft()
+        draft["route1"].update(containerCostUsd=20_000, usdToRubRate=100, containerVolumeM3=50)
+        clean = clean_preliminary_cost(draft)
+        self.assertEqual(clean["route1"]["containerVolumeM3"], 50)
+        self.assertEqual(calculate_preliminary_cost(clean)["products"][0]["route1"]["freightToRostovRub"], 12_000)
+        draft["route1"]["containerVolumeM3"] = 0
+        with self.assertRaises(ValueError):
+            clean_preliminary_cost(draft)
+
     def test_rostov_dollar_rate_rescales_saved_freight_tariff(self):
         draft = sample_draft()
         draft["route1"]["freightRateRubPerM3"] = 19_000

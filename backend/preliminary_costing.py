@@ -7,12 +7,14 @@ from typing import Any
 
 
 DEFAULT_ROSTOV_USD_RATE = 95
+DEFAULT_CONTAINER_VOLUME_M3 = 65
+DEFAULT_CONTAINER_COST_USD = 17000
 
 DEFAULT_ROUTE1 = {
     "yuanToRubRate": 14.2,
     "purchaseMarkupPercent": 7.0,
     # The workbook formula is 17,000 * 95 / 65 * product volume.
-    "freightRateRubPerM3": 17000 * DEFAULT_ROSTOV_USD_RATE / 65,
+    "freightRateRubPerM3": DEFAULT_CONTAINER_COST_USD * DEFAULT_ROSTOV_USD_RATE / DEFAULT_CONTAINER_VOLUME_M3,
     "dutyableFreightPercent": 60.0,
     "vatPercent": 22.0,
     "ownTaxPercent": 20.0,
@@ -113,6 +115,12 @@ def clean_preliminary_cost(raw: Any) -> dict:
     }
     if "usdToRubRate" in route1_raw:
         route1["usdToRubRate"] = _number(route1_raw["usdToRubRate"], "Курс доллара")
+    if "containerCostUsd" in route1_raw or "containerVolumeM3" in route1_raw:
+        route1["containerCostUsd"] = _number(route1_raw.get("containerCostUsd"), "Стоимость контейнера")
+        volume = _number(route1_raw.get("containerVolumeM3"), "Полезный объём контейнера")
+        if volume <= 0:
+            raise ValueError("Укажите полезный объём контейнера больше нуля.")
+        route1["containerVolumeM3"] = volume
     route1["allocationMethod"] = str(route1_raw.get("allocationMethod") or "volume")
     if route1["allocationMethod"] not in ("volume", "weight", "quantity", "value"):
         raise ValueError("Неизвестный способ распределения дополнительных расходов для маршрута через Ростов.")
@@ -172,7 +180,10 @@ def calculate_preliminary_cost(data: dict) -> dict:
     r1 = data["route1"]
     r2 = data["route2"]
     usd_rate = r1.get("usdToRubRate", DEFAULT_ROSTOV_USD_RATE)
-    freight_rate = r1["freightRateRubPerM3"] * (usd_rate / DEFAULT_ROSTOV_USD_RATE)
+    if "containerCostUsd" in r1:
+        freight_rate = r1["containerCostUsd"] * usd_rate / r1["containerVolumeM3"]
+    else:
+        freight_rate = r1["freightRateRubPerM3"] * (usd_rate / DEFAULT_ROSTOV_USD_RATE)
     common_rate = data.get("yuanToRubRate")
     warnings = []
 
