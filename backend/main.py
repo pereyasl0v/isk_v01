@@ -296,6 +296,34 @@ def purchase_shipments_get(shipment_id:str,request:Request):
     return shipment
 
 
+@app.put('/api/purchase-shipments/{shipment_id}')
+def purchase_shipments_update(shipment_id:str,body:PreliminaryCostBody,request:Request):
+    auth=authenticated(request)
+    try:
+        data=clean_preliminary_cost(body.data)
+        if "selectedRoute" not in data:
+            raise ValueError("Выберите маршрут доставки.")
+        name=body.name.strip()
+        if not name:
+            raise ValueError("Укажите название поставки.")
+        updated=store.update_purchase_shipment(
+            auth["user_id"],shipment_id,name,data,calculate_preliminary_cost(data),
+        )
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from None
+    if not updated:
+        raise HTTPException(404,"Поставка не найдена.")
+    return {"id": shipment_id}
+
+
+@app.delete('/api/purchase-shipments/{shipment_id}')
+def purchase_shipments_delete(shipment_id:str,request:Request):
+    auth=authenticated(request)
+    if not store.delete_purchase_shipment(auth["user_id"],shipment_id):
+        raise HTTPException(404,"Поставка не найдена.")
+    return {"ok":True}
+
+
 @app.post('/api/purchase-shipments',status_code=201)
 def purchase_shipments_create(body:PurchaseShipmentBody,request:Request):
     auth=authenticated(request)

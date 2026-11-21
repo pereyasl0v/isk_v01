@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Archive, Plus, Trash2, Save, RotateCcw, Search, X,
   Package, AlertCircle, ChevronDown,
@@ -88,8 +88,10 @@ function Breakdown({ product, route, showProductTotals }) {
   </details>;
 }
 
-export default function MarketCalculator() {
-  const [draft, setDraft] = useState(() => createDraft());
+export default function MarketCalculator({ shipment } = {}) {
+  const [draft, setDraft] = useState(() => shipment?.data ?? createDraft());
+  const [shipmentName, setShipmentName] = useState(shipment?.name ?? "");
+  const shipmentPath = shipment ? "/purchase-shipments/" + encodeURIComponent(shipment.id) : null;
   const [recordId, setRecordId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [formingShipment, setFormingShipment] = useState(false);
@@ -169,7 +171,12 @@ export default function MarketCalculator() {
     setError("");
     setNotice("");
     try {
-      const body = { name: title, data: draft };
+      const body = { name: shipment ? shipmentName.trim() : title, data: draft };
+      if (shipmentPath) {
+        await request(shipmentPath, "PUT", body);
+        navigate(shipmentPath, { replace: true });
+        return;
+      }
       const result = recordId
         ? await request("/preliminary-costs/" + encodeURIComponent(recordId), "PUT", body)
         : await request("/preliminary-costs", "POST", body);
@@ -293,13 +300,15 @@ export default function MarketCalculator() {
   return <div className="mc-page">
     <div className="mc-header">
       <div className="mc-heading-copy">
-        <h1>Предварительная себестоимость</h1>
+        <h1>{shipment ? "Редактирование поставки" : "Предварительная себестоимость"}</h1>
         {recordId && <span className="mc-record-state">Редактируется запись из архива</span>}
       </div>
       <div className="mc-header-actions">
-        <button type="button" className="mc-button mc-button-light" onClick={openArchive}><Archive size={16} /> Архив расчётов</button>
-        <button type="button" className="mc-button mc-button-primary" onClick={save} disabled={saving || formingShipment || !validProducts.length || !route || !validContainerVolume}><Save size={16} /> {saving ? "Сохраняем…" : recordId ? "Сохранить изменения" : "Сохранить расчёт"}</button>
-        <button type="button" className="mc-icon-button" onClick={reset} title="Новый расчёт" aria-label="Новый расчёт"><RotateCcw size={17} /></button>
+        {shipmentPath
+          ? <Link className="mc-button mc-button-light" to={shipmentPath}>Отмена</Link>
+          : <button type="button" className="mc-button mc-button-light" onClick={openArchive}><Archive size={16} /> Архив расчётов</button>}
+        <button type="button" className="mc-button mc-button-primary" onClick={save} disabled={saving || formingShipment || !validProducts.length || !route || !validContainerVolume || (shipment && !shipmentName.trim())}><Save size={16} /> {saving ? "Сохраняем…" : shipment || recordId ? "Сохранить изменения" : "Сохранить расчёт"}</button>
+        {!shipment && <button type="button" className="mc-icon-button" onClick={reset} title="Новый расчёт" aria-label="Новый расчёт"><RotateCcw size={17} /></button>}
       </div>
     </div>
 
@@ -307,6 +316,9 @@ export default function MarketCalculator() {
     {notice && <div className="mc-alert mc-alert-success" role="status">{notice}</div>}
 
     <section className="mc-panel">
+      {shipment && <div className="mc-route-select mb-4">
+        <TextField label="Название поставки" value={shipmentName} onChange={setShipmentName} maxLength={160} />
+      </div>}
       <label className="mc-field mc-route-select">
         <span>Маршрут доставки</span>
         <select value={route} onChange={event => setDraft(current => ({ ...current, selectedRoute: event.target.value }))}>
@@ -409,7 +421,7 @@ export default function MarketCalculator() {
         {multipleProducts && <p className="mc-unit-difference">{money(product[route].costPerUnit)} / шт.</p>}
         <Breakdown product={product} route={route} showProductTotals={multipleProducts} />
       </article>)}
-      {result && <div className="mc-header-actions mt-4">
+      {result && !shipment && <div className="mc-header-actions mt-4">
         <button type="button" className="mc-button mc-button-primary" disabled={saving || formingShipment} onClick={formShipment}>
           <Package size={16} /> {formingShipment ? "Формируем…" : "Сформировать поставку"}
         </button>

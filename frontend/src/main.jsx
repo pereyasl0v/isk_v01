@@ -364,6 +364,7 @@ function App(){
      <Route path="/market-calculator" element={<MarketPage/>}/>
      <Route path="/purchase-shipments" element={<PurchaseShipments/>}/>
      <Route path="/purchase-shipments/:shipmentId" element={<PurchaseShipments/>}/>
+     <Route path="/purchase-shipments/:shipmentId/edit" element={<PurchaseShipments editing/>}/>
      <Route path="/products" element={<Navigate to="/" replace/>}/>
      <Route path="/stocks" element={<RequireAccount><Stocks/></RequireAccount>}/>
      <Route path="/history" element={<Navigate to="/stocks" replace/>}/>

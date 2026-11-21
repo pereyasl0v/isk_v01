@@ -248,6 +248,34 @@ class PreliminaryCostArchiveApiTests(unittest.TestCase):
         self.assertEqual(self.client.delete(calculation_url, headers=HEAD).status_code, 200)
         self.assertEqual(self.client.get(shipment_url).json(), snapshot)
 
+    def test_edit_and_delete_shipment_leave_calculation_untouched(self):
+        self.login(self.other, "other", "Other-Password-2026!")
+        draft = sample_draft()
+        draft["selectedRoute"] = "route1"
+        endpoint = "/api/purchase-shipments"
+        created = self.client.post(endpoint, headers=HEAD, json={
+            "request_id": "edit-shipment-test", "name": "Закупка", "data": draft,
+        })
+        self.assertEqual(created.status_code, 201, created.text)
+        reference = created.json()
+        shipment_url = f"{endpoint}/{reference['id']}"
+        calculation_url = f"/api/preliminary-costs/{reference['calculation_id']}"
+        original = self.client.get(calculation_url).json()
+        draft["selectedRoute"] = "route2"
+        draft["products"][0]["quantity"] = 10
+        body = {"name": "Изменённая поставка", "data": draft}
+        self.assertEqual(self.other.put(shipment_url, headers=HEAD, json=body).status_code, 404)
+        self.assertEqual(self.other.delete(shipment_url, headers=HEAD).status_code, 404)
+        self.assertEqual(self.client.put(shipment_url, headers=HEAD, json=body).status_code, 200)
+        updated = self.client.get(shipment_url).json()
+        self.assertEqual(updated["data"]["products"][0]["quantity"], 10)
+        self.assertEqual(list(updated["calculated"]["summary"]), ["route2"])
+        item, = self.client.get(endpoint).json()["items"]
+        self.assertEqual((item["name"], item["route"], item["quantity"]), (body["name"], "route2", 2110))
+        self.assertEqual(self.client.delete(shipment_url, headers=HEAD).status_code, 200)
+        self.assertEqual(self.client.get(shipment_url).status_code, 404)
+        self.assertEqual(self.client.get(calculation_url).json(), original)
+
     def test_save_search_edit_and_delete_archive_without_ozon_account(self):
         body = {"name": "Ноябрьская закупка", "data": sample_draft()}
         created = self.client.post("/api/preliminary-costs", headers=HEAD, json=body)

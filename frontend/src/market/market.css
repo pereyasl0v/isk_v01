@@ -171,3 +171,32 @@
 
 .mc .mc-route-select{max-width:420px}
 .mc .mc-single-route{grid-template-columns:minmax(0,1fr)}
+
+.shipments-page .shipment-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+.shipments-page .shipment-heading h1{margin:0;color:#20382b;font-size:clamp(23px,3vw,30px);line-height:1.2;overflow-wrap:anywhere}
+.shipments-page .shipment-back,.shipments-page .shipment-open{display:inline-flex;align-items:center;gap:6px;color:#22664c;font-weight:700}
+.shipments-page .shipment-back{margin-bottom:10px}
+.shipments-page .shipment-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,390px),1fr));gap:16px;list-style:none;padding:0;margin:0}
+.shipments-page .shipment-card,.shipments-page .shipment-detail,.shipments-page .shipment-empty{
+  border:1px solid #dce7e0;border-radius:14px;background:#fff;box-shadow:0 3px 14px #18352808;
+}
+.shipments-page .shipment-card{min-width:0;padding:18px}
+.shipments-page .shipment-card-heading{display:flex;align-items:flex-start;gap:12px}
+.shipments-page .shipment-icon{display:grid;place-items:center;flex:0 0 40px;height:40px;border-radius:10px;background:#e9f3ed;color:#256c4d}
+.shipments-page .shipment-title{color:#20382b;font-size:16px;font-weight:750;overflow-wrap:anywhere}
+.shipments-page .shipment-title:hover{text-decoration:underline}
+.shipments-page .shipment-card-heading p{margin:4px 0 0;color:#5d7165}
+.shipments-page .shipment-stats{display:flex;gap:12px 24px;flex-wrap:wrap;margin:14px 0;padding:12px;border-radius:10px;background:#f2f7f4}
+.shipments-page .shipment-stats dt,.shipments-page .shipment-date{color:#50685b;font-size:12px}
+.shipments-page .shipment-stats dd{margin:4px 0 0;color:#204330;font-size:16px;font-weight:750}
+.shipments-page .shipment-date{display:flex;align-items:center;gap:7px}
+.shipments-page .shipment-card-footer,.shipments-page .shipment-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.shipments-page .shipment-card-footer{justify-content:space-between;margin-top:14px;padding-top:14px;border-top:1px solid #e5ede8}
+.shipments-page .shipment-delete{background:#fff;border-color:#f0d6d6;color:#9e2929}
+.shipments-page .shipment-delete:hover:not(:disabled){background:#fff0f0}
+.shipments-page .shipment-detail{overflow:hidden;padding:18px}
+.shipments-page .shipment-detail-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.shipments-page .shipment-detail-summary .shipment-date + .shipment-date{margin-top:8px}
+.shipments-page .shipment-empty{padding:32px;text-align:center;color:#50685b}
+.shipments-page .shipment-empty svg{margin:0 auto 8px;color:#256c4d}
+.shipments-page .shipment-empty h2{color:#20382b}

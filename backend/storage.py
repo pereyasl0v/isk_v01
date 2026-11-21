@@ -436,11 +436,33 @@ class Store:
     def list_purchase_shipments(self,user_id):
         with self.db() as c:
             rows=c.execute(
-                """SELECT id,name,created_at FROM purchase_shipments
+                """SELECT id,name,created_at,payload FROM purchase_shipments
                    WHERE user_id=? ORDER BY created_at DESC,id DESC""",
                 (str(user_id),),
             ).fetchall()
-        return [{"id":row[0],"name":row[1],"created_at":row[2]} for row in rows]
+        items=[]
+        for shipment_id,name,created_at,payload in rows:
+            snapshot=self._decode_payload(payload)
+            route=snapshot["data"]["selectedRoute"]
+            summary=snapshot["calculated"]["summary"][route]
+            items.append({"id":shipment_id,"name":name,"created_at":created_at,
+                          "route":route,"quantity":summary["totalQuantity"],"total":summary["totalRub"]})
+        return items
+
+    def update_purchase_shipment(self,user_id,shipment_id,name,data,calculated):
+        payload=self._encode_payload({"data":data,"calculated":calculated})
+        with self.db() as c:
+            return c.execute(
+                "UPDATE purchase_shipments SET name=?,payload=? WHERE user_id=? AND id=?",
+                (name,payload,str(user_id),str(shipment_id)),
+            ).rowcount == 1
+
+    def delete_purchase_shipment(self,user_id,shipment_id):
+        with self.db() as c:
+            return c.execute(
+                "DELETE FROM purchase_shipments WHERE user_id=? AND id=?",
+                (str(user_id),str(shipment_id)),
+            ).rowcount == 1
 
     def get_purchase_shipment(self,user_id,shipment_id):
         with self.db() as c:
