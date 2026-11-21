@@ -29,9 +29,8 @@ const formatDate = value => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
 };
-const defaultTitle = products => {
+const calculationTitle = products => {
   const names = products.map(item => item.name.trim()).filter(Boolean);
-  if (!names.length) return "Предварительный расчёт";
   return (names.slice(0, 2).join(", ") + (names.length > 2 ? " +" + (names.length - 2) : "")).slice(0, 150);
 };
 
@@ -111,7 +110,6 @@ function Breakdown({ product }) {
 
 export default function MarketCalculator() {
   const [draft, setDraft] = useState(() => createDraft());
-  const [calculationName, setCalculationName] = useState("");
   const [recordId, setRecordId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
@@ -166,7 +164,6 @@ export default function MarketCalculator() {
 
   const reset = () => {
     setDraft(createDraft());
-    setCalculationName("");
     setRecordId(null);
     setNotice("Создан новый расчёт. Предыдущая сохранённая запись осталась в архиве.");
     setError("");
@@ -181,7 +178,7 @@ export default function MarketCalculator() {
       setError("Заполни наименование и количество во всех строках или удали пустые товары.");
       return;
     }
-    const title = calculationName.trim() || defaultTitle(validProducts);
+    const title = calculationTitle(validProducts);
     setSaving(true);
     setError("");
     setNotice("");
@@ -191,7 +188,6 @@ export default function MarketCalculator() {
         ? await request("/preliminary-costs/" + encodeURIComponent(recordId), "PUT", body)
         : await request("/preliminary-costs", "POST", body);
       setRecordId(result.id);
-      setCalculationName(result.name);
       setNotice(recordId ? "Изменения сохранены в архиве расчётов." : "Расчёт сохранён в архиве.");
     } catch (requestError) {
       setError(requestError.message || "Не удалось сохранить расчёт.");
@@ -234,7 +230,6 @@ export default function MarketCalculator() {
       const result = await request("/preliminary-costs/" + encodeURIComponent(id));
       const legacyRates = result.data.yuanToRubRate == null;
       setDraft({ ...result.data, yuanToRubRate: result.data.yuanToRubRate ?? result.data.route1.yuanToRubRate });
-      setCalculationName(result.name);
       setRecordId(result.id);
       setArchiveOpen(false);
       setNotice(legacyRates ? "Для обоих маршрутов применён сохранённый курс Ростова." : "Открыт сохранённый расчёт.");
@@ -265,11 +260,7 @@ export default function MarketCalculator() {
     <div className="mc-header">
       <div className="mc-heading-copy">
         <h1>Предварительная себестоимость</h1>
-        <p>Рассчитай реальную стоимость товара в Санкт-Петербурге до того, как оформлять заказ поставщику.</p>
-        <div className="mc-title-line">
-          <TextField label="Название расчёта" value={calculationName} onChange={setCalculationName} placeholder={defaultTitle(validProducts)} maxLength={160} />
-          {recordId && <span className="mc-record-state">Редактируется запись из архива</span>}
-        </div>
+        {recordId && <span className="mc-record-state">Редактируется запись из архива</span>}
       </div>
       <div className="mc-header-actions">
         <button type="button" className="mc-button mc-button-light" onClick={openArchive}><Archive size={16} /> Архив расчётов</button>

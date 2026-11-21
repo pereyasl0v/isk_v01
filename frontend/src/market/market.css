@@ -4,7 +4,6 @@
 .mc .mc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin:2px 0 20px}
 .mc .mc-heading-copy{min-width:0;flex:1}
 .mc .mc-header h1{margin:0;color:#20382b;font-size:27px;font-weight:760;letter-spacing:-.65px;line-height:1.2}
-.mc .mc-header p{max-width:680px;margin:8px 0 0;color:#718177;font-size:12px;line-height:1.6}
 .mc .mc-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;flex:0 0 auto;padding-top:4px}
 .mc .mc-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:39px;padding:9px 13px;border:1px solid #d7e2da;border-radius:9px;background:#174f40;color:#fff;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;transition:background .15s,border-color .15s}
 .mc .mc-button:hover:not(:disabled){background:#103e32}
@@ -14,8 +13,6 @@
 .mc .mc-button-primary{border-color:#174f40;background:#174f40;color:#fff}
 .mc .mc-icon-button,.mc .mc-remove-button,.mc .mc-archive-close{display:inline-flex;align-items:center;justify-content:center;width:39px;height:39px;padding:0;border:1px solid #dfe7e1;border-radius:9px;background:#fff;color:#728178;cursor:pointer}
 .mc .mc-icon-button:hover,.mc .mc-remove-button:hover{background:#f4f7f5;color:#365743}
-.mc .mc-title-line{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;max-width:620px;margin-top:15px}
-.mc .mc-title-line>.mc-field{flex:1;min-width:240px;max-width:430px}
 .mc .mc-record-state{padding:0 0 10px;color:#3d8057;font-size:10px;font-weight:700}
 .mc .mc-alert{display:flex;align-items:flex-start;gap:9px;margin:0 0 14px;padding:11px 13px;border:1px solid;border-radius:9px;font-size:12px;line-height:1.55}
 .mc .mc-alert svg{flex:0 0 auto;margin-top:1px}
@@ -127,7 +124,6 @@
  .mc .mc-header h1{font-size:23px}
  .mc .mc-header-actions{display:grid;grid-template-columns:1fr 1fr}
  .mc .mc-header-actions .mc-icon-button{grid-column:span 2;width:100%}
- .mc .mc-title-line>.mc-field{min-width:100%}
  .mc .mc-panel,.mc .mc-results-section{padding:13px}
  .mc .mc-section-heading{align-items:flex-start}
  .mc .mc-section-heading p,.mc .mc-results-heading p{max-width:280px}
