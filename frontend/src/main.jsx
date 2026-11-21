@@ -1,7 +1,8 @@
+import ScrollTable from "./ScrollTable";
 import React, {useEffect, useState, createContext, useContext, useRef} from 'react';
 import {createRoot} from 'react-dom/client';
-import {BrowserRouter, NavLink, Routes, Route, Navigate, useNavigate} from 'react-router-dom';
-import {Boxes, LayoutDashboard, Package, Warehouse, Truck, Calculator, Plug, ListChecks, RefreshCw, ArrowUpRight, Search, Download, CircleCheck, AlertCircle, ArrowRight, LogOut, BarChart3, Plus, Users, ShieldCheck, Barcode} from 'lucide-react';
+import {BrowserRouter, NavLink, Routes, Route, Navigate, useLocation, useNavigate} from 'react-router-dom';
+import {Boxes, LayoutDashboard, Package, Warehouse, Truck, Calculator, Plug, ListChecks, RefreshCw, ArrowUpRight, Search, Download, CircleCheck, AlertCircle, ArrowRight, LogOut, BarChart3, Plus, Users, ShieldCheck, Barcode, Menu, X} from 'lucide-react';
 import './style.css';
 import Replenishment from './Replenishment';
 import MarketPage from './market';
@@ -11,6 +12,7 @@ import ProductDetails from './ProductDetails';
 import BarcodeGenerator from './BarcodeGenerator';
 import {statusLabel,roleLabel,groupStocks} from './presentation';
 import {salesChartWindow,salesRangeTotals,salesTickIndexes} from './sales-chart-range.mjs';
+import './mobile.css';
 
 const Context=createContext(null);
 const nf=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
@@ -23,16 +25,16 @@ async function api(path,body){
 function useApp(){return useContext(Context)}
 function Notice({children}){return <div className="notice"><AlertCircle size={18}/><span>{children}</span></div>}
 function Empty({text='Пока нет данных',help='Подключите кабинет и выполните загрузку.'}){return <div className="empty"><Boxes size={34}/><h3>{text}</h3><p>{help}</p></div>}
-function Table({columns,rows,empty='Нет строк для отображения',onRowClick,pageSize=30}){
+function Table({columns,rows,empty='Нет строк для отображения',onRowClick,pageSize=30,label="Таблица"}){
  const [page,setPage]=useState(0);const pages=Math.ceil(rows.length/pageSize);const safe=Math.min(page,Math.max(pages-1,0));
- return <><div className="table-scroll"><table><thead><tr>{columns.map(c=><th key={c[0]}>{c[1]}</th>)}</tr></thead><tbody>{rows.slice(safe*pageSize,safe*pageSize+pageSize).map((r,i)=><tr key={i} {...(onRowClick?{className:"product-clickable-row",role:"button",tabIndex:0,onClick:()=>onRowClick(r),onKeyDown:e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onRowClick(r)}}}:{})}>{columns.map(c=><td key={c[0]}>{c[2]?c[2](r[c[0]],r):String(r[c[0]]??'—')}</td>)}</tr>)}</tbody></table></div>{!rows.length?<Empty text={empty} help="Проверьте загрузку и выбранные фильтры."/>:<div className="pagination"><span>{num(rows.length)} строк · страница {safe+1} из {pages}</span><div><button disabled={safe===0} onClick={()=>setPage(safe-1)}>Назад</button><button disabled={safe>=pages-1} onClick={()=>setPage(safe+1)}>Далее</button></div></div>}</>
+ return <><ScrollTable label={label} stickyColumn={columns.length > 4}><table><thead><tr>{columns.map(c=><th key={c[0]}>{c[1]}</th>)}</tr></thead><tbody>{rows.slice(safe*pageSize,safe*pageSize+pageSize).map((r,i)=><tr key={i} {...(onRowClick?{className:"product-clickable-row",role:"button",tabIndex:0,onClick:()=>onRowClick(r),onKeyDown:e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onRowClick(r)}}}:{})}>{columns.map(c=><td key={c[0]}>{c[2]?c[2](r[c[0]],r):String(r[c[0]]??'—')}</td>)}</tr>)}</tbody></table></ScrollTable>{!rows.length?<Empty text={empty} help="Проверьте загрузку и выбранные фильтры."/>:<div className="pagination"><span>{num(rows.length)} строк · страница {safe+1} из {pages}</span><div><button disabled={safe===0} onClick={()=>setPage(safe-1)}>Назад</button><button disabled={safe>=pages-1} onClick={()=>setPage(safe+1)}>Далее</button></div></div>}</>
 }
 function Filter({value,set,placeholder='Поиск по названию, артикулу или SKU'}){return <label className="search"><Search size={17}/><input aria-label="Поиск" value={value} onChange={e=>set(e.target.value)} placeholder={placeholder}/></label>}
 function Card({label,value,note,icon:Icon=Package}){return <div className="metric"><div className="metric-top"><span>{label}</span><Icon size={19}/></div><strong>{num(value)}</strong><small>{note}</small></div>}
 function Overview(){
  const {inv,state,act,sales}=useApp();const s=inv?.summary;
  return <><div className="overview-heading"><div><h1>Обзор кабинета</h1><p className="muted mt-2">Продажи и остатки Ozon</p></div></div>
- <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек"/></div>
+ <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6 overview-metrics"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек"/></div>
  <SalesHistoryChart data={sales} state={state} act={act} inv={inv}/>
  {inv?.warning&&<Notice>{inv.warning}</Notice>}
  <div className="mt-5"><ProductCatalog/></div></>
@@ -43,15 +45,17 @@ function SalesHistoryChart({data,state,act,inv}){
  const [sku,setSku]=useState('all');
  const [selectedRange,setSelectedRange]=useState(null);
  const selectionStart=useRef(null);
+ const [chartWidth,setChartWidth]=useState(960);
  const chartRef=useRef(null);
+ const hasSelection=selectedRange!==null;
  useEffect(()=>{
-  if(!selectedRange)return;
+  if(!hasSelection)return;
   function clearOutside(event){
    if(!chartRef.current?.contains(event.target))setSelectedRange(null);
   }
   document.addEventListener('click',clearOutside,true);
   return ()=>document.removeEventListener('click',clearOutside,true);
- },[selectedRange]);
+ },[hasSelection]);
  const pendingPeriodSync=useRef(null);
  // Use the same N completed Moscow dates as Digitization, plus today.
  // Filtering by dates (not the last N rows) also detects incomplete old caches.
@@ -78,10 +82,20 @@ function SalesHistoryChart({data,state,act,inv}){
    delivered_units:day.delivered_units===null||(day.delivery_partial&&selected?.delivered_units==null)?null:(selected?.delivered_units??0),
    delivery_partial:Boolean(day.delivery_partial)};
  });
+ const hasPoints=points.length>0;
+ useEffect(()=>{
+  if(!hasPoints)return;
+  const chart=chartRef.current;
+  const observer=new ResizeObserver(([entry])=>setChartWidth(Math.round(entry.contentRect.width)||960));
+  observer.observe(chart);
+  return()=>observer.disconnect();
+ },[hasPoints]);
  const values=points.flatMap(p=>[Number(p.ordered_units||0),...(data?.delivered_available&&p.delivered_units!==null?[Number(p.delivered_units)]:[])]);
  const max=Math.max(5,Math.ceil(Math.max(1,...values)/5)*5);
  const min=Math.min(0,Math.floor(Math.min(0,...values)/5)*5);
- const width=960,height=235,left=14,right=37,top=24,bottom=38,plotWidth=width-left-right,plotHeight=height-top-bottom;
+ const compactChart=chartWidth<710;
+ const width=compactChart?chartWidth:960;
+ const height=compactChart?206:235,left=14,right=37,top=24,bottom=38,plotWidth=width-left-right,plotHeight=height-top-bottom;
  const x=index=>left+(points.length<=1?plotWidth/2:index*plotWidth/(points.length-1));
  const y=value=>top+plotHeight-((Number(value||0)-min)/(max-min))*plotHeight;
  const smoothPath=items=>{
@@ -109,7 +123,7 @@ function SalesHistoryChart({data,state,act,inv}){
   const line=smoothPath(segment),a=x(segment[0].index),b=x(segment[segment.length-1].index);
   return {line,area:line+' L '+b+' '+y(0)+' L '+a+' '+y(0)+' Z'};
  });
- const tickIndexes=salesTickIndexes(points.length);
+ const tickIndexes=salesTickIndexes(points.length,compactChart?Math.max(2,Math.floor(plotWidth/42)):14);
  const months=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
  const fmtDay=value=>value?Number(value.slice(8,10))+' '+months[Number(value.slice(5,7))-1]:'—';
  const fmtTick=value=>value?value.slice(8,10):'—';
@@ -129,27 +143,27 @@ function SalesHistoryChart({data,state,act,inv}){
   return Math.max(0,Math.min(points.length-1,Math.round((px-left)/plotWidth*(points.length-1))));
  };
  const startSelection=event=>{
-  if(!points.length||(event.pointerType==='mouse'&&event.button!==0))return;
+  if(!points.length||!event.isPrimary||(event.pointerType==='mouse'&&event.button!==0))return;
   const bounds=event.currentTarget.getBoundingClientRect();
   if(!bounds.height)return;
   const py=(event.clientY-bounds.top)/bounds.height*height;
   if(py<top-8||py>top+plotHeight+12)return;
   const index=pointerIndex(event);
-  selectionStart.current=index;
+  selectionStart.current={index,pointerId:event.pointerId,previousRange:selectedRange};
   setSelectedRange([points[index].date,points[index].date]);
   event.currentTarget.setPointerCapture?.(event.pointerId);
  };
  const moveSelection=event=>{
-  if(selectionStart.current===null)return;
+  if(selectionStart.current?.pointerId!==event.pointerId)return;
   const index=pointerIndex(event);
-  const start=points[selectionStart.current]?.date;
+  const start=points[selectionStart.current.index]?.date;
   if(start)setSelectedRange([start,points[index].date]);
   setHovered(index);
  };
  const finishSelection=event=>{
-  if(selectionStart.current===null)return;
+  if(selectionStart.current?.pointerId!==event.pointerId)return;
   const index=pointerIndex(event);
-  const start=points[selectionStart.current]?.date;
+  const start=points[selectionStart.current.index]?.date;
   if(start)setSelectedRange([start,points[index].date]);
   selectionStart.current=null;
   setHovered(null);
@@ -167,7 +181,7 @@ function SalesHistoryChart({data,state,act,inv}){
   {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает заказы и историю доставок из Ozon Seller API и Ozon Push."/>:<>
     <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.delivered_available&&<span><i className="delivered"/>{data.delivery_label||'Доставлено'}</span>}<span className="sales-range-hint">Выделите период на графике для подсчёта итогов</span></div>
    <div className="sales-chart-wrap" ref={chartRef}>
-    {hoveredPoint&&<div className="sales-chart-tooltip" style={{left:`${Math.max(16,Math.min(84,x(hovered)/width*100))}%`}}>
+    {hoveredPoint&&<div className="sales-chart-tooltip" style={{left:compactChart?"50%":`${Math.max(16,Math.min(84,x(hovered)/width*100))}%`}}>
      <strong>{fmtDay(hoveredPoint.date)}</strong>
      <div><span><i className="ordered"/>Заказано</span><b>{num(hoveredPoint.ordered_units)} шт. · {num(hoveredPoint.ordered_revenue)} ₽</b></div>
      {data?.delivered_available&&<div><span><i className="delivered"/>{data.delivery_label||'Доставлено'}</span><b>{hoveredPoint.delivered_units===null?'Нет данных':num(hoveredPoint.delivered_units)+' шт.'}{hoveredPoint.delivery_partial?' · неполные данные':''}</b></div>}
@@ -175,7 +189,12 @@ function SalesHistoryChart({data,state,act,inv}){
     <svg className="sales-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img"
      aria-label="График заказов по дням: проведите по графику для выбора диапазона"
      onPointerDown={startSelection} onPointerMove={moveSelection}
-     onPointerUp={finishSelection} onPointerCancel={()=>{selectionStart.current=null;setHovered(null)}}>
+     onPointerUp={finishSelection} onPointerCancel={event=>{
+      if(selectionStart.current?.pointerId!==event.pointerId)return;
+      setSelectedRange(selectionStart.current.previousRange);
+      selectionStart.current=null;
+      setHovered(null);
+     }}>
      {[min,(min+max)/2,max].map(value=><g key={value}><line x1={left} x2={width-right} y1={y(value)} y2={y(value)} stroke="#d8e2ed" strokeDasharray="2 5" strokeWidth="1"/>{(value!==0||min<0)&&<text x={width-right+8} y={y(value)+4} textAnchor="start" fontSize="12" fill="#8192a4">{Math.round(value)}</text>}</g>)}
      {selectedTotal&&<rect x={rangeBandLeft} y={top} width={Math.max(2,rangeBandRight-rangeBandLeft)} height={plotHeight} rx="4" fill="#168cf0" fillOpacity=".1" stroke="#168cf0" strokeOpacity=".45" strokeDasharray="4 4" pointerEvents="none"/>}
      <defs><linearGradient id="ozon-delivery-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9bd7ff" stopOpacity=".52"/><stop offset="100%" stopColor="#cceaff" stopOpacity=".20"/></linearGradient></defs>
@@ -211,7 +230,7 @@ function ProductCatalog(){
  return <><section className="panel">
   <div className="panel-title"><h3>Каталог товаров</h3><span className="badge">{rows.length} карточек</span></div>
   <Filter value={q} set={setQ} placeholder="Поиск по названию, артикулу или коду товара"/>
-  <Table rows={rows} onRowClick={setSelected} columns={[
+  <Table label="Каталог товаров" rows={rows} onRowClick={setSelected} columns={[
    ["name","Название"],
    ["id","Артикул",(value,row)=>row.sku
     ? <a href={`https://www.ozon.ru/product/${encodeURIComponent(String(row.sku))}/`}
@@ -234,7 +253,7 @@ function Stocks(){
   .filter(g=>g.visible.length&&[g.name,g.offer,...g.skus,...g.visible.map(r=>`${r.warehouse_name||''} ${r.warehouse_id}`)].join(' ').toLowerCase().includes(q.toLowerCase()));
  return <div className="flex flex-col gap-5"><section className="panel"><div className="panel-title"><h3>Остатки FBO</h3><div className="segmented"><button className={!raw?'selected':''} onClick={()=>setRaw(false)}>Доступные остатки</button><button className={raw?'selected':''} onClick={()=>setRaw(true)}>Учёт и резервы</button></div></div>
  <div className="filters"><Filter value={q} set={setQ}/><label className="check"><input type="checkbox" checked={only} onChange={e=>setOnly(e.target.checked)}/> Только склады с остатком</label></div>
- {!raw&&inv?.analytics===null?<Empty text="Остатки пока недоступны" help="Обновите данные. Если загрузка не удаётся, проверьте разрешение на чтение аналитики у ключа Ozon."/>:!shown.length?<Empty text="Карточки не найдены" help="Проверьте загрузку, поиск и фильтр остатков."/>:<div className="fbo-stock-list">{shown.map(g=><details className="stock-card" key={g.key}><summary><div className="stock-title"><strong>{g.name}</strong><span className="sku">SKU {g.skus.join(', ')}</span><small>Артикул: {g.offer}</small></div><div className="stock-total"><strong>{num(g.total)} <small>ед.</small></strong><span>{raw?'На складах':'Доступно к продаже'}</span></div><span className="expand-arrow">⌄</span></summary><div className="stock-details">{raw&&<p className="muted mb-4">Учётное количество и резерв показаны раздельно. Доступное к продаже количество находится на вкладке «Доступные остатки».</p>}<Table rows={g.visible} columns={raw?[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["present","На складе, ед.",num],["reserved","В резерве, ед.",num]]:[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["available_stock_count","Доступно, ед.",num],["valid_stock_count","Готовится к продаже, ед.",num],["transit_stock_count","В пути на Ozon, ед.",num],["requested_stock_count","В заявках, ед.",num],["inbound_replenishment","В перемещении, ед.",num],["stock_not_being_sold","Снято с продажи, ед.",num]]}/></div></details>)}</div>}
+ {!raw&&inv?.analytics===null?<Empty text="Остатки пока недоступны" help="Обновите данные. Если загрузка не удаётся, проверьте разрешение на чтение аналитики у ключа Ozon."/>:!shown.length?<Empty text="Карточки не найдены" help="Проверьте загрузку, поиск и фильтр остатков."/>:<div className="fbo-stock-list">{shown.map(g=><details className="stock-card" key={g.key}><summary><div className="stock-title"><strong>{g.name}</strong><span className="sku">SKU {g.skus.join(', ')}</span><small>Артикул: {g.offer}</small></div><div className="stock-total"><strong>{num(g.total)} <small>ед.</small></strong><span>{raw?'На складах':'Доступно к продаже'}</span></div><span className="expand-arrow">⌄</span></summary><div className="stock-details">{raw&&<p className="muted mb-4">Учётное количество и резерв показаны раздельно. Доступное к продаже количество находится на вкладке «Доступные остатки».</p>}<Table label="Остатки по складам" rows={g.visible} columns={raw?[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["present","На складе, ед.",num],["reserved","В резерве, ед.",num]]:[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["available_stock_count","Доступно, ед.",num],["valid_stock_count","Готовится к продаже, ед.",num],["transit_stock_count","В пути на Ozon, ед.",num],["requested_stock_count","В заявках, ед.",num],["inbound_replenishment","В перемещении, ед.",num],["stock_not_being_sold","Снято с продажи, ед.",num]]}/></div></details>)}</div>}
  </section>
  <History/></div>
 }
@@ -263,7 +282,7 @@ function History(){
    <select aria-label="Схема отправления" value={scheme} onChange={e=>{setScheme(e.target.value);setStatus('');}}><option value="all">FBO и FBS</option><option value="FBO">Только FBO</option><option value="FBS">Только FBS</option></select>
    <select aria-label="Статус" value={status} onChange={e=>setStatus(e.target.value)}><option value="">Все статусы</option>{statuses.map(value=><option key={value} value={value}>{statusLabel(value)}</option>)}</select>
   </div>
-  <div className="fbo-history-table"><Table rows={rows} pageSize={8} columns={[["scheme","Схема",v=>v],["number","Отправление"],["event_date","Создано / обработка",v=>date(v)],["status","Статус",statusLabel],["substatus","Подстатус",v=>v||'—'],["warehouse_name","Склад",v=>v||'—'],["items","Состав"],["units","Единиц",num]]}/></div>
+  <div className="fbo-history-table"><Table label="История отправлений Ozon" rows={rows} pageSize={8} columns={[["scheme","Схема",v=>v],["number","Отправление"],["event_date","Создано / обработка",v=>date(v)],["status","Статус",statusLabel],["substatus","Подстатус",v=>v||'—'],["warehouse_name","Склад",v=>v||'—'],["items","Состав"],["units","Единиц",num]]}/></div>
  </section>
 }
 function LoginScreen({onSuccess}){
@@ -329,6 +348,49 @@ function AdminUsers(){
  </div>
 }
 const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/barcodes','Штрихкоды',Barcode],['/market-calculator','Расчёты',Calculator],['/purchase-shipments','Поставки',Truck],['/stocks','Остатки и история Ozon',Warehouse],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
+function AppNavigation({items,username,onLogout}){
+ const dialog=useRef(null);
+ const trigger=useRef(null);
+ const location=useLocation();
+ const [open,setOpen]=useState(false);
+ useEffect(()=>{dialog.current?.close()},[location.key]);
+ useEffect(()=>{
+  const mobile=window.matchMedia('(max-width: 760px)');
+  const closeOnDesktop=event=>{if(!event.matches)dialog.current?.close()};
+  mobile.addEventListener('change',closeOnDesktop);
+  return()=>mobile.removeEventListener('change',closeOnDesktop);
+ },[]);
+ const renderLinks=onSelect=>items.map(([path,label,Icon])=><NavLink
+  key={path} to={path} end={path==='/'} onClick={onSelect}
+  className={({isActive})=>'nav-item '+(isActive?'active':'')}><Icon size={19} aria-hidden="true"/>{label}</NavLink>);
+ return <>
+  <aside className="sidebar">
+   <div className="brand"><div className="brand-icon"><Boxes size={25}/></div><div className="isk-brand">ИСК</div></div>
+   <nav aria-label="Разделы ИСК">{renderLinks()}</nav>
+   <div className="sidebar-footer"><span className="status-dot"/>{username}</div>
+  </aside>
+  <div className="mobile-app-bar">
+   <button type="button" ref={trigger} className="mobile-menu-button" aria-haspopup="dialog" aria-controls="mobile-navigation"
+    aria-expanded={open} onClick={()=>{dialog.current.showModal();setOpen(true)}}><Menu size={21}/> Меню</button>
+   <div className="mobile-brand"><Boxes size={19} aria-hidden="true"/> ИСК</div>
+  </div>
+  <dialog id="mobile-navigation" className="mobile-navigation" ref={dialog} aria-labelledby="mobile-navigation-title"
+   onClick={event=>{if(event.target===event.currentTarget)dialog.current.close()}}
+   onClose={()=>{setOpen(false);trigger.current?.focus({preventScroll:true})}}>
+   <div className="mobile-navigation-content">
+    <div className="mobile-navigation-heading">
+     <h2 id="mobile-navigation-title">Разделы ИСК</h2>
+     <button type="button" autoFocus aria-label="Закрыть меню" onClick={()=>dialog.current.close()}><X size={21}/></button>
+    </div>
+    <nav aria-label="Разделы ИСК">{renderLinks(()=>dialog.current.close())}</nav>
+    <div className="mobile-navigation-footer">
+     <span>{username}</span>
+     <button type="button" className="logout-button" onClick={()=>{dialog.current.close();onLogout()}}><LogOut size={16}/> Выйти</button>
+    </div>
+   </div>
+  </dialog>
+ </>;
+}
 function RequireAccount({children}){const {me}=useApp();return me?.active_account_id?children:<Navigate to="/connection" replace/>}
 function App(){
  const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);const [sales,setSales]=useState(null);
@@ -355,10 +417,8 @@ function App(){
  if(!me)return <LoginScreen onSuccess={reload}/>;
  const navItems=me.user.role==='admin'?[...nav,['/admin/users','Пользователи',Users]]:nav;
  return <Context.Provider value={{me,state,setState,inv,hist,digi,sales,reload,act,setError}}>
-  <div className="shell"><aside className="sidebar"><div className="brand"><div className="brand-icon"><Boxes size={25}/></div><div className="isk-brand">ИСК</div></div>
-   <nav>{navItems.map(([path,label,Icon])=><NavLink key={path} to={path} end={path==='/'} className={({isActive})=>'nav-item '+(isActive?'active':'')}><Icon size={19}/>{label}</NavLink>)}</nav>
-   <div className="sidebar-footer"><span className="status-dot"/>{me.user.username}</div>
-  </aside><main><header>{state&&<div className="header-refresh"><span className="muted account-stock-date">{inv?.at?'Остатки: '+new Date(inv.at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}):'Остатки ещё не загружены'}</span><button className="primary" disabled={state.job.running} onClick={()=>act('/account/sync',{})}><RefreshCw size={16} className={state.job.running?'animate-spin':''}/> {state.job.running?'Обновляем…':'Обновить'}</button></div>}<div className="header-actions ml-auto"><NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink><button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button></div></header>
+  <div className="shell"><AppNavigation items={navItems} username={me.user.username} onLogout={logout}/>
+  <main><header className="app-header">{state&&<div className="header-refresh"><span className="muted account-stock-date">{inv?.at?'Остатки: '+new Date(inv.at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}):'Остатки ещё не загружены'}</span><button className="primary" disabled={state.job.running} onClick={()=>act('/account/sync',{})}><RefreshCw size={16} className={state.job.running?'animate-spin':''}/> {state.job.running?'Обновляем…':'Обновить'}</button></div>}<div className="header-actions ml-auto"><NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink><button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button></div></header>
    <div className="workspace">
     {error&&<div role="alert"><Notice>{error}<button className="ml-3" onClick={()=>setError('')}>Закрыть</button></Notice></div>}
     {state?.job.running&&<div className="progress"><RefreshCw size={17} className="animate-spin"/>{state.job.message}</div>}{state?.job.error&&<Notice>{state.job.error}</Notice>}

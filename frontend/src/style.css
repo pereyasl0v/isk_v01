@@ -23,7 +23,7 @@
 /* FBO lists stay fully visible; only the history pagination changes the displayed page. */
 .fbo-stock-list{max-height:none;overflow:visible;padding-right:0}
 .fbo-stock-list .stock-card:last-child{margin-bottom:0}
-.fbo-history-table .table-scroll{max-height:none;overflow:visible}
+.fbo-history-table .table-scroll{max-height:none}
 .fbo-history-table th{padding:8px 10px}
 .fbo-history-table td{padding:6px 10px}
 .fbo-history-table .pagination{margin-top:10px}

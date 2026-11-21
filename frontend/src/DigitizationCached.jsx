@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Database, RefreshCw, AlertTriangle, CircleCheck, X} from 'lucide-react';
 import Digitization from './Digitization';
 import './digitizationCached.css';
@@ -79,11 +79,30 @@ export default function DigitizationCached({state,digi,act}){
  const [dateTo,setDateTo]=useState(defaults.to);
  const [selectedPreset,setSelectedPreset]=useState(30);
  const [calendarOpen,setCalendarOpen]=useState(false);
+ const calendarTrigger=useRef(null);
+ const previousMonthButton=useRef(null);
  const [calendarMonth,setCalendarMonth]=useState(()=>monthStart(parseIso(defaults.from)));
  const [rangeDraft,setRangeDraft]=useState(null);
  const [hoveredCalendarDay,setHoveredCalendarDay]=useState(null);
  const [calendarMissing,setCalendarMissing]=useState(new Set());
  const [calendarCoverageLoading,setCalendarCoverageLoading]=useState(false);
+
+ const closeCalendar=useCallback(()=>{
+  setCalendarOpen(false);
+  setRangeDraft(null);
+  setHoveredCalendarDay(null);
+  calendarTrigger.current?.focus({preventScroll:true});
+ },[]);
+
+ useEffect(()=>{
+  if(!calendarOpen)return;
+  previousMonthButton.current?.focus({preventScroll:true});
+  function dismiss(event){
+   if(event.key==='Escape')closeCalendar();
+  }
+  document.addEventListener('keydown',dismiss);
+  return()=>document.removeEventListener('keydown',dismiss);
+ },[calendarOpen,closeCalendar]);
 
  const choosePreset=preset=>{
   const range=preset==='month'
@@ -93,9 +112,7 @@ export default function DigitizationCached({state,digi,act}){
   setDateTo(range.to);
   setSelectedPreset(preset);
   setCalendarMonth(monthStart(parseIso(range.from)));
-  setRangeDraft(null);
-  setHoveredCalendarDay(null);
-  setCalendarOpen(false);
+  closeCalendar();
  };
 
  const [periodDigi,setPeriodDigi]=useState(null);
@@ -187,9 +204,7 @@ export default function DigitizationCached({state,digi,act}){
   setDateFrom(from);
   setDateTo(to);
   setSelectedPreset(null);
-  setRangeDraft(null);
-  setHoveredCalendarDay(null);
-  setCalendarOpen(false);
+  closeCalendar();
  };
 
  const rangeFrom=rangeDraft?.from||dateFrom;
@@ -227,6 +242,7 @@ export default function DigitizationCached({state,digi,act}){
       <button
        type="button"
        className="digitization-range-trigger"
+       ref={calendarTrigger}
        aria-expanded={calendarOpen}
        aria-haspopup="dialog"
        onClick={()=>{
@@ -242,11 +258,13 @@ export default function DigitizationCached({state,digi,act}){
        <span>{rangeDraft?displayDate(rangeDraft.from)+' — выберите конец':displayDate(dateFrom)+' — '+displayDate(dateTo)}</span>
        <ChevronDown size={16}/>
       </button>
-      {calendarOpen&&<div className="digitization-range-popover" role="dialog" aria-label="Выбор периода">
+      {calendarOpen&&<>
+       <div className="digitization-calendar-backdrop" aria-hidden="true" onClick={closeCalendar}/>
+       <div className="digitization-range-popover" role="dialog" aria-label="Выбор периода">
        <div className="digitization-calendar-area">
         <div className="digitization-calendar-topbar">
-         <button type="button" aria-label="Предыдущий месяц" onClick={()=>setCalendarMonth(month=>addMonths(month,-1))}><ChevronLeft size={17}/></button>
-         <strong>{monthLabel(calendarMonth)} — {monthLabel(addMonths(calendarMonth,1))}</strong>
+         <button type="button" aria-label="Предыдущий месяц" ref={previousMonthButton} onClick={()=>setCalendarMonth(month=>addMonths(month,-1))}><ChevronLeft size={17}/></button>
+         <strong>{monthLabel(calendarMonth)}<span className="digitization-next-month-label"> — {monthLabel(addMonths(calendarMonth,1))}</span></strong>
          <button type="button" aria-label="Следующий месяц" disabled={monthStart(addMonths(calendarMonth,1))>monthStart(parseIso(maxClosedDay))} onClick={()=>setCalendarMonth(month=>addMonths(month,1))}><ChevronRight size={17}/></button>
         </div>
         <div className="digitization-months">
@@ -266,9 +284,9 @@ export default function DigitizationCached({state,digi,act}){
          className={selectedPreset===item.id?'active':''}
          onClick={()=>choosePreset(item.id)}
         >{item.label}</button>)}
-        <button type="button" className="digitization-calendar-close" onClick={()=>{setCalendarOpen(false);setRangeDraft(null);setHoveredCalendarDay(null)}}><X size={14}/> Закрыть</button>
+        <button type="button" className="digitization-calendar-close" onClick={closeCalendar}><X size={14}/> Закрыть</button>
        </aside>
-      </div>}
+      </div></>}
      </div>
      {!cacheState.daily&&!cacheState.loading&&<button className="primary digitization-refresh" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={refresh}>
       <RefreshCw size={15} className={state?.job.running?'animate-spin':''}/>{buttonText}

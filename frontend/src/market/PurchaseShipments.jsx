@@ -1,3 +1,4 @@
+import ScrollTable from "../ScrollTable";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Calculator, CalendarDays, Package, Pencil, Trash2, Truck } from "lucide-react";
@@ -113,13 +114,13 @@ export default function PurchaseShipments({ editing = false }) {
           <div><dt>Стоимость партии</dt><dd>{money(total.totalRub)}</dd></div>
         </dl>
       </div>
-      <div className="table-scroll"><table>
+      <ScrollTable label="Товары поставки" stickyColumn><table>
         <thead><tr><th>Товар</th><th>Артикул</th><th>Количество, шт.</th><th>За штуку</th><th>За партию</th></tr></thead>
         <tbody>{shipment.calculated.products.map(product => <tr key={product.id}>
           <td>{product.name}</td><td>{product.article || "—"}</td><td>{units.format(product.quantity)}</td>
           <td>{money(product[route].costPerUnit)}</td><td>{money(product[route].totalRub)}</td>
         </tr>)}</tbody>
-      </table></div>
+      </table></ScrollTable>
     </section>}
   </div></div>;
 }

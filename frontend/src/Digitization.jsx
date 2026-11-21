@@ -1,3 +1,4 @@
+import ScrollTable from "./ScrollTable";
 import React, {useEffect, useMemo, useState} from 'react';
 import {BarChart3, RefreshCw, WalletCards, ReceiptText, Truck, Boxes, AlertTriangle, Calculator, ArrowUpRight, ArrowDownRight, Minus} from 'lucide-react';
 import {currentInventoryMetrics} from './inventory-capitalization.mjs';
@@ -38,7 +39,7 @@ function Metric({label,value,note,icon:Icon=WalletCards,format=money,comparison,
 
 function SimpleTable({rows,columns,empty}){
  if(!rows.length)return <div className="empty"><BarChart3 size={34}/><h3>{empty}</h3><p>Загрузите данные за выбранный период.</p></div>;
- return <div className="table-scroll"><table><thead><tr>{columns.map(c=><th key={c[0]}>{c[1]}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={r.sku||i}>{columns.map(c=><td key={c[0]}>{c[2]?c[2](r[c[0]],r):String(r[c[0]]??'—')}</td>)}</tr>)}</tbody></table></div>
+ return <ScrollTable label="Начисления Ozon по типам операций"><table><thead><tr>{columns.map(c=><th key={c[0]}>{c[1]}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={r.sku||i}>{columns.map(c=><td key={c[0]}>{c[2]?c[2](r[c[0]],r):String(r[c[0]]??'—')}</td>)}</tr>)}</tbody></table></ScrollTable>
 }
 
 function localRead(key,fallback){
@@ -350,7 +351,7 @@ export default function Digitization({state,digi,act}){
 
   <section className="panel mb-5">
    <div className="panel-title"><h3>Продажи и себестоимость по артикулам</h3></div>
-   {productRows.length>0?<div className="table-scroll"><table><thead><tr>
+   {productRows.length>0?<ScrollTable label="Продажи и себестоимость по артикулам" stickyColumn><table><thead><tr>
     <th>Товар</th><th>Артикул</th><th>Себестоимость, ₽</th><th>Себестоимость (капитализация) / 1 шт.</th>
     <th>Продажи, шт.</th><th>Реализация</th><th>Продажи</th><th>Доля в общей выручке</th><th>Себестоимость продаж</th>
    </tr></thead><tbody>
@@ -366,7 +367,7 @@ export default function Digitization({state,digi,act}){
       <td>{sales&&unitCost!==null?money(round(n(sales.sales_quantity)*saleUnitCost(sku))):'—'}</td>
      </tr>;
     })}
-   </tbody></table></div>:<div className="empty"><Calculator size={34}/><h3>Нет товаров</h3><p>Сначала обновите товары и оцифровку.</p></div>}
+   </tbody></table></ScrollTable>:<div className="empty"><Calculator size={34}/><h3>Нет товаров</h3><p>Сначала обновите товары и оцифровку.</p></div>}
   </section>
 
   <section className="panel mb-5">
