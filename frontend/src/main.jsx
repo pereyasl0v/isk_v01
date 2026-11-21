@@ -285,10 +285,10 @@ function Connection(){
   <section className="panel"><div className="panel-title"><h3>Мои кабинеты Ozon</h3><Plug size={20}/></div>
    {!accounts.length&&<p className="muted">Пока нет подключённых кабинетов. Добавьте первый кабинет — ключ сохранится в зашифрованном виде и не потеряется после перезапуска сервера.</p>}
    <div className="account-list">{accounts.map(a=><div className="account-row" key={a.id}>
-    <div><strong>Кабинет {a.client_id}</strong><span className={a.connected?'connected-label':'disconnected-label'}>{a.connected?'Подключён':'Ключ удалён'}</span><small>{a.roles?.join(', ')||'Роли не сохранены'}</small></div>
+    <div><strong>Кабинет {a.client_id}</strong><span className={a.connected?'connected-label':'disconnected-label'}>{a.connected?'Подключён':'Ключ удалён'}</span><small>Права: {a.roles?.join(', ')||'нет данных'}</small>{a.connected&&<small className="block">Срок ключа Ozon: {date(a.expires_at)}</small>}</div>
     <div className="account-actions">{a.connected&&<button className={me.active_account_id===a.id?'primary':''} disabled={busy||me.active_account_id===a.id} onClick={()=>select(a.id)}>{me.active_account_id===a.id?'Выбран':'Выбрать'}</button>}</div>
    </div>)}</div>
-   {active&&state&&<><div className="connected mt-4"><CircleCheck size={22}/><strong>Активный кабинет {state.client_id}</strong></div><p className="muted mt-2">Срок ключа Ozon: {date(state.expires_at)}</p><button className="mt-4" disabled={busy||state.job.running} onClick={disconnect}><LogOut size={16}/> Удалить сохранённый ключ</button></>}
+   {active&&state&&<><div className="connected mt-4"><CircleCheck size={22}/><strong>Активный кабинет {state.client_id}</strong></div><button className="mt-4" disabled={busy||state.job.running} onClick={disconnect}><LogOut size={16}/> Удалить сохранённый ключ</button></>}
   </section>
   <section className="panel"><div className="panel-title"><h3>Добавить / обновить кабинет</h3><Plus size={20}/></div>
    <form onSubmit={connect}><label className="field">Идентификатор кабинета<input autoComplete="off" inputMode="numeric" pattern="[0-9]+" required value={client} onChange={e=>setClient(e.target.value)}/></label>
