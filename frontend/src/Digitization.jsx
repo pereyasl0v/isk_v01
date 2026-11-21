@@ -283,6 +283,7 @@ export default function Digitization({state,digi,act}){
  const productRows=(digi?.products||[]).map(row=>({
   ...row,
   name:catalogBySku.get(String(row.sku))?.name||'',
+  article:catalogBySku.get(String(row.sku))?.id??'—',
   share:realization?round(n(row.realization)/realization*100):null,
   unit_cost:hasCost(row.sku)?round(saleUnitCost(row.sku)):null,
   cogs:hasCost(row.sku)?round(n(row.sales_quantity)*saleUnitCost(row.sku)):null,
@@ -381,8 +382,8 @@ export default function Digitization({state,digi,act}){
 
   
 
-  <section className="panel mb-5"><div className="panel-title"><h3>По SKU</h3><span className="badge">Продажи + себестоимость</span></div><SimpleTable rows={productRows.slice(0,200)} empty="Нет товарных строк" columns={[
-   ['name','Товар'],['sku','SKU'],['sales_quantity','Продажи, шт',count],['realization','Реализация',money],['sales_amount','Продажи',money],['share','Доля в общей выручке',pct],['unit_cost','СС+ФФ / шт',money],['cogs','Себестоимость продаж',money],
+  <section className="panel mb-5"><div className="panel-title"><h3>По артикулам</h3><span className="badge">Продажи + себестоимость</span></div><SimpleTable rows={productRows.slice(0,200)} empty="Нет товарных строк" columns={[
+   ['name','Товар'],['article','Артикул'],['sales_quantity','Продажи, шт',count],['realization','Реализация',money],['sales_amount','Продажи',money],['share','Доля в общей выручке',pct],['unit_cost','СС+ФФ / шт',money],['cogs','Себестоимость продаж',money],
   ]}/></section>
 
 
