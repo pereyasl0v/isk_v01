@@ -67,6 +67,15 @@ def sample_draft():
 
 
 class PreliminaryCostCalculationTests(unittest.TestCase):
+    def test_rostov_dollar_rate_rescales_saved_freight_tariff(self):
+        draft = sample_draft()
+        draft["route1"]["freightRateRubPerM3"] = 19_000
+        draft["route1"]["usdToRubRate"] = 100
+        clean = clean_preliminary_cost(draft)
+        self.assertEqual(clean["route1"]["usdToRubRate"], 100)
+        result = calculate_preliminary_cost(clean)
+        self.assertAlmostEqual(result["products"][0]["route1"]["freightToRostovRub"], 6_000)
+
     def test_common_yuan_rate_applies_to_all_route_conversions(self):
         draft = sample_draft()
         original = calculate_preliminary_cost(clean_preliminary_cost(draft))

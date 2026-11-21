@@ -1,8 +1,10 @@
+export const DEFAULT_ROSTOV_USD_RATE = 95;
+
 export const DEFAULT_ROUTE1 = {
   yuanToRubRate: 14.2,
   purchaseMarkupPercent: 7,
   // Source workbook: 17,000 * 95 / 65 * product volume.
-  freightRateRubPerM3: 17000 * 95 / 65,
+  freightRateRubPerM3: 17000 * DEFAULT_ROSTOV_USD_RATE / 65,
   dutyableFreightPercent: 60,
   vatPercent: 22,
   ownTaxPercent: 20,
@@ -49,7 +51,7 @@ export const createProduct = () => ({
 export const createDraft = () => ({
   yuanToRubRate: DEFAULT_ROUTE1.yuanToRubRate,
   products: [createProduct()],
-  route1: { ...DEFAULT_ROUTE1 },
+  route1: { ...DEFAULT_ROUTE1, usdToRubRate: DEFAULT_ROSTOV_USD_RATE },
   route2: { ...DEFAULT_ROUTE2 },
 });
 
@@ -68,6 +70,11 @@ export function batchNetWeightKg(product) {
   return n(product.unitNetWeightG) > 0
     ? n(product.unitNetWeightG) * n(product.quantity) / 1000
     : n(product.netWeightKg);
+}
+
+export function rostovFreightRateRubPerM3(route) {
+  const rate = route.usdToRubRate ?? DEFAULT_ROSTOV_USD_RATE;
+  return n(route.freightRateRubPerM3) * (n(rate) / DEFAULT_ROSTOV_USD_RATE);
 }
 
 function shares(products, method) {
@@ -92,6 +99,7 @@ export function calculatePreliminaryCost(draft) {
     : [];
   const route1 = { ...DEFAULT_ROUTE1, ...(draft?.route1 || {}) };
   const route2 = { ...DEFAULT_ROUTE2, ...(draft?.route2 || {}) };
+  const freightRate = rostovFreightRateRubPerM3(route1);
   const commonRate = draft?.yuanToRubRate;
   if (!products.length) return { products: [], summary: null, warnings: [] };
 
@@ -105,7 +113,7 @@ export function calculatePreliminaryCost(draft) {
     const supplierTotalYuan = quantity * n(product.unitPriceYuan) + n(product.deliveryToSashaYuan);
     const goodsRub = supplierTotalYuan * n(commonRate ?? route1.yuanToRubRate)
       * (1 + n(route1.purchaseMarkupPercent) / 100);
-    const freightToRostovRub = n(product.volumeM3) * n(route1.freightRateRubPerM3);
+    const freightToRostovRub = n(product.volumeM3) * freightRate;
     const taxableFreightRub = freightToRostovRub * n(route1.dutyableFreightPercent) / 100;
     const dutyGoodsRub = goodsRub * n(product.dutyPercent) / 100;
     const dutyFreightRub = taxableFreightRub * n(product.dutyPercent) / 100;
@@ -115,7 +123,7 @@ export function calculatePreliminaryCost(draft) {
     const ownTaxRub = taxBase * n(route1.ownTaxPercent) / 100;
     const allocatedAdditionalRub = route1Shared * route1Shares[index];
     const totalRub = taxBase + ownTaxRub + allocatedAdditionalRub;
-    if (n(route1.freightRateRubPerM3) && !n(product.volumeM3)) {
+    if (freightRate && !n(product.volumeM3)) {
       warnings.push("«" + (product.name || "Без названия") + "»: укажите длину, ширину и высоту одной штуки для расчёта доставки через Ростов.");
     }
     return {

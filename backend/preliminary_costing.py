@@ -6,11 +6,13 @@ import uuid
 from typing import Any
 
 
+DEFAULT_ROSTOV_USD_RATE = 95
+
 DEFAULT_ROUTE1 = {
     "yuanToRubRate": 14.2,
     "purchaseMarkupPercent": 7.0,
     # The workbook formula is 17,000 * 95 / 65 * product volume.
-    "freightRateRubPerM3": 17000 * 95 / 65,
+    "freightRateRubPerM3": 17000 * DEFAULT_ROSTOV_USD_RATE / 65,
     "dutyableFreightPercent": 60.0,
     "vatPercent": 22.0,
     "ownTaxPercent": 20.0,
@@ -109,6 +111,8 @@ def clean_preliminary_cost(raw: Any) -> dict:
         for key, default in DEFAULT_ROUTE1.items()
         if key != "allocationMethod"
     }
+    if "usdToRubRate" in route1_raw:
+        route1["usdToRubRate"] = _number(route1_raw["usdToRubRate"], "Курс доллара")
     route1["allocationMethod"] = str(route1_raw.get("allocationMethod") or "volume")
     if route1["allocationMethod"] not in ("volume", "weight", "quantity", "value"):
         raise ValueError("Неизвестный способ распределения дополнительных расходов для маршрута через Ростов.")
@@ -167,6 +171,8 @@ def calculate_preliminary_cost(data: dict) -> dict:
     ]
     r1 = data["route1"]
     r2 = data["route2"]
+    usd_rate = r1.get("usdToRubRate", DEFAULT_ROSTOV_USD_RATE)
+    freight_rate = r1["freightRateRubPerM3"] * (usd_rate / DEFAULT_ROSTOV_USD_RATE)
     common_rate = data.get("yuanToRubRate")
     warnings = []
 
@@ -179,7 +185,7 @@ def calculate_preliminary_cost(data: dict) -> dict:
         quantity = product["quantity"]
         supplier_yuan = quantity * product["unitPriceYuan"] + product["deliveryToSashaYuan"]
         goods_rub = supplier_yuan * (common_rate if common_rate is not None else r1["yuanToRubRate"]) * (1 + r1["purchaseMarkupPercent"] / 100)
-        freight_rub = product["volumeM3"] * r1["freightRateRubPerM3"]
+        freight_rub = product["volumeM3"] * freight_rate
         taxable_freight = freight_rub * r1["dutyableFreightPercent"] / 100
         duty_goods = goods_rub * product["dutyPercent"] / 100
         duty_freight = taxable_freight * product["dutyPercent"] / 100
@@ -206,7 +212,7 @@ def calculate_preliminary_cost(data: dict) -> dict:
             "totalRub": total,
             "costPerUnit": total / quantity,
         })
-        if r1["freightRateRubPerM3"] and product["volumeM3"] <= 0:
+        if freight_rate and product["volumeM3"] <= 0:
             warnings.append(f"«{product['name']}»: укажите длину, ширину и высоту одной штуки для расчёта доставки через Ростов.")
 
     total_quantity = sum(p["quantity"] for p in products)

@@ -77,3 +77,9 @@ test("shared yuan rate applies to both purchases and to shipping",()=>{
   assert.ok(Math.abs(after.route2.purchaseRub-before.route2.purchaseRub*15.5/11.8)<1e-8);
   assert.ok(Math.abs(after.route2.transportRub-before.route2.transportRub*15.5/12.4)<1e-8);
 });
+
+test("Rostov freight uses the entered dollar rate with a saved tariff",()=>{
+  const draft=sample();
+  Object.assign(draft.route1,{freightRateRubPerM3:19000,usdToRubRate:100});
+  assert.ok(Math.abs(calculatePreliminaryCost(draft).products[0].route1.freightToRostovRub-6000)<1e-8);
+});
