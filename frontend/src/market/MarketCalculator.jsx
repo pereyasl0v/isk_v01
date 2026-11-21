@@ -336,10 +336,6 @@ export default function MarketCalculator() {
           <NumberField label="Разгрузка" value={draft.route1.unloadersRub} onChange={value => updateRoute("route1", "unloadersRub", value)} unit="₽" />
           <NumberField label="Прочие расходы" value={draft.route1.otherRub} onChange={value => updateRoute("route1", "otherRub", value)} unit="₽" />
         </div>
-        <details className="mc-formula-note">
-          <summary>Как считается маршрут</summary>
-          <p>Стоимость товара и доставки до Саши переводится в рубли по курсу и увеличивается на указанный процент. Доставка до Ростова считается по объёму. Пошлина и НДС рассчитываются отдельно на товар и на 60% доставки. «Мой налог» применяется к сумме этих статей по формуле исходного Excel.</p>
-        </details>
       </section>
 
       <section className="mc-panel mc-route-panel mc-route-south">
@@ -360,10 +356,6 @@ export default function MarketCalculator() {
           <NumberField label="Упаковка в России" value={draft.route2.packingRub} onChange={value => updateRoute("route2", "packingRub", value)} unit="₽" />
           <NumberField label="Прочие расходы" value={draft.route2.otherRub} onChange={value => updateRoute("route2", "otherRub", value)} unit="₽" />
         </div>
-        <details className="mc-formula-note">
-          <summary>Как считается маршрут</summary>
-          <p>Первая оплата: цена товара, количество и доставка до Гуанчжоу по курсу закупки. Вторая оплата: автодоставка по брутто и упаковка коробок, переведённые из долларов в юани и рубли. Доставка до Санкт-Петербурга, дом, грузчики и упаковка распределяются между товарами пропорционально их доле в брутто-весе партии.</p>
-        </details>
       </section>
     </div>
 
