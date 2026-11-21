@@ -15,6 +15,7 @@ import {salesChartWindow,salesRangeTotals,salesTickIndexes} from './sales-chart-
 import './mobile.css';
 
 const Context=createContext(null);
+const SALES_REFRESH_INTERVAL=10*60*1000;
 const nf=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
 const num=v=>v===null||v===undefined?'—':nf.format(v);
 const date=v=>v?new Date(v).toLocaleString('ru-RU'):'Ещё не загружено';
@@ -56,21 +57,35 @@ function SalesHistoryChart({data,state,act,inv}){
   document.addEventListener('click',clearOutside,true);
   return ()=>document.removeEventListener('click',clearOutside,true);
  },[hasSelection]);
- const pendingPeriodSync=useRef(null);
- // Use the same N completed Moscow dates as Digitization, plus today.
- // Filtering by dates (not the last N rows) also detects incomplete old caches.
+ const pendingPeriodSync=useRef(false);
+ const refreshSales=useRef(null);
  const allPoints=salesChartWindow(data?.rows,period).points;
- const needsSalesSync=days=>{
-  const window=salesChartWindow(data?.rows,days);
-  return !window.complete||data?.date_to!==window.to||!data?.date_from||data.date_from>window.from;
+ refreshSales.current=backfill=>{
+  if(document.hidden)return;
+  if(backfill&&salesChartWindow(data?.rows,period).complete)return;
+  if(state?.job?.running){
+   if(backfill)pendingPeriodSync.current=true;
+   return;
+  }
+  pendingPeriodSync.current=false;
+  act('/sales/sync',{days:period,backfill});
  };
- // If another job was running when the period was selected, load it once idle.
  useEffect(()=>{
-  if(state?.job?.running||pendingPeriodSync.current===null)return;
-  const days=pendingPeriodSync.current;
-  pendingPeriodSync.current=null;
-  if(needsSalesSync(days))act('/sales/sync',{days});
- },[state?.job?.running,data?.at,period]);
+  pendingPeriodSync.current=false;
+  refreshSales.current(true);
+ },[period]);
+ useEffect(()=>{
+  const checkMissingDays=()=>refreshSales.current(true);
+  const timer=setInterval(()=>refreshSales.current(false),SALES_REFRESH_INTERVAL);
+  document.addEventListener('visibilitychange',checkMissingDays);
+  return ()=>{
+   clearInterval(timer);
+   document.removeEventListener('visibilitychange',checkMissingDays);
+  };
+ },[]);
+ useEffect(()=>{
+  if(!state?.job?.running&&pendingPeriodSync.current)refreshSales.current(true);
+ },[state?.job?.running]);
  const skuNames=new Map((inv?.products||[]).filter(p=>p.sku).map(p=>[String(p.sku),p.name||String(p.sku)]));
  const skuRows=data?.by_sku||[];
  const skuOptions=[...new Set([...skuNames.keys(),...skuRows.map(row=>String(row.sku))])].sort((a,b)=>(skuNames.get(a)||a).localeCompare(skuNames.get(b)||b,'ru'));
@@ -171,12 +186,12 @@ function SalesHistoryChart({data,state,act,inv}){
    event.currentTarget.releasePointerCapture(event.pointerId);
   }
  };
- const busy=Boolean(state?.job?.running);
  return <section className="panel sales-chart">
   <div className="panel-title"><div><h3>Заказано товаров</h3></div>
-   <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null);setSelectedRange(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null);setSelectedRange(null);if(needsSalesSync(value)){if(busy)pendingPeriodSync.current=value;else act('/sales/sync',{days:value})}else pendingPeriodSync.current=null}}>{value} дн.</button>)}</div>
+   <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null);setSelectedRange(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null);setSelectedRange(null);}}>{value} дн.</button>)}</div>
    </div>
   </div>
+  {state?.job.running&&state.job.kind==='sales'&&<p role="status" className="muted">{state.job.message}</p>}
   {data?.error&&<Notice>{data.error}</Notice>}
   {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает заказы и историю доставок из Ozon Seller API и Ozon Push."/>:<>
     <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.delivered_available&&<span><i className="delivered"/>{data.delivery_label||'Доставлено'}</span>}<span className="sales-range-hint">Выделите период на графике для подсчёта итогов</span></div>
@@ -394,9 +409,9 @@ function AppNavigation({items,username,onLogout}){
 function RequireAccount({children}){const {me}=useApp();return me?.active_account_id?children:<Navigate to="/connection" replace/>}
 function App(){
  const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);const [sales,setSales]=useState(null);
- const [error,setError]=useState('');const [loading,setLoading]=useState(true);const [authChecked,setAuthChecked]=useState(false);const wasRunning=useRef(false);
+ const [error,setError]=useState('');const [loading,setLoading]=useState(true);const [authChecked,setAuthChecked]=useState(false);const runningJob=useRef(null);
  async function loadData(){const [i,h,d,sa]=await Promise.all([api('/inventory'),api('/history'),api('/digitization'),api('/sales')]);setInv(i);setHist(h);setDigi(d);setSales(sa)}
- function clearData(){setState(null);setInv(null);setHist(null);setDigi(null);setSales(null)}
+ function clearData(){runningJob.current=null;setState(null);setInv(null);setHist(null);setDigi(null);setSales(null)}
  async function reload(){
   try{const auth=await api('/auth/me');setMe(auth);
    if(auth.active_account_id){const [s,i,h,d,sa]=await Promise.all([api('/state'),api('/inventory'),api('/history'),api('/digitization'),api('/sales')]);setState(s);setInv(i);setHist(h);setDigi(d);setSales(sa)}
@@ -407,25 +422,45 @@ function App(){
  useEffect(()=>{reload()},[]);
  useEffect(()=>{
   if(!me?.active_account_id)return;
-  const timer=setInterval(async()=>{try{const s=await api('/state');setState(s);if(wasRunning.current&&!s.job.running)await loadData();wasRunning.current=s.job.running}
+  const timer=setInterval(async()=>{try{
+   const s=await api('/state');
+   const finished=!s.job.running&&runningJob.current;
+   runningJob.current=s.job.running?s.job:null;
+   setState(s);
+   if(finished?.kind==='sales')setSales(await api('/sales'));
+   else if(finished)await loadData();
+  }
    catch(e){if(e.status===401){setMe(null);clearData()}else if(e.status===409)await reload();else setError(e.message)}},1500);
   return()=>clearInterval(timer);
  },[me?.active_account_id]);
- async function act(path,body){setError('');try{await api(path,body);wasRunning.current=true;setState(s=>({...s,job:{...s.job,running:true,message:'Запускаем загрузку…',error:null}}))}catch(e){setError(e.message)}}
+ async function act(path,body){
+  const chart=path==='/sales/sync';
+  if(!chart)setError('');
+  try{
+   const result=await api(path,body);
+   if(result.started===false){
+    if(chart)setSales(await api('/sales'));
+    return;
+   }
+   const job={kind:chart?'sales':null,running:true,message:'Запускаем загрузку…',error:null};
+   runningJob.current=job;
+   setState(s=>({...s,job}));
+  }catch(e){if(!chart||e.status!==409)setError(e.message)}
+ }
  async function logout(){try{await api('/auth/logout',{})}finally{setMe(null);clearData()}}
  if(!authChecked||loading)return <div className="auth-screen"><div className="auth-card">Загружаем ИСК…</div></div>;
  if(!me)return <LoginScreen onSuccess={reload}/>;
  const navItems=me.user.role==='admin'?[...nav,['/admin/users','Пользователи',Users]]:nav;
  return <Context.Provider value={{me,state,setState,inv,hist,digi,sales,reload,act,setError}}>
   <div className="shell"><AppNavigation items={navItems} username={me.user.username} onLogout={logout}/>
-  <main><header className="app-header">{state&&<div className="header-refresh"><span className="muted account-stock-date">{inv?.at?'Остатки: '+new Date(inv.at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}):'Остатки ещё не загружены'}</span><button className="primary" disabled={state.job.running} onClick={()=>act('/account/sync',{})}><RefreshCw size={16} className={state.job.running?'animate-spin':''}/> {state.job.running?'Обновляем…':'Обновить'}</button></div>}<div className="header-actions ml-auto"><NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink><button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button></div></header>
+  <main><header className="app-header">{state&&<div className="header-refresh"><span className="muted account-stock-date">{inv?.at?'Остатки: '+new Date(inv.at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}):'Остатки ещё не загружены'}</span><button className="primary" disabled={state.job.running} onClick={()=>act('/account/sync',{})}><RefreshCw size={16} className={state.job.running&&state.job.kind!=='sales'?'animate-spin':''}/> {state.job.running&&state.job.kind!=='sales'?'Обновляем…':'Обновить'}</button></div>}<div className="header-actions ml-auto"><NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink><button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button></div></header>
    <div className="workspace">
     {error&&<div role="alert"><Notice>{error}<button className="ml-3" onClick={()=>setError('')}>Закрыть</button></Notice></div>}
-    {state?.job.running&&<div className="progress"><RefreshCw size={17} className="animate-spin"/>{state.job.message}</div>}{state?.job.error&&<Notice>{state.job.error}</Notice>}
+    {state?.job.running&&state.job.kind!=='sales'&&<div className="progress"><RefreshCw size={17} className="animate-spin"/>{state.job.message}</div>}{state?.job.error&&<Notice>{state.job.error}</Notice>}
     <Routes>
      <Route path="/connection" element={<Connection/>}/>
      <Route path="/admin/users" element={me.user.role==='admin'?<AdminUsers/>:<Navigate to="/" replace/>}/>
-     <Route path="/" element={<RequireAccount><Overview/></RequireAccount>}/>
+     <Route path="/" element={<RequireAccount><Overview key={me.active_account_id}/></RequireAccount>}/>
      <Route path="/digitization" element={<RequireAccount><DigitizationCached key={me.active_account_id} state={state?.account_id===me.active_account_id?state:null} digi={digi} act={act}/></RequireAccount>}/>
      <Route path="/barcodes" element={<BarcodeGenerator/>}/>
      <Route path="/market-calculator" element={<MarketPage/>}/>

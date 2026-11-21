@@ -220,6 +220,7 @@ class DigitizationParams(BaseModel):
 
 class SalesParams(BaseModel):
     days:int=Field(default=90,ge=7,le=90)
+    backfill:bool=True
 
 
 @app.get('/api/auth/status')
@@ -528,13 +529,20 @@ def state(request:Request):
                 'digitization_days':store.digitization_coverage(s['client'])}
 
 
-def sync_order_days(api,first,today,previous,progress):
-    """Reuse closed dates and request only missing ranges and recent orders."""
-    older_than=(today-timedelta(days=1)).isoformat()
-    first_text=first.isoformat()
-    rows={row['date']:row for row in (previous or {}).get('rows',[])
-          if first_text<=row['date']<older_than}
-    by_sku=[row for row in (previous or {}).get('by_sku',[]) if row['date'] in rows]
+SALES_REFRESH_INTERVAL = timedelta(minutes=10)
+
+
+def sync_order_days(api,first,today,previous,progress,refresh_today):
+    """Merge contiguous gaps into the saved orders and finalize yesterday once."""
+    first_text,today_text=first.isoformat(),today.isoformat()
+    previous=previous or {}
+    yesterday=(today-timedelta(days=1)).isoformat()
+    replace={today_text} if refresh_today else set()
+    if previous.get('date_to')==yesterday:
+        replace.add(yesterday)
+    rows={row['date']:row for row in previous.get('rows',[])
+          if first_text<=row['date']<=today_text and row['date'] not in replace}
+    by_sku=[row for row in previous.get('by_sku',[]) if row['date'] in rows]
     day=first
     while day<=today:
         if day.isoformat() in rows:
@@ -546,13 +554,13 @@ def sync_order_days(api,first,today,previous,progress):
         loaded=api.daily_sales(start,day-timedelta(days=1),progress)
         rows.update((row['date'],row) for row in loaded['rows'])
         by_sku.extend(loaded['by_sku'])
-    return {'date_from':first_text,'date_to':today.isoformat(),
+    return {'date_from':first_text,'date_to':today_text,
             'rows':sorted(rows.values(),key=lambda row:row['date']),
             'by_sku':sorted(by_sku,key=lambda row:(str(row['sku']),row['date'])),
             'error':None,'source':'ozon_seller_api_v1_analytics_data'}
 
 
-def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
+def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False,backfill=True):
     def progress(message):
         with lock:
             s['job']['message']=message
@@ -561,7 +569,28 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
     with lock:
         if s['job']['running']:
             raise HTTPException(409,'Загрузка уже выполняется.')
-        s['job']={'running':True,'message':'Подключаемся к Ozon…','error':None}
+        if kind=='sales':
+            previous=store.latest(s['client'],'sales_analytics') or {}
+            requested_first,today=sales_chart_period(days)
+            covered={row['date'] for row in previous.get('rows',[])}
+            historical_gap=any(day not in covered for day in requested_days(requested_first,today-timedelta(days=1)))
+            checked=previous.get('orders_checked_at')
+            now=datetime.now(timezone.utc)
+            attempted=s.get('orders_attempted_at')
+            refresh_today=(not checked or now-datetime.fromisoformat(checked)>=SALES_REFRESH_INTERVAL)
+            if attempted and now-attempted<SALES_REFRESH_INTERVAL:
+                refresh_today=False
+            today_missing=today.isoformat() not in covered
+            if not (refresh_today or (backfill and historical_gap)
+                    or (today_missing and (not attempted or now-attempted>=SALES_REFRESH_INTERVAL))):
+                return {'started':False}
+            if refresh_today or today_missing:
+                s['orders_attempted_at']=now
+            # Retain the widest locally cached window when refreshing a narrow view.
+            oldest=min(covered,default=requested_first.isoformat())
+            earliest=today-timedelta(days=90)
+            sales_first=max(earliest,min(requested_first,date.fromisoformat(oldest)))
+        s['job']={'kind':kind,'running':True,'message':'Подключаемся к Ozon…','error':None}
     def sync_kind(kind,days):
         if kind=='inventory':
             products,stocks=s['api'].download(progress)
@@ -593,58 +622,27 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
                         'fbs_stock_quantity':fbs_stock_quantity,'fbs_stocks':fbs_stocks,
                         'fbs_stock_error':fbs_stock_error})
         elif kind=='sales':
-            previous=store.latest(s['client'],'sales_analytics')
-            days=min(90,max(days,len((previous or {}).get('rows') or [])-1))
-            first,today=sales_chart_period(days)
-            last_closed=today-timedelta(days=1)
-            progress(
-                f'Заказы Ozon: {first.isoformat()} — {today.isoformat()} '
-                f'({days} завершённых дней и сегодня)…'
-            )
-            try:
-                orders=sync_order_days(s['api'],first,today,previous,progress)
-            except ApiError as exc:
-                if not previous:
-                    store.save(s['client'],'sales_analytics',{
-                        'date_from':first.isoformat(),'date_to':today.isoformat(),
-                        'rows':[],'by_sku':[],'error':str(exc),
-                    })
-                raise
-            store.save(s['client'],'sales_analytics',orders)
-            # Keep the financial history available for accounting metrics.
-            # The chart's delivery series is assembled separately from
-            # delivered posting statuses and verified FBO Push events.
-            if first<=last_closed:
-                missing=store.digitization_missing_days(
-                    s['client'],first.isoformat(),last_closed.isoformat()
-                )
-                for index,day_text in enumerate(missing,1):
-                    progress(
-                        f'Продажи по финансовой истории: '
-                        f'{index}/{len(missing)} · {day_text}'
-                    )
-                    try:
-                        data=download_digitization_day(
-                            s['api'],date.fromisoformat(day_text),progress
-                        )
-                        store.save_digitization_day(s['client'],day_text,data)
-                    except (ApiError,KeyError,ValueError,TypeError) as exc:
-                        progress(
-                            f'Нет подтверждённых продаж за {day_text}: {exc}. '
-                            'Этот день останется без точки на графике.'
-                        )
-            delivery_days=delivered_snapshot(
-                s['api'],first,today,previous,progress
-            )
-            delivery_data=build_sales_with_deliveries(
-                orders,delivery_days,store.delivery_events(s['client']),
-                store.latest(s['client'],'history'),
-            )
-            store.save(s['client'],'sales_analytics',delivery_data)
-            progress(
-                'График заказов и доставок обновлён. '
-                'Финансовая история продаж сохранена отдельно.'
-            )
+            progress('Загружаем недостающие и актуальные заказы Ozon…')
+            orders=sync_order_days(s['api'],sales_first,today,previous,progress,refresh_today)
+            if refresh_today or today_missing:
+                orders['orders_checked_at']=datetime.now(timezone.utc).isoformat()
+            elif checked:
+                orders['orders_checked_at']=checked
+            delivery_days={
+                day:record for day,record in (previous.get('delivery_days') or {}).items()
+                if sales_first.isoformat()<=day<=today.isoformat()
+            }
+
+            def save_orders(deliveries):
+                store.save(s['client'],'sales_analytics',build_sales_with_deliveries(
+                    orders,deliveries,store.delivery_events(s['client']),
+                    store.latest(s['client'],'history'),
+                ))
+
+            save_orders(delivery_days)
+            if backfill and historical_gap:
+                delivery_days.update(delivered_snapshot(s['api'],requested_first,today,previous,progress))
+                save_orders(delivery_days)
         elif kind=='digitization':
             first=s['api']._as_date(date_from)
             requested_last=s['api']._as_date(date_to)
@@ -722,7 +720,7 @@ def launch(s,kind,days=90,date_from=None,date_to=None,refresh=False):
                     else:
                         lookback=max(lookback,180)
                 lookback=min(365,lookback)
-                for section,period in (('inventory',0),('history',lookback),('sales',14)):
+                for section,period in (('inventory',0),('history',lookback)):
                     sync_kind(section,period)
             else:
                 sync_kind(kind,days)
@@ -869,7 +867,7 @@ async def ozon_fbo_webhook(account_id:str,signature:str,request:Request,backgrou
 
 @app.post('/api/sales/sync')
 def sync_sales(body:SalesParams,request:Request):
-    return launch(current(request),'sales',body.days)
+    return launch(current(request),'sales',body.days,backfill=body.backfill)
 
 @app.get('/api/sales')
 def sales(request:Request):

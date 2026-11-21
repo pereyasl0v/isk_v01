@@ -400,40 +400,73 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(r.status_code,200,r.text)
         self.assertEqual(r.json()['items'][0]['total']['state'],'no_orders')
 
-    def test_account_sync_reuses_saved_order_days_and_updates_recent_history(self):
-        from datetime import datetime, timedelta, timezone
+    def test_account_sync_updates_inventory_and_recent_history(self):
+        account=self.connect()
+        scope='account:'+account['account_id']
+        now=datetime.now(timezone.utc).isoformat()
+        sources={scheme:{'ok':True,'last_success_at':now} for scheme in ('fbo','fbs')}
+        main.store.save(scope,'history',{'sources':sources,'postings':[]})
+
+        with patch.object(FakeOzon,'postings',autospec=True,return_value={
+            'postings':[],'sources':sources,
+        }) as postings, patch.object(FakeOzon,'daily_sales',create=True) as orders:
+            self.assertEqual(self.client.post('/api/account/sync',headers=HEAD,json={}).status_code,200)
+            self.assertIsNone(self.wait()['job']['error'])
+        self.assertEqual(postings.call_args.args[1],2)
+        orders.assert_not_called()
+        self.assertEqual(self.client.get('/api/inventory').json()['summary']['available'],10)
+
+    def test_chart_uses_saved_days_and_throttles_current_day_refresh(self):
+        from datetime import timedelta
 
         account=self.connect()
         scope='account:'+account['account_id']
         first,today=main.sales_chart_period(14)
-        now=datetime.now(timezone.utc).isoformat()
-        sources={scheme:{'ok':True,'last_success_at':now} for scheme in ('fbo','fbs')}
-        main.store.save(scope,'history',{'sources':sources,'postings':[]})
-        main.store.save(scope,'sales_analytics',{
-            'rows':[{'date':(first+timedelta(days=i)).isoformat(),'ordered_units':7}
-                    for i in range(13)],
-            'by_sku':[],
-        })
-        for i in range(14):
-            day=(first+timedelta(days=i)).isoformat()
-            main.store.save_digitization_day(scope,day,{})
-
+        gap=first+timedelta(days=2)
         yesterday=today-timedelta(days=1)
-        with patch.object(FakeOzon,'postings',autospec=True,return_value={
-            'postings':[],'sources':sources,
-        }) as postings, patch.object(FakeOzon,'daily_sales',create=True,return_value={
-            'rows':[{'date':day.isoformat(),'ordered_units':3} for day in (yesterday,today)],
+        delivered={'FBS':{'ok':True,'postings':[]}}
+        current_check=datetime.now(timezone.utc)
+        main.store.save(scope,'sales_analytics',{
+            'date_to':today.isoformat(),
+            'orders_checked_at':current_check.isoformat(),
+            'rows':[{'date':(first+timedelta(days=i)).isoformat(),'ordered_units':7}
+                    for i in range(15) if first+timedelta(days=i)!=gap],
             'by_sku':[],
-        }) as orders, patch.object(main,'delivered_snapshot',return_value={}), \
+            'delivery_days':{yesterday.isoformat():delivered},
+        })
+
+        def daily_sales(start,end,progress):
+            return {'rows':[{'date':(start+timedelta(days=i)).isoformat(),'ordered_units':3}
+                            for i in range((end-start).days+1)],'by_sku':[]}
+
+        def refresh(backfill):
+            return self.client.post('/api/sales/sync',headers=HEAD,json={'days':14,'backfill':backfill}).json()
+
+        with patch.object(FakeOzon,'daily_sales',create=True,side_effect=daily_sales) as orders, \
+                patch.object(main,'delivered_snapshot',return_value={}) as deliveries, \
                 patch.object(main,'download_digitization_day') as finance:
-            self.assertEqual(self.client.post('/api/account/sync',headers=HEAD,json={}).status_code,200)
+            self.assertFalse(refresh(False)['started'])
+            self.assertTrue(refresh(True)['started'])
             self.assertIsNone(self.wait()['job']['error'])
-        self.assertEqual(postings.call_args.args[1],2)
-        self.assertEqual(orders.call_args.args[:2],(yesterday,today))
-        orders.assert_called_once()
-        finance.assert_not_called()
-        self.assertEqual(main.store.latest(scope,'sales_analytics')['rows'][0]['ordered_units'],7)
-        self.assertEqual(self.client.get('/api/inventory').json()['summary']['available'],10)
+            self.assertEqual(orders.call_args.args[:2],(gap,gap))
+            orders.assert_called_once()
+            deliveries.assert_called_once()
+            self.assertFalse(refresh(True)['started'])
+            self.assertFalse(refresh(False)['started'])
+
+            data=main.store.latest(scope,'sales_analytics')
+            data['orders_checked_at']=(current_check-timedelta(minutes=10)).isoformat()
+            main.store.save(scope,'sales_analytics',data)
+            self.assertTrue(refresh(False)['started'])
+            self.assertIsNone(self.wait()['job']['error'])
+            self.assertEqual(orders.call_args.args[:2],(today,today))
+            self.assertFalse(refresh(False)['started'])
+            deliveries.assert_called_once()
+            finance.assert_not_called()
+        data=main.store.latest(scope,'sales_analytics')
+        self.assertEqual(data['delivery_days'][yesterday.isoformat()],delivered)
+        self.assertEqual(data['rows'][0]['ordered_units'],7)
+        self.assertEqual(data['rows'][-1]['ordered_units'],3)
 
     def test_login_attempts_are_rate_limited(self):
         bad=TestClient(main.app)

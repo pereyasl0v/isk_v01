@@ -34,10 +34,11 @@ def iter_days(first,last):
 def delivered_snapshot(api,first,last,previous,progress):
     """Load FBS delivered postings by day; FBO history is Push-only."""
     cached=(previous or {}).get('delivery_days') or {}
-    today=datetime.now(MOSCOW).date()
+    days=list(iter_days(first,last))
+    missing={day for day in days if not (cached.get(day,{}).get('FBS') or {}).get('ok')}
     result={}
-    total=(last-first).days+1
-    for index,day in enumerate(iter_days(first,last),1):
+    checked=0
+    for day in days:
         old=cached.get(day) or {}
         current_date=date.fromisoformat(day)
         result[day]={}
@@ -54,7 +55,7 @@ def delivered_snapshot(api,first,last,previous,progress):
                     ),
                 }
                 continue
-            if record.get('ok') and current_date < today-timedelta(days=2):
+            if day not in missing:
                 result[day][scheme]=record
                 continue
             try:
@@ -63,8 +64,10 @@ def delivered_snapshot(api,first,last,previous,progress):
             except Exception as exc:
                 record={'ok':False,'postings':[],'error':str(exc)[:400]}
             result[day][scheme]=record
-        if index==1 or index%5==0 or index==total:
-            progress(f'Доставки Ozon: проверено {index} дней из {total}.')
+        if day in missing:
+            checked+=1
+            if checked==1 or checked%5==0 or checked==len(missing):
+                progress(f'Доставки Ozon: проверено {checked} из {len(missing)} недостающих дней.')
     return result
 
 
