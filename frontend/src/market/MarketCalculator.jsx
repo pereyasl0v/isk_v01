@@ -69,7 +69,7 @@ function Breakdown({ product }) {
   const a = product.route1;
   const b = product.route2;
   return <details className="mc-breakdown">
-    <summary><span>{product.name}</span><span>Показать состав себестоимости</span></summary>
+    <summary>Состав себестоимости <ChevronDown size={16} aria-hidden="true" /></summary>
     <div className="mc-breakdown-grid">
       <div>
         <h4>Через Ростов</h4>
@@ -253,9 +253,8 @@ export default function MarketCalculator() {
   const route2Cheaper = calculated.summary?.cheaperRoute === "south_gates";
 
   return <div className="mc-page">
-    <header className="mc-header">
+    <div className="mc-header">
       <div className="mc-heading-copy">
-        <span className="mc-eyebrow">ЗАКУПКИ В КИТАЕ</span>
         <h1>Предварительная себестоимость</h1>
         <p>Рассчитай реальную стоимость товара в Санкт-Петербурге до того, как оформлять заказ поставщику.</p>
         <div className="mc-title-line">
@@ -268,20 +267,19 @@ export default function MarketCalculator() {
         <button type="button" className="mc-button mc-button-primary" onClick={save} disabled={saving || !validProducts.length}><Save size={16} /> {saving ? "Сохраняем…" : recordId ? "Сохранить изменения" : "Сохранить расчёт"}</button>
         <button type="button" className="mc-icon-button" onClick={reset} title="Новый расчёт" aria-label="Новый расчёт"><RotateCcw size={17} /></button>
       </div>
-    </header>
+    </div>
 
-    {error && <div className="mc-alert mc-alert-error"><AlertCircle size={17} />{error}</div>}
-    {notice && <div className="mc-alert mc-alert-success"><CheckCircle2 size={17} />{notice}</div>}
+    {error && <div className="mc-alert mc-alert-error" role="alert"><AlertCircle size={17} />{error}</div>}
+    {notice && <div className="mc-alert mc-alert-success" role="status"><CheckCircle2 size={17} />{notice}</div>}
 
     <section className="mc-panel">
       <div className="mc-section-heading">
-        <div><span className="mc-step">01</span><div><h2>Товары</h2><p>Введи цену поставщика за единицу и количество. Локальную доставку до каждого склада укажи отдельно.</p></div></div>
+        <div><h2>Товары</h2></div>
         <button type="button" className="mc-button mc-button-light" onClick={addProduct}><Plus size={16} /> Добавить товар</button>
       </div>
 
-      {draft.products.map((product, index) => <article className="mc-product-card" key={product.id}>
+      {draft.products.map(product => <article className="mc-product-card" key={product.id}>
         <div className="mc-product-heading">
-          <span className="mc-product-index">{String(index + 1).padStart(2, "0")}</span>
           <strong>{product.name.trim() || "Новый товар"}</strong>
           <button type="button" className="mc-remove-button" onClick={() => removeProduct(product.id)} title="Удалить товар" aria-label="Удалить товар"><Trash2 size={16} /></button>
         </div>
@@ -356,7 +354,7 @@ export default function MarketCalculator() {
 
     <section className="mc-results-section">
       <div className="mc-results-heading">
-        <div><span className="mc-step">03</span><div><h2>Сравнение себестоимости</h2><p>Сравниваем оба способа на одинаковом составе и количестве товаров.</p></div></div>
+        <div><h2>Сравнение себестоимости</h2></div>
       </div>
       {calculated.summary && <div className="mc-comparison-grid">
         <article className={"mc-result-card mc-result-rostov" + (route1Cheaper ? " mc-result-best" : "")}>
@@ -379,22 +377,21 @@ export default function MarketCalculator() {
 
       {calculated.warnings.length > 0 && <div className="mc-alert mc-alert-warning"><AlertCircle size={17} /><div>{calculated.warnings.map((warning, index) => <div key={index}>{warning}</div>)}</div></div>}
 
-      {calculated.products.length > 0 && <div className="mc-table-wrap">
-        <table className="mc-results-table">
-          <thead><tr><th>Товар</th><th>Количество</th><th>Через Ростов, ₽/шт.</th><th>Через Южные ворота, ₽/шт.</th><th>Разница, ₽/шт.</th></tr></thead>
-          <tbody>{calculated.products.map(product => <tr key={product.id}>
-            <td><strong>{product.name.trim() || "Без названия"}</strong>{product.article && <small>{product.article}</small>}</td>
-            <td>{quantity(product.quantity)} шт.</td>
-            <td>{money(product.route1.costPerUnit)}</td>
-            <td>{money(product.route2.costPerUnit)}</td>
-            <td className={product.differencePerUnit > 0 ? "mc-positive" : product.differencePerUnit < 0 ? "mc-negative" : ""}>
-              {product.differencePerUnit > 0 ? "Южные ворота дешевле на " : product.differencePerUnit < 0 ? "Ростов дешевле на " : ""}
-              {money(Math.abs(product.differencePerUnit))}
-            </td>
-          </tr>)}</tbody>
-        </table>
-      </div>}
-      {calculated.products.map(product => <Breakdown key={product.id} product={product} />)}
+      {calculated.products.map(product => <article className="mc-product-result" key={product.id}>
+        <div className="mc-product-result-heading">
+          <h3>{product.name.trim() || "Без названия"}</h3>
+          <p>{product.article && <span>Артикул {product.article}</span>}<span>{quantity(product.quantity)} шт.</span></p>
+        </div>
+        <dl className="mc-unit-costs">
+          <div><dt>Через Ростов</dt><dd>{money(product.route1.costPerUnit)} / шт.</dd></div>
+          <div><dt>Через Южные ворота</dt><dd>{money(product.route2.costPerUnit)} / шт.</dd></div>
+        </dl>
+        {product.differencePerUnit !== 0 && <p className="mc-unit-difference">
+          {product.differencePerUnit > 0 ? "Южные ворота дешевле на " : "Ростов дешевле на "}
+          <strong>{money(Math.abs(product.differencePerUnit))} / шт.</strong>
+        </p>}
+        <Breakdown product={product} />
+      </article>)}
       {!calculated.products.length && <div className="mc-empty-results"><Package size={27} /><strong>Добавь товары, чтобы увидеть сравнение</strong><span>Результаты пересчитываются автоматически при изменении параметров.</span></div>}
     </section>
 

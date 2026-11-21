@@ -80,7 +80,7 @@ def calculate(snapshot,history,window):
         local_known=enough and history.get('warehouse_attribution',False) and not unassigned[k] and not unexpected[k]
         for w in sorted(warehouses,key=lambda w:(warehouses[w],w)):
             details.append({'warehouse_id':w,'warehouse_name':warehouses[w] or 'Склад Ozon',
-                            **estimate(pairs.get((k,w)),local[k,w],window,local_known,anchor)})
+                            **estimate(pairs.get((k,w)),local.get((k,w),0),window,local_known,anchor)})
         # Same authoritative source as the FBO stock screen. Extra historical/raw
         # warehouse identifiers must not erase quantities returned by analytics.
         required={w for sku,w in raw_pairs if sku==k}|{w for sku,w in local if sku==k}

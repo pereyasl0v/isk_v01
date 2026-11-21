@@ -34,6 +34,7 @@ class ReplenishmentTests(unittest.TestCase):
   p=next(p for p in calculate(i,h,7)['items'] if p['sku']=='10')
   self.assertEqual(len(p['warehouses']),3)
   self.assertEqual(p['warehouses'][2]['state'],'unknown_stock')
+  self.assertEqual(p['unmatched_stock_warehouses'],0)
  def test_unassigned_orders_block_local_not_global(self):
   i,h=sample();h['postings'].append(posting('c',None,7))
   p=calculate(i,h,7)['items'][0]

@@ -3,7 +3,6 @@
 .mc .mc-page{width:100%;max-width:100%;margin:0 auto;color:#24372e}
 .mc .mc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin:2px 0 20px}
 .mc .mc-heading-copy{min-width:0;flex:1}
-.mc .mc-eyebrow{display:inline-block;margin-bottom:7px;color:#62806d;font-size:10px;font-weight:800;letter-spacing:1.1px}
 .mc .mc-header h1{margin:0;color:#20382b;font-size:27px;font-weight:760;letter-spacing:-.65px;line-height:1.2}
 .mc .mc-header p{max-width:680px;margin:8px 0 0;color:#718177;font-size:12px;line-height:1.6}
 .mc .mc-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;flex:0 0 auto;padding-top:4px}
@@ -26,12 +25,10 @@
 .mc .mc-panel{min-width:0;margin:0 0 16px;padding:19px;border:1px solid #e0e8e2;border-radius:13px;background:#fff;box-shadow:0 2px 8px #173c2708}
 .mc .mc-section-heading,.mc .mc-results-heading{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:15px}
 .mc .mc-section-heading>div,.mc .mc-results-heading>div{display:flex;align-items:flex-start;gap:11px;min-width:0}
-.mc .mc-step{display:flex;align-items:center;justify-content:center;flex:0 0 auto;width:30px;height:30px;border-radius:9px;background:#eaf3ec;color:#326a48;font-size:11px;font-weight:800}
 .mc .mc-section-heading h2,.mc .mc-results-heading h2{margin:0;color:#243b2d;font-size:17px;font-weight:750}
 .mc .mc-section-heading p,.mc .mc-results-heading p{margin:4px 0 0;color:#809087;font-size:11px;line-height:1.5}
 .mc .mc-product-card{margin:12px 0 0;padding:15px;border:1px solid #e7ede8;border-radius:11px;background:#fbfdfb}
 .mc .mc-product-heading{display:flex;align-items:center;gap:10px;margin-bottom:13px}
-.mc .mc-product-index{display:flex;align-items:center;justify-content:center;width:27px;height:27px;flex:0 0 auto;border-radius:8px;background:#eaf1eb;color:#4e7159;font-size:10px;font-weight:800}
 .mc .mc-product-heading strong{flex:1;min-width:0;overflow:hidden;color:#31483a;font-size:13px;text-overflow:ellipsis;white-space:nowrap}
 .mc .mc-remove-button{width:31px;height:31px;border-color:#e8e7e2;color:#a17870}
 .mc .mc-remove-button:hover{border-color:#e7d0ca;background:#fff5f3;color:#a34c42}
@@ -78,18 +75,8 @@
 .mc .mc-result-difference{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:13px 0;padding:11px 12px;border:1px solid #dfe9e1;border-radius:8px;background:#fbfdfb;color:#617468;font-size:11px}
 .mc .mc-result-difference svg{color:#4a8b5e}
 .mc .mc-result-difference b{color:#2f6543}
-.mc .mc-table-wrap{width:100%;overflow-x:auto;margin-top:14px}
-.mc .mc-results-table{width:100%;border-collapse:collapse;font-size:11px}
-.mc .mc-results-table th,.mc .mc-results-table td{padding:11px 10px;border-bottom:1px solid #e7ede8;text-align:left;vertical-align:middle}
-.mc .mc-results-table th{background:#f6faf7;color:#607267;font-size:9px;font-weight:800;white-space:nowrap}
-.mc .mc-results-table td{color:#42594a}
-.mc .mc-results-table td:first-child strong{display:block;color:#2c4334;font-size:11px}
-.mc .mc-results-table td:first-child small{display:block;margin-top:3px;color:#91a097;font-size:9px}
-.mc .mc-positive{color:#347b4b!important;font-weight:700}
-.mc .mc-negative{color:#a45b4d!important;font-weight:700}
 .mc .mc-breakdown{margin-top:9px;border:1px solid #e6ece7;border-radius:9px;background:#fcfdfc}
 .mc .mc-breakdown summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;color:#496351;font-size:10px;font-weight:750;cursor:pointer}
-.mc .mc-breakdown summary span:last-child{color:#849188;font-size:9px;font-weight:550}
 .mc .mc-breakdown-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:0 12px 13px}
 .mc .mc-breakdown-grid>div{min-width:0;padding-top:10px;border-top:1px solid #e8eee9}
 .mc .mc-breakdown-grid h4{margin:0 0 8px;color:#3b5a45;font-size:10px}
@@ -150,11 +137,37 @@
  .mc .mc-field-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
  .mc .mc-comparison-grid,.mc .mc-breakdown-grid{grid-template-columns:1fr}
  .mc .mc-result-card>strong{font-size:23px}
- .mc .mc-breakdown summary span:last-child{display:none}
  .mc .mc-archive-backdrop{align-items:flex-end;padding:0}
  .mc .mc-archive-dialog{width:100%;max-height:89vh;min-height:60vh;border-radius:17px 17px 0 0}
  .mc .mc-archive-header{padding:18px 16px 14px}
  .mc .mc-archive-search{margin:14px 15px 10px}
  .mc .mc-archive-list{padding:0 15px 10px}
  .mc .mc-archive-footer{padding:12px 15px}
+}
+
+.mc .mc-field > span { font-size: 12px; }
+.mc .mc-field input, .mc .mc-field select { height: 42px; font-size: 14px; }
+.mc .mc-field em { color: #607267; font-size: 11px; }
+.mc .mc-product-result { margin-top: 14px; padding: 16px; border: 1px solid #e0e8e2; border-radius: 11px; }
+.mc .mc-product-result h3 { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.mc .mc-product-result-heading p { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 4px 0 10px; color: #52685a; overflow-wrap: anywhere; }
+.mc .mc-unit-costs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.mc .mc-unit-costs > div { padding: 10px; border-radius: 8px; background: #f2f7f3; }
+.mc .mc-unit-costs > div + div { background: #f2f6fb; }
+.mc .mc-unit-costs dt { color: #52685a; font-size: 12px; }
+.mc .mc-unit-costs dd { margin: 4px 0 0; font-size: 15px; font-weight: 750; overflow-wrap: anywhere; }
+.mc .mc-unit-difference { margin: 10px 0; color: #2f6543; font-size: 12px; }
+.mc .mc-breakdown summary { font-size: 12px; }
+.mc .mc-breakdown[open] > summary svg { transform: rotate(180deg); }
+.mc .mc-breakdown-row, .mc .mc-breakdown-total, .mc .mc-breakdown-row b, .mc .mc-breakdown-total b { font-size: 12px; }
+.mc .mc-breakdown-grid h4 { font-size: 13px; }
+.mc .mc-page :focus-visible { outline: 2px solid #33815d; outline-offset: 2px; }
+
+@media (max-width: 600px) {
+  .mc .mc-section-heading { align-items: flex-start; flex-wrap: wrap; }
+  .mc .mc-field input, .mc .mc-field select { font-size: 16px; }
+}
+@media (max-width: 400px) {
+  .mc .mc-product-fields, .mc .mc-field-grid, .mc .mc-unit-costs { grid-template-columns: minmax(0, 1fr); }
+  .mc .mc-product-fields > .mc-field:first-child { grid-column: auto; }
 }
