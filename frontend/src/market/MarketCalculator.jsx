@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Archive, Plus, Trash2, Save, RotateCcw, Search, X,
   Package, AlertCircle, ChevronDown,
 } from "lucide-react";
 import { DEFAULT_PACKAGING_WEIGHT_PERCENT, grossWeightWithPackaging, DEFAULT_CONTAINER_VOLUME_M3, DEFAULT_ROSTOV_USD_RATE, rostovFreightRateRubPerM3, batchNetWeightKg, batchVolumeM3, calculatePreliminaryCost, createDraft, createProduct, n } from "./preliminary-costing.mjs";
 
-async function request(path, method = "GET", body) {
+export async function request(path, method = "GET", body) {
   const response = await fetch("/api" + path, {
     credentials: "same-origin",
     method,
@@ -17,7 +18,7 @@ async function request(path, method = "GET", body) {
   return data;
 }
 
-const money = value => new Intl.NumberFormat("ru-RU", {
+export const money = value => new Intl.NumberFormat("ru-RU", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 }).format(Number.isFinite(Number(value)) ? Number(value) : 0) + " ₽";
@@ -59,7 +60,7 @@ function TextField({ label, value, onChange, placeholder = "", maxLength }) {
   </label>;
 }
 
-const routeNames = { route1: "Через Ростов", route2: "Через Южные ворота" };
+export const routeNames = { route1: "Через Ростов", route2: "Через Южные ворота" };
 
 function Breakdown({ product, route, showProductTotals }) {
   const cost = product[route];
@@ -91,6 +92,9 @@ export default function MarketCalculator() {
   const [draft, setDraft] = useState(() => createDraft());
   const [recordId, setRecordId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [formingShipment, setFormingShipment] = useState(false);
+  const shipmentAttempt = useRef(null);
+  const navigate = useNavigate();
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -175,6 +179,33 @@ export default function MarketCalculator() {
       setError(requestError.message || "Не удалось сохранить расчёт.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const formShipment = async () => {
+    if (saving || formingShipment || !route || !validContainerVolume || !validProducts.length) return;
+    if (validProducts.length !== draft.products.length) {
+      setError("Заполните наименование и количество у всех товаров или удалите пустые строки.");
+      return;
+    }
+    if (shipmentAttempt.current?.draft !== draft) {
+      shipmentAttempt.current = { draft, id: createProduct().id };
+    }
+    setFormingShipment(true);
+    setError("");
+    setNotice("");
+    try {
+      const shipment = await request("/purchase-shipments", "POST", {
+        request_id: shipmentAttempt.current.id,
+        calculation_id: recordId,
+        name: calculationTitle(validProducts),
+        data: draft,
+      });
+      navigate("/purchase-shipments/" + encodeURIComponent(shipment.id));
+    } catch (requestError) {
+      setError(requestError.message || "Не удалось сформировать поставку.");
+    } finally {
+      setFormingShipment(false);
     }
   };
 
@@ -266,7 +297,7 @@ export default function MarketCalculator() {
       </div>
       <div className="mc-header-actions">
         <button type="button" className="mc-button mc-button-light" onClick={openArchive}><Archive size={16} /> Архив расчётов</button>
-        <button type="button" className="mc-button mc-button-primary" onClick={save} disabled={saving || !validProducts.length || !route || !validContainerVolume}><Save size={16} /> {saving ? "Сохраняем…" : recordId ? "Сохранить изменения" : "Сохранить расчёт"}</button>
+        <button type="button" className="mc-button mc-button-primary" onClick={save} disabled={saving || formingShipment || !validProducts.length || !route || !validContainerVolume}><Save size={16} /> {saving ? "Сохраняем…" : recordId ? "Сохранить изменения" : "Сохранить расчёт"}</button>
         <button type="button" className="mc-icon-button" onClick={reset} title="Новый расчёт" aria-label="Новый расчёт"><RotateCcw size={17} /></button>
       </div>
     </div>
@@ -376,6 +407,11 @@ export default function MarketCalculator() {
         {multipleProducts && <p className="mc-unit-difference">{money(product[route].costPerUnit)} / шт.</p>}
         <Breakdown product={product} route={route} showProductTotals={multipleProducts} />
       </article>)}
+      {result && <div className="mc-header-actions mt-4">
+        <button type="button" className="mc-button mc-button-primary" disabled={saving || formingShipment} onClick={formShipment}>
+          <Package size={16} /> {formingShipment ? "Формируем…" : "Сформировать поставку"}
+        </button>
+      </div>}
       {!calculated.products.length && <div className="mc-empty-results"><Package size={27} /><strong>{validContainerVolume ? "Добавь товары, чтобы увидеть себестоимость" : "Укажите полезный объём контейнера больше нуля"}</strong><span>Результаты пересчитываются автоматически при изменении параметров.</span></div>}
     </section>}
 

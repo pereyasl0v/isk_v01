@@ -225,6 +225,29 @@ class PreliminaryCostArchiveApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.text)
 
+    def test_form_shipment_persists_independent_cost_snapshot_once(self):
+        self.login(self.other, "other", "Other-Password-2026!")
+        draft = sample_draft()
+        draft["selectedRoute"] = "route1"
+        body = {"request_id": "shipment-test", "name": "Закупка", "data": draft}
+        endpoint = "/api/purchase-shipments"
+        self.assertEqual(self.client.post(endpoint, headers=HEAD, json=body).status_code, 201)
+        first = self.client.post(endpoint, headers=HEAD, json=body).json()
+        self.assertEqual(len(self.client.get(endpoint).json()["items"]), 1)
+        self.assertEqual(self.other.get(endpoint).json()["items"], [])
+        shipment_url = f"{endpoint}/{first['id']}"
+        self.assertEqual(self.other.get(shipment_url).status_code, 404)
+        calculation_url = f"/api/preliminary-costs/{first['calculation_id']}"
+        snapshot = self.client.get(shipment_url).json()
+        self.assertEqual(snapshot["data"]["selectedRoute"], "route1")
+        self.assertIn("route1", snapshot["calculated"]["summary"])
+
+        draft["products"][0]["quantity"] = 1
+        updated = self.client.put(calculation_url, headers=HEAD, json={"name": "Новый", "data": draft})
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual(self.client.delete(calculation_url, headers=HEAD).status_code, 200)
+        self.assertEqual(self.client.get(shipment_url).json(), snapshot)
+
     def test_save_search_edit_and_delete_archive_without_ozon_account(self):
         body = {"name": "Ноябрьская закупка", "data": sample_draft()}
         created = self.client.post("/api/preliminary-costs", headers=HEAD, json=body)

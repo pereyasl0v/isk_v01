@@ -276,6 +276,45 @@ def costing_import_xlsx(body:CostingImportBody,request:Request):
     }
 
 
+class PurchaseShipmentBody(PreliminaryCostBody):
+    request_id: str = Field(min_length=1,max_length=80,pattern=r"^[a-zA-Z0-9-]+$")
+    calculation_id: str | None = None
+
+
+@app.get('/api/purchase-shipments')
+def purchase_shipments_list(request:Request):
+    auth=authenticated(request)
+    return {"items":store.list_purchase_shipments(auth["user_id"])}
+
+
+@app.get('/api/purchase-shipments/{shipment_id}')
+def purchase_shipments_get(shipment_id:str,request:Request):
+    auth=authenticated(request)
+    shipment=store.get_purchase_shipment(auth["user_id"],shipment_id)
+    if not shipment:
+        raise HTTPException(404,"Поставка не найдена.")
+    return shipment
+
+
+@app.post('/api/purchase-shipments',status_code=201)
+def purchase_shipments_create(body:PurchaseShipmentBody,request:Request):
+    auth=authenticated(request)
+    try:
+        data=clean_preliminary_cost(body.data)
+        if "selectedRoute" not in data:
+            raise ValueError("Выберите маршрут доставки.")
+        calculated=calculate_preliminary_cost(data)
+        record=store.save_preliminary_cost(
+            auth["user_id"],body.calculation_id,body.name,data,
+            shipment={"id":str(body.request_id),"calculated":calculated},
+        )
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from None
+    if not record:
+        raise HTTPException(404,"Предварительный расчёт не найден.")
+    return record
+
+
 @app.get('/api/preliminary-costs')
 def preliminary_costs_list(request:Request,q:str=''):
     auth=authenticated(request)

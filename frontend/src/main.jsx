@@ -5,6 +5,7 @@ import {Boxes, LayoutDashboard, Package, Warehouse, Truck, Calculator, Plug, Lis
 import './style.css';
 import Replenishment from './Replenishment';
 import MarketPage from './market';
+import PurchaseShipments from './market/PurchaseShipments';
 import DigitizationCached from './DigitizationCached';
 import ProductDetails from './ProductDetails';
 import BarcodeGenerator from './BarcodeGenerator';
@@ -320,7 +321,7 @@ function AdminUsers(){
   </section>
  </div>
 }
-const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/barcodes','Штрихкоды',Barcode],['/market-calculator','Расчёт себестоимости',Calculator],['/stocks','Остатки и история Ozon',Warehouse],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
+const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/barcodes','Штрихкоды',Barcode],['/market-calculator','Расчёты',Calculator],['/purchase-shipments','Поставки',Truck],['/stocks','Остатки и история Ozon',Warehouse],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
 function RequireAccount({children}){const {me}=useApp();return me?.active_account_id?children:<Navigate to="/connection" replace/>}
 function App(){
  const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);const [sales,setSales]=useState(null);
@@ -361,6 +362,8 @@ function App(){
      <Route path="/digitization" element={<RequireAccount><DigitizationCached state={state} digi={digi} act={act}/></RequireAccount>}/>
      <Route path="/barcodes" element={<BarcodeGenerator/>}/>
      <Route path="/market-calculator" element={<MarketPage/>}/>
+     <Route path="/purchase-shipments" element={<PurchaseShipments/>}/>
+     <Route path="/purchase-shipments/:shipmentId" element={<PurchaseShipments/>}/>
      <Route path="/products" element={<Navigate to="/" replace/>}/>
      <Route path="/stocks" element={<RequireAccount><Stocks/></RequireAccount>}/>
      <Route path="/history" element={<Navigate to="/stocks" replace/>}/>

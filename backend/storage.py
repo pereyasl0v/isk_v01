@@ -93,6 +93,12 @@ class Store:
                 updated_at TEXT NOT NULL, payload TEXT NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)''')
             c.execute('CREATE INDEX IF NOT EXISTS preliminary_cost_search ON preliminary_cost_calculations(user_id,search_name,updated_at)')
+            c.execute("""CREATE TABLE IF NOT EXISTS purchase_shipments (
+                id TEXT NOT NULL, user_id TEXT NOT NULL, calculation_id TEXT NOT NULL,
+                name TEXT NOT NULL, created_at TEXT NOT NULL, payload TEXT NOT NULL,
+                PRIMARY KEY(user_id,id),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)""")
+            c.execute("CREATE INDEX IF NOT EXISTS purchase_shipments_date ON purchase_shipments(user_id,created_at,id)")
             c.execute('''CREATE TABLE IF NOT EXISTS auth_login_attempts (
                 ip TEXT NOT NULL, username TEXT NOT NULL, window_started REAL NOT NULL,
                 failed_count INTEGER NOT NULL, locked_until REAL NOT NULL DEFAULT 0,
@@ -370,7 +376,7 @@ class Store:
             'updated_at':row[3],'data':data,
         }
 
-    def save_preliminary_cost(self,user_id,record_id,name,data):
+    def save_preliminary_cost(self,user_id,record_id,name,data,*,shipment=None):
         user_id=str(user_id)
         name=str(name).strip()[:160]
         if not name:
@@ -384,6 +390,13 @@ class Store:
         now=datetime.now(timezone.utc).isoformat()
         with self.db() as c:
             c.execute('BEGIN IMMEDIATE')
+            if shipment:
+                existing=c.execute(
+                    "SELECT calculation_id FROM purchase_shipments WHERE user_id=? AND id=?",
+                    (user_id,shipment["id"]),
+                ).fetchone()
+                if existing:
+                    return {"id":shipment["id"],"calculation_id":existing[0]}
             if record_id:
                 row=c.execute(
                     'SELECT created_at FROM preliminary_cost_calculations WHERE id=? AND user_id=?',
@@ -410,7 +423,35 @@ class Store:
                        VALUES(?,?,?,?,?,?,?)''',
                     (saved_id,user_id,name,search_name,created_at,now,payload)
                 )
+            if shipment:
+                shipment_payload=self._encode_payload({"data":data,"calculated":shipment["calculated"]})
+                c.execute(
+                    """INSERT INTO purchase_shipments(id,user_id,calculation_id,name,created_at,payload)
+                       VALUES(?,?,?,?,?,?)""",
+                    (shipment["id"],user_id,saved_id,name,now,shipment_payload),
+                )
+                return {"id":shipment["id"],"calculation_id":saved_id}
         return self.get_preliminary_cost(user_id,saved_id)
+
+    def list_purchase_shipments(self,user_id):
+        with self.db() as c:
+            rows=c.execute(
+                """SELECT id,name,created_at FROM purchase_shipments
+                   WHERE user_id=? ORDER BY created_at DESC,id DESC""",
+                (str(user_id),),
+            ).fetchall()
+        return [{"id":row[0],"name":row[1],"created_at":row[2]} for row in rows]
+
+    def get_purchase_shipment(self,user_id,shipment_id):
+        with self.db() as c:
+            row=c.execute(
+                """SELECT id,name,created_at,payload FROM purchase_shipments
+                   WHERE user_id=? AND id=?""",
+                (str(user_id),str(shipment_id)),
+            ).fetchone()
+        if row is None:
+            return None
+        return {"id":row[0],"name":row[1],"created_at":row[2],**self._decode_payload(row[3])}
 
     def delete_preliminary_cost(self,user_id,record_id):
         with self.db() as c:
