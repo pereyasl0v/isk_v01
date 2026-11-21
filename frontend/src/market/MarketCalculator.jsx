@@ -306,14 +306,6 @@ export default function MarketCalculator() {
           <BatchOutput label="Стоимость товара в юанях" value={volumeFormat.format(goodsYuan) + " ¥"} />
           <BatchOutput label="Стоимость товара в рублях без доставки и надбавок" value={money(goodsYuan * n(draft.yuanToRubRate))} />
         </div>
-        <details className="mc-formula-note">
-          <summary>Дополнительные параметры товара</summary>
-          <div className="mc-field-grid mc-batch-totals">
-            <NumberField label="Доставка до Саши, всего" value={product.deliveryToSashaYuan} onChange={value => updateProduct(product.id, "deliveryToSashaYuan", value)} unit="¥" help="Для маршрута через Ростов" />
-            <NumberField label="Доставка до Гуанчжоу, всего" value={product.deliveryToGuangzhouYuan} onChange={value => updateProduct(product.id, "deliveryToGuangzhouYuan", value)} unit="¥" help="Для маршрута через Южные ворота" />
-            <NumberField label="Пошлина по товару" value={product.dutyPercent} onChange={value => updateProduct(product.id, "dutyPercent", value)} unit="%" step="0.1" />
-          </div>
-        </details>
       </article>;
       })}
     </section>
