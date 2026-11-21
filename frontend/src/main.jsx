@@ -43,6 +43,15 @@ function SalesHistoryChart({data,state,act,inv}){
  const [sku,setSku]=useState('all');
  const [selectedRange,setSelectedRange]=useState(null);
  const selectionStart=useRef(null);
+ const chartRef=useRef(null);
+ useEffect(()=>{
+  if(!selectedRange)return;
+  function clearOutside(event){
+   if(!chartRef.current?.contains(event.target))setSelectedRange(null);
+  }
+  document.addEventListener('click',clearOutside,true);
+  return ()=>document.removeEventListener('click',clearOutside,true);
+ },[selectedRange]);
  const pendingPeriodSync=useRef(null);
  // Use the same N completed Moscow dates as Digitization, plus today.
  // Filtering by dates (not the last N rows) also detects incomplete old caches.
@@ -157,7 +166,7 @@ function SalesHistoryChart({data,state,act,inv}){
   {data?.error&&<Notice>{data.error}</Notice>}
   {!points.length?<Empty text="Дневная статистика пока не загружена" help="ИСК получает заказы и историю доставок из Ozon Seller API и Ozon Push."/>:<>
     <div className="sales-chart-legend"><span><i className="ordered"/>Заказано</span>{data?.delivered_available&&<span><i className="delivered"/>{data.delivery_label||'Доставлено'}</span>}<span className="sales-range-hint">Выделите период на графике для подсчёта итогов</span></div>
-   <div className="sales-chart-wrap">
+   <div className="sales-chart-wrap" ref={chartRef}>
     {hoveredPoint&&<div className="sales-chart-tooltip" style={{left:`${Math.max(16,Math.min(84,x(hovered)/width*100))}%`}}>
      <strong>{fmtDay(hoveredPoint.date)}</strong>
      <div><span><i className="ordered"/>Заказано</span><b>{num(hoveredPoint.ordered_units)} шт. · {num(hoveredPoint.ordered_revenue)} ₽</b></div>
@@ -188,7 +197,6 @@ function SalesHistoryChart({data,state,act,inv}){
      <span>Заказано: <strong>{num(selectedTotal.orderedUnits)} шт.</strong></span>
      <span>На сумму: <strong>{num(selectedTotal.orderedAmount)} ₽</strong></span>
      {selectedTotal.deliveredKnownDays>0&&<span>Доставлено: <strong>{num(selectedTotal.deliveredUnits)} шт.</strong>{!selectedTotal.deliveryComplete&&<small> (неполные данные)</small>}</span>}
-     <button type="button" onClick={()=>setSelectedRange(null)}>Сбросить выделение</button>
     </div>}
   </>}
  </section>
