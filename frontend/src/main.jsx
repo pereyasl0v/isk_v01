@@ -57,21 +57,21 @@ function SalesHistoryChart({data,state,act,inv}){
   document.addEventListener('click',clearOutside,true);
   return ()=>document.removeEventListener('click',clearOutside,true);
  },[hasSelection]);
- const pendingPeriodSync=useRef(false);
+ const pendingPeriodSync=useRef(null);
  const refreshSales=useRef(null);
  const allPoints=salesChartWindow(data?.rows,period).points;
  refreshSales.current=backfill=>{
   if(document.hidden)return;
-  if(backfill&&salesChartWindow(data?.rows,period).complete)return;
+  backfill=backfill&&!salesChartWindow(data?.rows,period).complete;
   if(state?.job?.running){
-   if(backfill)pendingPeriodSync.current=true;
+   pendingPeriodSync.current=backfill||Boolean(pendingPeriodSync.current);
    return;
   }
-  pendingPeriodSync.current=false;
+  pendingPeriodSync.current=null;
   act('/sales/sync',{days:period,backfill});
  };
  useEffect(()=>{
-  pendingPeriodSync.current=false;
+  pendingPeriodSync.current=null;
   refreshSales.current(true);
  },[period]);
  useEffect(()=>{
@@ -84,7 +84,7 @@ function SalesHistoryChart({data,state,act,inv}){
   };
  },[]);
  useEffect(()=>{
-  if(!state?.job?.running&&pendingPeriodSync.current)refreshSales.current(true);
+  if(!state?.job?.running&&pendingPeriodSync.current!==null)refreshSales.current(pendingPeriodSync.current);
  },[state?.job?.running]);
  const skuNames=new Map((inv?.products||[]).filter(p=>p.sku).map(p=>[String(p.sku),p.name||String(p.sku)]));
  const skuRows=data?.by_sku||[];

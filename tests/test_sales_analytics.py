@@ -1,4 +1,5 @@
 import unittest
+from datetime import date
 
 from backend.ozon import Ozon, ApiError
 
@@ -37,6 +38,24 @@ class SalesAnalyticsTests(unittest.TestCase):
         self.assertEqual(result['by_sku'][0], {
             'sku':'1001','date':'2026-11-19','ordered_units':7,'ordered_revenue':2270.0,
         })
+
+    def test_live_orders_use_fbo_and_fbs_postings_from_moscow_today(self):
+        calls=[]
+        def transport(path,payload):
+            calls.append(path)
+            fbo='/fbo/' in path
+            return {'postings':[
+                {'posting_number':'current','created_at':'2026-11-21T21:00:00Z',
+                 'products':[{'sku':7,'quantity':2 if fbo else 1,'price':'19.50'}]},
+                {'posting_number':'previous','created_at':'2026-11-21T20:59:59Z',
+                 'products':[{'sku':8,'quantity':10,'price':'1'}]},
+            ]}
+
+        total, by_sku=Ozon('123','key',transport=transport).current_day_orders(
+            date(2026,11,22), lambda _:None)
+        self.assertEqual(calls,['/v3/posting/fbo/list','/v4/posting/fbs/list'])
+        self.assertEqual(total,{'date':'2026-11-22','ordered_units':3,'ordered_revenue':58.5})
+        self.assertEqual(by_sku,[{**total,'sku':'7'}])
 
     def test_duplicate_day_rows_are_summed(self):
         def transport(path, payload):

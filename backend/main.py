@@ -548,32 +548,23 @@ def state(request:Request):
 SALES_REFRESH_INTERVAL = timedelta(minutes=10)
 
 
-def sync_order_days(api,first,today,previous,progress,refresh_today):
-    """Merge contiguous gaps into the saved orders and finalize yesterday once."""
-    first_text,today_text=first.isoformat(),today.isoformat()
-    previous=previous or {}
-    yesterday=(today-timedelta(days=1)).isoformat()
-    replace={today_text} if refresh_today else set()
-    if previous.get('date_to')==yesterday:
-        replace.add(yesterday)
-    rows={row['date']:row for row in previous.get('rows',[])
-          if first_text<=row['date']<=today_text and row['date'] not in replace}
-    by_sku=[row for row in previous.get('by_sku',[]) if row['date'] in rows]
+def sync_order_days(api,first,today,previous,progress):
+    """Fill missing closed dates without touching the live orders point."""
+    rows={row['date']:row for row in previous.get('rows',[])}
+    by_sku=list(previous.get('by_sku',[]))
     day=first
-    while day<=today:
+    while day<today:
         if day.isoformat() in rows:
             day+=timedelta(days=1)
             continue
         start=day
-        while day<=today and day.isoformat() not in rows:
+        while day<today and day.isoformat() not in rows:
             day+=timedelta(days=1)
         loaded=api.daily_sales(start,day-timedelta(days=1),progress)
         rows.update((row['date'],row) for row in loaded['rows'])
         by_sku.extend(loaded['by_sku'])
-    return {'date_from':first_text,'date_to':today_text,
-            'rows':sorted(rows.values(),key=lambda row:row['date']),
-            'by_sku':sorted(by_sku,key=lambda row:(str(row['sku']),row['date'])),
-            'error':None,'source':'ozon_seller_api_v1_analytics_data'}
+    return {**previous,'rows':sorted(rows.values(),key=lambda row:row['date']),
+            'by_sku':sorted(by_sku,key=lambda row:(str(row['sku']),row['date']))}
 
 
 def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=False):
@@ -593,14 +584,14 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
             checked=previous.get('orders_checked_at')
             now=datetime.now(timezone.utc)
             attempted=s.get('orders_attempted_at')
-            refresh_today=(not checked or now-datetime.fromisoformat(checked)>=SALES_REFRESH_INTERVAL)
+            refresh_today=(previous.get('orders_live_day')!=today.isoformat()
+                           or not checked or now-datetime.fromisoformat(checked)>=SALES_REFRESH_INTERVAL)
             if attempted and now-attempted<SALES_REFRESH_INTERVAL:
                 refresh_today=False
-            today_missing=today.isoformat() not in covered
-            if not (refresh_today or (backfill and historical_gap)
-                    or (today_missing and (not attempted or now-attempted>=SALES_REFRESH_INTERVAL))):
+            load_history=backfill and historical_gap
+            if not (refresh_today or load_history):
                 return {'started':False}
-            if refresh_today or today_missing:
+            if refresh_today:
                 s['orders_attempted_at']=now
             # Retain the widest locally cached window when refreshing a narrow view.
             oldest=min(covered,default=requested_first.isoformat())
@@ -640,12 +631,11 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
                         'fbs_stock_quantity':fbs_stock_quantity,'fbs_stocks':fbs_stocks,
                         'fbs_stock_error':fbs_stock_error})
         elif kind=='sales':
-            progress('Загружаем недостающие и актуальные заказы Ozon…')
-            orders=sync_order_days(s['api'],sales_first,today,previous,progress,refresh_today)
-            if refresh_today or today_missing:
-                orders['orders_checked_at']=datetime.now(timezone.utc).isoformat()
-            elif checked:
-                orders['orders_checked_at']=checked
+            first_text,today_text=sales_first.isoformat(),today.isoformat()
+            orders={key:previous[key] for key in ('orders_live_day','orders_checked_at') if key in previous}
+            orders.update(date_from=first_text,date_to=today_text,error=None,
+                          rows=[row for row in previous.get('rows',[]) if first_text<=row['date']<=today_text],
+                          by_sku=[row for row in previous.get('by_sku',[]) if first_text<=row['date']<=today_text])
             delivery_days={
                 day:record for day,record in (previous.get('delivery_days') or {}).items()
                 if sales_first.isoformat()<=day<=today.isoformat()
@@ -657,10 +647,24 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
                     store.latest(s['client'],'history'),
                 ))
 
-            save_orders(delivery_days)
-            if backfill and historical_gap:
+            live_error=None
+            if refresh_today:
+                try:
+                    row,by_sku=s['api'].current_day_orders(today,progress)
+                    orders['rows']=[saved for saved in orders['rows'] if saved['date']!=today_text]+[row]
+                    orders['by_sku']=[saved for saved in orders['by_sku'] if saved['date']!=today_text]+by_sku
+                    orders['orders_live_day']=today_text
+                    orders['orders_checked_at']=now.isoformat()
+                    save_orders(delivery_days)
+                except ApiError as exc:
+                    live_error=exc
+            if load_history:
+                orders=sync_order_days(s['api'],requested_first,today,orders,progress)
+                save_orders(delivery_days)
                 delivery_days.update(delivered_snapshot(s['api'],requested_first,today,previous,progress))
                 save_orders(delivery_days)
+            if live_error:
+                raise live_error
         elif kind=='digitization':
             first=s['api']._as_date(date_from)
             requested_last=s['api']._as_date(date_to)

@@ -429,6 +429,7 @@ class AuthApiTests(unittest.TestCase):
         main.store.save(scope,'sales_analytics',{
             'date_to':today.isoformat(),
             'orders_checked_at':current_check.isoformat(),
+            'orders_live_day':today.isoformat(),
             'rows':[{'date':(first+timedelta(days=i)).isoformat(),'ordered_units':7}
                     for i in range(15) if first+timedelta(days=i)!=gap],
             'by_sku':[],
@@ -443,6 +444,9 @@ class AuthApiTests(unittest.TestCase):
             return self.client.post('/api/sales/sync',headers=HEAD,json={'days':14,'backfill':backfill}).json()
 
         with patch.object(FakeOzon,'daily_sales',create=True,side_effect=daily_sales) as orders, \
+                patch.object(FakeOzon,'current_day_orders',create=True,return_value=(
+                    {'date':today.isoformat(),'ordered_units':3},[],
+                )) as live, \
                 patch.object(main,'delivered_snapshot',return_value={}) as deliveries, \
                 patch.object(main,'download_digitization_day') as finance:
             self.assertFalse(refresh(False)['started'])
@@ -459,7 +463,9 @@ class AuthApiTests(unittest.TestCase):
             main.store.save(scope,'sales_analytics',data)
             self.assertTrue(refresh(False)['started'])
             self.assertIsNone(self.wait()['job']['error'])
-            self.assertEqual(orders.call_args.args[:2],(today,today))
+            orders.assert_called_once()
+            live.assert_called_once()
+            self.assertEqual(live.call_args.args[0],today)
             self.assertFalse(refresh(False)['started'])
             deliveries.assert_called_once()
             finance.assert_not_called()

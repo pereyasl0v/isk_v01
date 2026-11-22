@@ -190,6 +190,7 @@ class Ozon(BaseOzon):
                 'offer_id': str(product.get('offer_id') or ''),
                 'name': str(product.get('name') or ''),
                 'quantity': quantity,
+                'price': Ozon._price(product.get('price')),
             })
 
         analytics = posting.get('analytics_data') or {}
@@ -357,6 +358,37 @@ class Ozon(BaseOzon):
             'errors': errors,
             'postings': ordered,
         }
+
+    def current_day_orders(self, day, progress):
+        history = self.postings(1, progress)
+        if history['errors']:
+            raise ApiError('Неполная история заказов: ' + '; '.join(history['errors']))
+
+        iso_day = day.isoformat()
+        by_sku = {}
+        for posting in history['postings']:
+            created = posting.get('created_at') or posting.get('in_process_at')
+            if not created:
+                raise ApiError('Ozon вернул отправление без даты заказа.')
+            try:
+                local_date = datetime.fromisoformat(created.replace('Z', '+00:00')).astimezone(MOSCOW_TZ).date()
+            except (ValueError, TypeError):
+                raise ApiError('Ozon вернул некорректную дату заказа.') from None
+            if local_date != day:
+                continue
+            for product in posting['products']:
+                row = by_sku.setdefault(product['sku'], {
+                    'sku': product['sku'], 'date': iso_day, 'ordered_units': 0, 'ordered_revenue': 0.0,
+                })
+                row['ordered_units'] += product['quantity']
+                row['ordered_revenue'] += product['price'] * product['quantity']
+        total = {'date': iso_day, 'ordered_units': 0, 'ordered_revenue': 0.0}
+        for row in by_sku.values():
+            total['ordered_units'] += row['ordered_units']
+            total['ordered_revenue'] += row['ordered_revenue']
+            row['ordered_revenue'] = round(row['ordered_revenue'], 2)
+        total['ordered_revenue'] = round(total['ordered_revenue'], 2)
+        return total, list(by_sku.values())
 
     @staticmethod
     def _as_date(value):
