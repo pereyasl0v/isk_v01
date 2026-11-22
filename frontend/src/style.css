@@ -105,8 +105,9 @@
 
 .forecast-period{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .forecast-period-dates{margin:0;text-align:right}
-.header-refresh{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
-.account-stock-date{white-space:nowrap}
+.header-refresh{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+.account-update-status{display:flex;flex-direction:column;gap:2px;font-size:12px;line-height:1.3;font-weight:600}
+.account-update-status time{color:#66786f;font-weight:400;font-variant-numeric:tabular-nums;white-space:nowrap}
 @media(max-width:680px){.forecast-period{align-items:flex-start}.forecast-period-dates{text-align:left}}
 @media(max-width:760px){
  main>header:has(.header-refresh){height:auto;min-height:60px;padding-block:8px;flex-wrap:wrap;gap:8px}

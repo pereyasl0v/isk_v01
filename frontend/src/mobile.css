@@ -121,7 +121,7 @@
   white-space: normal;
  }
  .app-header .status-dot { flex-shrink: 0; }
- .account-stock-date { order: 2; flex: 0 0 100%; white-space: normal; }
+ .account-update-status { order: 2; flex: 0 0 100%; flex-direction: row; flex-wrap: wrap; gap: 2px 8px; }
  .workspace {
   padding: 16px max(12px, env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
  }

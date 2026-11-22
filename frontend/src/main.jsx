@@ -453,7 +453,25 @@ function App(){
  const navItems=me.user.role==='admin'?[...nav,['/admin/users','Пользователи',Users]]:nav;
  return <Context.Provider value={{me,state,setState,inv,hist,digi,sales,reload,act,setError}}>
   <div className="shell"><AppNavigation items={navItems} username={me.user.username} onLogout={logout}/>
-  <main><header className="app-header">{state&&<div className="header-refresh"><span className="muted account-stock-date">{inv?.at?'Остатки: '+new Date(inv.at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}):'Остатки ещё не загружены'}</span><button className="primary" disabled={state.job.running} onClick={()=>act('/account/sync',{})}><RefreshCw size={16} className={state.job.running&&state.job.kind!=='sales'?'animate-spin':''}/> {state.job.running&&state.job.kind!=='sales'?'Обновляем…':'Обновить'}</button></div>}<div className="header-actions ml-auto"><NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink><button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button></div></header>
+  <main>
+   <header className="app-header">
+    {state&&<div className="header-refresh">
+     <div className="account-update-status">
+      <span>{inv?.at?'Состояние обновлено':'Данные ещё не загружены'}</span>
+      {inv?.at&&<time dateTime={inv.at}>{new Date(inv.at).toLocaleString('ru-RU',{
+       timeZone:'Europe/Moscow',dateStyle:'short',timeStyle:'medium',
+      }).replace(',',' ·')}</time>}
+     </div>
+     <button className="primary" disabled={state.job.running} onClick={()=>act('/account/sync',{})}>
+      <RefreshCw size={16} className={state.job.running&&state.job.kind!=='sales'?'animate-spin':''}/>
+      {state.job.running&&state.job.kind!=='sales'?'Обновляем…':'Обновить'}
+     </button>
+    </div>}
+    <div className="header-actions ml-auto">
+     <NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink>
+     <button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button>
+    </div>
+   </header>
    <div className="workspace">
     {error&&<div role="alert"><Notice>{error}<button className="ml-3" onClick={()=>setError('')}>Закрыть</button></Notice></div>}
     {state?.job.running&&state.job.kind!=='sales'&&<div className="progress"><RefreshCw size={17} className="animate-spin"/>{state.job.message}</div>}{state?.job.error&&<Notice>{state.job.error}</Notice>}
