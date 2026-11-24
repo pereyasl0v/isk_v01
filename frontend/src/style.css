@@ -60,13 +60,13 @@
 @media(max-width:720px){.sales-chart .panel-title{align-items:flex-start}.sales-chart-controls{width:100%;justify-content:space-between}.sales-chart-controls .segmented{flex:1;justify-content:space-between}.sales-chart-controls .segmented button{min-width:0;padding:7px 8px}.sales-chart-svg{min-height:150px}.sales-chart-tooltip{min-width:155px;padding:10px 12px;font-size:11px}}
 
 /* Compact Ozon Seller-style orders / delivered chart. */
-.sales-chart.panel{background:#f6f8fc;border:1px solid #ecf0f6;border-radius:22px;box-shadow:none;padding:18px 20px 16px;margin:12px 0 20px}
+.sales-chart.panel{background:#fff;border:1px solid #e2e8e4;border-radius:14px;box-shadow:none;padding:18px 20px 16px;margin:12px 0 20px}
 .sales-chart .panel-title{padding:2px 2px 11px;margin-bottom:0}
 .sales-chart .panel-title h3{display:flex;align-items:center;flex-wrap:wrap;gap:12px;color:#243f59;font-weight:750}
 .sales-chart .panel-title p{color:#627891}
 .sales-price-pill{font-size:11px;font-weight:650;color:#fff;background:#5b4be9;border-radius:7px;padding:5px 8px;white-space:nowrap}
 .sales-chart-controls>select{background:#fff;border:1px solid #dce7f0;border-radius:8px;max-width:235px;color:#435871}
-.sales-chart-controls .segmented{background:#f0f3f9;border:1px solid #e8ecf5;border-radius:9px}
+.sales-chart-controls .segmented{background:#f4f7f5;border:1px solid #e2e8e4;border-radius:9px}
 .sales-chart-controls .segmented button{color:#60758d}
 .sales-chart-controls .segmented .selected{background:#fff;color:#1c65cf;box-shadow:0 1px 4px #2e4c7024}
 .sales-chart-legend{padding:8px 2px 5px;margin:0;color:#47617b}
