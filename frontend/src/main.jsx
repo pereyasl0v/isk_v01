@@ -296,9 +296,23 @@ function History({chartWindow}){
  const periodDate=day=>day?.split('-').reverse().join('.')||'—';
  const statuses=[...new Set(scoped.map(p=>p.status).filter(Boolean))].sort();
  return <section className="panel">
-  <div className="panel-title"><div><h3>История отправлений Ozon</h3><p className="muted mt-2">FBO: {num(counts.fbo)} · FBS: {num(counts.fbs)}</p></div>
+  <div className="history-overview-header">
+   <div className="history-overview-title">
+    <h3>История отправлений Ozon</h3>
+    <p className="muted">Последняя проверка: {date(hist?.at)}</p>
+   </div>
+   <aside className="history-orders-summary" aria-label="Заказы и период истории">
+    <strong className="history-orders-heading">Заказы</strong>
+    <div className="history-orders-counts" title="Количество отправлений за выбранный период">
+     <div><span>FBO</span><strong>{num(counts.fbo)}</strong></div>
+     <div><span>FBS</span><strong>{num(counts.fbs)}</strong></div>
+    </div>
+    <div className="history-orders-period">
+     <span>Период</span>
+     <strong>{periodDate(chartWindow.from)} — {periodDate(chartWindow.to)}</strong>
+    </div>
+   </aside>
   </div>
-  <p className="muted mb-4">Период графика и истории: {periodDate(chartWindow.from)} — {periodDate(chartWindow.to)} · Последняя проверка: {date(hist?.at)}</p>
   {hist?.errors?.length>0&&<Notice>Не все данные удалось обновить: {hist.errors.join('; ')}. Ранее сохранённая история оставлена.</Notice>}
   <div className="filters">
    <Filter value={q} set={setQ} placeholder="Номер отправления"/>
