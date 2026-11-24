@@ -4,17 +4,45 @@ Unlike Ozon's Premium delivered_units metric, this is *realization* by
 accrual day: sales less returns, plus marketplace buyouts. It is never labeled
 as delivery and unavailable days remain unknown rather than zero.
 """
+import math
 from .digitization import summarize as summarize_digitization
+
+
+def _closed_day_orders(record):
+    """Read the exact same saved posting totals as the Digitization card.
+
+    A failed or incomplete Ozon posting request is not authoritative; leave
+    that day on its existing analytics value instead of inventing parity.
+    """
+    source = record.get('orders') or {}
+    if not isinstance(source, dict) or source.get('errors'):
+        return None
+    if source.get('quantity') is None or source.get('amount') is None:
+        return None
+    try:
+        qty = float(source['quantity'])
+        amount = float(source['amount'])
+    except (ValueError, TypeError, OverflowError):
+        return None
+    if not (math.isfinite(qty) and math.isfinite(amount)) or qty < 0 or amount < 0:
+        return None
+    if not qty.is_integer():
+        return None
+    return {'ordered_units': int(qty), 'ordered_revenue': round(amount, 2)}
 
 
 def add_financial_sales(orders, daily_records):
     totals = {}
     details = {}
+    cached_orders = {}
     incomplete = []
     for record in daily_records or []:
         day = str(record.get('day') or '')
         if not day:
             continue
+        daily_order_totals = _closed_day_orders(record)
+        if daily_order_totals is not None:
+            cached_orders[day] = daily_order_totals
         try:
             result = summarize_digitization(record)
         except (ValueError, KeyError, TypeError):
@@ -45,9 +73,18 @@ def add_financial_sales(orders, daily_records):
                     'sales_partial': partial,
                 }
 
+    # For complete closed days the all-products chart matches the Ozon
+    # posting-list totals already archived by Digitization. For today and
+    # missing/failed daily snapshots keep the existing analytics/live source.
     rows = [
         {
-            **row, **totals.get(row['date'], {
+            **row,
+            **(cached_orders.get(row['date']) or {}),
+            'ordered_source': (
+                'digitization_postings' if row['date'] in cached_orders
+                else 'ozon_analytics_or_live'
+            ),
+            **totals.get(row['date'], {
                 'sold_units': None, 'sold_amount': None, 'sales_partial': False,
             }),
         } for row in orders.get('rows') or []
@@ -80,4 +117,8 @@ def add_financial_sales(orders, daily_records):
         'financial_sales_missing_days': missing,
         'financial_sales_incomplete_days': incomplete,
         'financial_sales_source': 'sqlite_digitization_days',
+        'orders_source': 'closed_day_digitization_postings_with_analytics_fallback',
+        'orders_reconciled_days': sorted(day for day in cached_orders if any(
+            row.get('date') == day for row in rows
+        )),
     }
