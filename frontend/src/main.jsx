@@ -32,14 +32,19 @@ function Table({columns,rows,empty='Нет строк для отображен�
  return <><ScrollTable label={label} stickyColumn={columns.length > 4}><table><thead><tr>{columns.map(c=><th key={c[0]}>{c[1]}</th>)}</tr></thead><tbody>{rows.slice(safe*pageSize,safe*pageSize+pageSize).map((r,i)=><tr key={i} {...(onRowClick?{className:"product-clickable-row",role:"button",tabIndex:0,onClick:()=>onRowClick(r),onKeyDown:e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onRowClick(r)}}}:{})}>{columns.map(c=><td key={c[0]}>{c[2]?c[2](r[c[0]],r):String(r[c[0]]??'—')}</td>)}</tr>)}</tbody></table></ScrollTable>{!rows.length?<Empty text={empty} help="Проверьте загрузку и выбранные фильтры."/>:<div className="pagination"><span>{num(rows.length)} строк · страница {safe+1} из {pages}</span><div><button disabled={safe===0} onClick={()=>setPage(safe-1)}>Назад</button><button disabled={safe>=pages-1} onClick={()=>setPage(safe+1)}>Далее</button></div></div>}</>
 }
 function Filter({value,set,placeholder='Поиск по названию, артикулу или SKU'}){return <label className="search"><Search size={17}/><input aria-label="Поиск" value={value} onChange={e=>set(e.target.value)} placeholder={placeholder}/></label>}
-function Card({label,value,note,icon:Icon=Package}){return <div className="metric"><div className="metric-top"><span>{label}</span><Icon size={19}/></div><strong>{num(value)}</strong><small>{note}</small></div>}
+function Card({label,value,note,icon:Icon=Package,to}){
+ const contents=<><div className="metric-top"><span>{label}</span><Icon size={19}/></div><strong>{num(value)}</strong><small>{note}</small></>;
+ return to
+  ? <NavLink to={to} className="metric metric-link" aria-label={`Открыть каталог товаров (${num(value)} карточек)`}>{contents}</NavLink>
+  : <div className="metric">{contents}</div>;
+}
 function Overview(){
  const {inv,state,act,sales}=useApp();const s=inv?.summary;
  return <><div className="overview-heading"><div><h1>Обзор кабинета</h1><p className="muted mt-2">Продажи и остатки Ozon</p></div></div>
- <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6 overview-metrics"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек"/></div>
+ <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6 overview-metrics"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек" to="/products"/></div>
  <SalesHistoryChart data={sales} state={state} act={act} inv={inv}/>
  {inv?.warning&&<Notice>{inv.warning}</Notice>}
- <div className="mt-5"><ProductCatalog/></div></>
+ <div className="mt-5"><History/></div></>
 }
 function SalesHistoryChart({data,state,act,inv}){
  const [period,setPeriod]=useState(14);
@@ -271,7 +276,7 @@ function Stocks(){
  <div className="filters"><Filter value={q} set={setQ}/><label className="check"><input type="checkbox" checked={only} onChange={e=>setOnly(e.target.checked)}/> Только склады с остатком</label></div>
  {!raw&&inv?.analytics===null?<Empty text="Остатки пока недоступны" help="Обновите данные. Если загрузка не удаётся, проверьте разрешение на чтение аналитики у ключа Ozon."/>:!shown.length?<Empty text="Карточки не найдены" help="Проверьте загрузку, поиск и фильтр остатков."/>:<div className="fbo-stock-list">{shown.map(g=><details className="stock-card" key={g.key}><summary><div className="stock-title"><strong>{g.name}</strong><span className="sku">SKU {g.skus.join(', ')}</span><small>Артикул: {g.offer}</small></div><div className="stock-total"><strong>{num(g.total)} <small>ед.</small></strong><span>{raw?'На складах':'Доступно к продаже'}</span></div><span className="expand-arrow">⌄</span></summary><div className="stock-details">{raw&&<p className="muted mb-4">Учётное количество и резерв показаны раздельно. Доступное к продаже количество находится на вкладке «Доступные остатки».</p>}<Table label="Остатки по складам" rows={g.visible} columns={raw?[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["present","На складе, ед.",num],["reserved","В резерве, ед.",num]]:[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["available_stock_count","Доступно, ед.",num],["valid_stock_count","Готовится к продаже, ед.",num],["transit_stock_count","В пути на Ozon, ед.",num],["requested_stock_count","В заявках, ед.",num],["inbound_replenishment","В перемещении, ед.",num],["stock_not_being_sold","Снято с продажи, ед.",num]]}/></div></details>)}</div>}
  </section>
- <History/></div>
+ </div>
 }
 function History(){
  const {hist}=useApp();
@@ -363,7 +368,7 @@ function AdminUsers(){
   </section>
  </div>
 }
-const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/barcodes','Штрихкоды',Barcode],['/market-calculator','Расчёты',Calculator],['/purchase-shipments','Поставки',Truck],['/stocks','Остатки и история Ozon',Warehouse],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
+const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/barcodes','Штрихкоды',Barcode],['/market-calculator','Расчёты',Calculator],['/purchase-shipments','Поставки',Truck],['/stocks','Остатки Ozon',Warehouse],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
 function AppNavigation({items,username,onLogout}){
  const dialog=useRef(null);
  const trigger=useRef(null);
@@ -520,9 +525,9 @@ function App(){
      <Route path="/purchase-shipments" element={<PurchaseShipments/>}/>
      <Route path="/purchase-shipments/:shipmentId" element={<PurchaseShipments/>}/>
      <Route path="/purchase-shipments/:shipmentId/edit" element={<PurchaseShipments editing/>}/>
-     <Route path="/products" element={<Navigate to="/" replace/>}/>
+     <Route path="/products" element={<RequireAccount><ProductCatalog/></RequireAccount>}/>
      <Route path="/stocks" element={<RequireAccount><Stocks/></RequireAccount>}/>
-     <Route path="/history" element={<Navigate to="/stocks" replace/>}/>
+     <Route path="/history" element={<Navigate to="/" replace/>}/>
      <Route path="/replenishment" element={<RequireAccount><Replenishment inv={inv} hist={hist} api={api}/></RequireAccount>}/>
      <Route path="/plan" element={<Navigate to="/replenishment" replace/>}/><Route path="/forecast" element={<Navigate to="/replenishment" replace/>}/>
      <Route path="/logs" element={<RequireAccount><Logs/></RequireAccount>}/><Route path="*" element={<Navigate to="/" replace/>}/>
