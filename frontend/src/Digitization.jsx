@@ -97,7 +97,7 @@ export default function Digitization({state,digi,act,autoLoadComparisons=false})
   let live=true;
   fetch('/api/inventory',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(data=>{if(live&&data)setInventory(data)}).catch(()=>{});
   return()=>{live=false};
- },[state,digi?.at]);
+ },[state?.account_id,state?.job?.running,digi?.at]);
 
  useEffect(()=>{
   const first=digi?.since, last=digi?.effective_to||digi?.to;
@@ -108,7 +108,7 @@ export default function Digitization({state,digi,act,autoLoadComparisons=false})
    .then(r=>r.ok?r.json():null).then(data=>{if(live)setInventoryHistory(data?.days||[])})
    .catch(()=>{if(live)setInventoryHistory([])});
   return()=>{live=false};
- },[state,digi?.since,digi?.effective_to,digi?.to,digi?.at]);
+ },[state?.account_id,state?.job?.running,digi?.since,digi?.effective_to,digi?.to,digi?.at]);
 
  // Read the preceding period from SQLite before requesting any Ozon data.
  // When comparisons are enabled, missing days are filled once automatically.
