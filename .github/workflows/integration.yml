@@ -31,6 +31,8 @@ jobs:
         working-directory: frontend
       - run: node --test src/sales-chart-range.test.mjs
         working-directory: frontend
+      - run: node --test src/shipment-status-summary.test.mjs
+        working-directory: frontend
       - run: node --test src/digitization-period.test.mjs
         working-directory: frontend
       - run: node --test src/state-polling.test.mjs
