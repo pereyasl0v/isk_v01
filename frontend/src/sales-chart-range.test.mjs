@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {salesChartWindow, salesRangeTotals, salesTickIndexes} from './sales-chart-range.mjs';
+import {salesChartWindow, salesRangeTotals, salesTickIndexes, postingsInChartWindow, postingMoscowDay} from './sales-chart-range.mjs';
 
 test('90-day chart keeps last two tick labels separated', () => {
   const ticks = salesTickIndexes(90);
@@ -76,4 +76,39 @@ test('chart ignores old cached dates and uses Moscow today across midnight', () 
   assert.equal(window.points.length, 8);
   assert.equal(window.complete, true);
   assert.deepEqual(salesChartWindow([], 7, now).points, []);
+});
+
+test('posting history uses exactly the chart period, including today in Moscow', () => {
+ const now = new Date('2026-11-24T18:00:00Z');
+ const chartWindow = salesChartWindow([], 14, now);
+ assert.deepEqual({from: chartWindow.from,to: chartWindow.to},{from:'2026-11-10',to:'2026-11-24'});
+ const postings = [
+  {number:'before',created_at:'2026-11-09T20:59:59Z'}, // 09 Nov 23:59 MSK
+  {number:'first',created_at:'2026-11-09T21:00:00Z'},  // 10 Nov 00:00 MSK
+  {number:'middle',created_at:'2026-11-20T10:30:00+03:00'},
+  {number:'last',created_at:'2026-11-24T20:59:59Z'},  // 24 Nov 23:59 MSK
+  {number:'after',created_at:'2026-11-24T21:00:00Z'}, // 25 Nov 00:00 MSK
+  {number:'naive',in_process_at:'2026-11-20T15:00:00'},
+  {number:'unknown'}
+ ];
+ assert.deepEqual(postingsInChartWindow(postings,chartWindow).map(p=>p.number),
+  ['first','middle','last','naive']);
+ assert.equal(postingMoscowDay('2026-11-24T22:00:00Z'),'2026-11-25');
+ assert.equal(postingMoscowDay('2026-11-24T11:45:00'),'2026-11-24');
+ assert.equal(postingMoscowDay(null),null);
+});
+
+test('changing chart controls also changes the posting history time coverage',()=>{
+ const now = new Date('2026-11-24T18:00:00Z');
+ const postings = [
+  {number:'nov-15',created_at:'2026-11-15T12:00:00Z'},
+  {number:'nov-20',created_at:'2026-11-20T12:00:00Z'},
+  {number:'nov-24',created_at:'2026-11-24T12:00:00Z'}
+ ];
+ assert.deepEqual(postingsInChartWindow(postings,salesChartWindow([],7,now)).map(p=>p.number),
+  ['nov-20','nov-24']);
+ assert.deepEqual(postingsInChartWindow(postings,salesChartWindow([],14,now)).map(p=>p.number),
+  ['nov-15','nov-20','nov-24']);
+ assert.deepEqual(postingsInChartWindow(postings,salesChartWindow([],30,now)).map(p=>p.number),
+  ['nov-15','nov-20','nov-24']);
 });
