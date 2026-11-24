@@ -11,7 +11,7 @@ import DigitizationCached from './DigitizationCached';
 import ProductDetails from './ProductDetails';
 import BarcodeGenerator from './BarcodeGenerator';
 import {statusLabel,roleLabel,groupStocks} from './presentation';
-import {salesChartWindow,salesRangeTotals,salesTickIndexes} from './sales-chart-range.mjs';
+import {salesChartWindow,salesRangeTotals,salesTickIndexes,postingsInChartWindow} from './sales-chart-range.mjs';
 import {statePollDelay,keepUnchangedState} from './state-polling.mjs';
 import './mobile.css';
 
@@ -40,14 +40,15 @@ function Card({label,value,note,icon:Icon=Package,to}){
 }
 function Overview(){
  const {inv,state,act,sales}=useApp();const s=inv?.summary;
+ const [period,setPeriod]=useState(14);
+ const chartWindow=salesChartWindow(sales?.rows,period);
  return <><div className="overview-heading"><div><h1>Обзор кабинета</h1><p className="muted mt-2">Продажи и остатки Ozon</p></div></div>
  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6 overview-metrics"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек" to="/products"/></div>
- <SalesHistoryChart data={sales} state={state} act={act} inv={inv}/>
+ <SalesHistoryChart data={sales} state={state} act={act} inv={inv} period={period} setPeriod={setPeriod} chartWindow={chartWindow}/>
  {inv?.warning&&<Notice>{inv.warning}</Notice>}
- <div className="mt-5"><History/></div></>
+ <div className="mt-5"><History chartWindow={chartWindow}/></div></>
 }
-function SalesHistoryChart({data,state,act,inv}){
- const [period,setPeriod]=useState(14);
+function SalesHistoryChart({data,state,act,inv,period,setPeriod,chartWindow}){
  const [hovered,setHovered]=useState(null);
  const [sku,setSku]=useState('all');
  const [selectedRange,setSelectedRange]=useState(null);
@@ -65,10 +66,10 @@ function SalesHistoryChart({data,state,act,inv}){
  },[hasSelection]);
  const pendingPeriodSync=useRef(null);
  const refreshSales=useRef(null);
- const allPoints=salesChartWindow(data?.rows,period).points;
+ const allPoints=chartWindow.points;
  refreshSales.current=backfill=>{
   if(document.hidden)return;
-  backfill=backfill&&!salesChartWindow(data?.rows,period).complete;
+  backfill=backfill&&!chartWindow.complete;
   if(state?.job?.running){
    pendingPeriodSync.current=backfill||Boolean(pendingPeriodSync.current);
    return;
@@ -278,32 +279,33 @@ function Stocks(){
  </section>
  </div>
 }
-function History(){
+function History({chartWindow}){
  const {hist}=useApp();
  const [q,setQ]=useState('');const [status,setStatus]=useState('');const [scheme,setScheme]=useState('all');
- const postings=hist?.postings||[];
+ const postings=postingsInChartWindow(hist?.postings||[],chartWindow);
  const scoped=postings.filter(p=>scheme==='all'||String(p.scheme||'FBO').toUpperCase()===scheme);
  const rows=scoped.filter(p=>String(p.number||'').includes(q)&&(!status||p.status===status)).map(p=>({
   ...p,scheme:p.scheme||'FBO',event_date:p.created_at||p.in_process_at,
   units:(p.products||[]).reduce((n,r)=>n+Number(r.quantity||0),0),
   items:(p.products||[]).map(r=>`${r.offer_id||r.sku} × ${r.quantity}`).join('; ')
  }));
- const counts=hist?.counts||{
-  fbo:postings.filter(p=>(p.scheme||'FBO')==='FBO').length,
-  fbs:postings.filter(p=>p.scheme==='FBS').length
+ const counts={
+  fbo:postings.filter(p=>String(p.scheme||'FBO').toUpperCase()==='FBO').length,
+  fbs:postings.filter(p=>String(p.scheme||'FBO').toUpperCase()==='FBS').length
  };
+ const periodDate=day=>day?.split('-').reverse().join('.')||'—';
  const statuses=[...new Set(scoped.map(p=>p.status).filter(Boolean))].sort();
  return <section className="panel">
   <div className="panel-title"><div><h3>История отправлений Ozon</h3><p className="muted mt-2">FBO: {num(counts.fbo)} · FBS: {num(counts.fbs)}</p></div>
   </div>
-  <p className="muted mb-4">Последняя проверка: {date(hist?.at)}{hist?.since&&` · охват ${date(hist.since)} — ${date(hist.to)}`}</p>
+  <p className="muted mb-4">Период графика и истории: {periodDate(chartWindow.from)} — {periodDate(chartWindow.to)} · Последняя проверка: {date(hist?.at)}</p>
   {hist?.errors?.length>0&&<Notice>Не все данные удалось обновить: {hist.errors.join('; ')}. Ранее сохранённая история оставлена.</Notice>}
   <div className="filters">
    <Filter value={q} set={setQ} placeholder="Номер отправления"/>
    <select aria-label="Схема отправления" value={scheme} onChange={e=>{setScheme(e.target.value);setStatus('');}}><option value="all">FBO и FBS</option><option value="FBO">Только FBO</option><option value="FBS">Только FBS</option></select>
    <select aria-label="Статус" value={status} onChange={e=>setStatus(e.target.value)}><option value="">Все статусы</option>{statuses.map(value=><option key={value} value={value}>{statusLabel(value)}</option>)}</select>
   </div>
-  <div className="fbo-history-table"><Table label="История отправлений Ozon" rows={rows} pageSize={8} columns={[["scheme","Схема",v=>v],["number","Отправление"],["event_date","Создано / обработка",v=>date(v)],["status","Статус",statusLabel],["substatus","Подстатус",v=>v||'—'],["warehouse_name","Склад",v=>v||'—'],["items","Состав"],["units","Единиц",num]]}/></div>
+  <div className="fbo-history-table"><Table key={chartWindow.from+':'+chartWindow.to} label="История отправлений Ozon" rows={rows} pageSize={8} columns={[["scheme","Схема",v=>v],["number","Отправление"],["event_date","Создано / обработка",v=>date(v)],["status","Статус",statusLabel],["substatus","Подстатус",v=>v||'—'],["warehouse_name","Склад",v=>v||'—'],["items","Состав"],["units","Единиц",num]]}/></div>
  </section>
 }
 function LoginScreen({onSuccess}){
