@@ -164,3 +164,7 @@
  .history-status-bar-track{grid-column:1/-1;grid-row:2}
  .history-status-bar-value{grid-column:2;grid-row:1}
 }
+
+
+/* Explain why financial closed-day orders and the live chart can differ. */
+.sales-chart-source-note{margin-top:9px;padding:0 3px;color:#74869a;font-size:11px;line-height:1.55}
