@@ -70,3 +70,28 @@ export function salesChartWindow(rows, days, now = new Date()) {
     complete: points.length === days + 1 && uniqueDays.size === days + 1
   };
 }
+
+/**
+ * Show posting history on precisely the same Moscow calendar dates as the
+ * order chart. Ozon normally sends timezone-aware ISO timestamps, while some
+ * archived rows may already contain Moscow-local timestamps without an offset.
+ */
+export function postingMoscowDay(value) {
+  if (typeof value !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}/.test(value)) return null;
+  if (!/(?:Z|[+-]\\d{2}:?\\d{2})$/i.test(value)) return value.slice(0, 10);
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone:'Europe/Moscow', year:'numeric', month:'2-digit', day:'2-digit'
+  }).formatToParts(parsed);
+  const part = name => parts.find(item => item.type === name)?.value;
+  return [part('year'),part('month'),part('day')].join('-');
+}
+
+export function postingsInChartWindow(postings, chartWindow) {
+  if (!Array.isArray(postings) || !chartWindow?.from || !chartWindow?.to) return [];
+  return postings.filter(posting => {
+    const day = postingMoscowDay(posting?.created_at || posting?.in_process_at);
+    return day !== null && day >= chartWindow.from && day <= chartWindow.to;
+  });
+}
