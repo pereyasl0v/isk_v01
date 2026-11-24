@@ -33,6 +33,8 @@ jobs:
         working-directory: frontend
       - run: node --test src/digitization-period.test.mjs
         working-directory: frontend
+      - run: node --test src/state-polling.test.mjs
+        working-directory: frontend
       - run: node --test src/inventory-capitalization.test.mjs
         working-directory: frontend
       - run: npm run build
