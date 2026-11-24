@@ -155,6 +155,10 @@ function SalesHistoryChart({data,state,act,inv,period,setPeriod,chartWindow}){
  const selectionIndexes=selectedRange?.map(day=>points.findIndex(point=>point.date===day))||[];
  const selectedTotal=selectionIndexes.length===2&&selectionIndexes.every(index=>index>=0)
   ?salesRangeTotals(points,selectionIndexes[0],selectionIndexes[1]):null;
+ const visibleRange=selectedTotal?points.slice(selectedTotal.startIndex,selectedTotal.endIndex+1):points;
+ const closedRange=visibleRange.filter(row=>row.date<chartWindow.to);
+ const matchedClosedDays=sku==='all'?closedRange.filter(row=>row.ordered_source==='digitization_postings').length:0;
+ const analyticsClosedDays=closedRange.length-matchedClosedDays;
  const rangeBandStep=plotWidth/Math.max(1,points.length-1);
  const rangeBandLeft=selectedTotal?Math.max(left,x(selectedTotal.startIndex)-rangeBandStep/2):0;
  const rangeBandRight=selectedTotal?Math.min(width-right,x(selectedTotal.endIndex)+rangeBandStep/2):0;
@@ -240,6 +244,11 @@ function SalesHistoryChart({data,state,act,inv,period,setPeriod,chartWindow}){
      <span>На сумму: <strong>{num(selectedTotal.orderedAmount)} ₽</strong></span>
      {selectedTotal.deliveredKnownDays>0&&<span>Доставлено: <strong>{num(selectedTotal.deliveredUnits)} шт.</strong>{!selectedTotal.deliveryComplete&&<small> (неполные данные)</small>}</span>}
     </div>}
+    <p className="sales-chart-source-note">
+     {sku==='all'
+      ? <>За закрытые дни: {matchedClosedDays} дн. из локальной базы «Оцифровки»{analyticsClosedDays>0?`, ${analyticsClosedDays} дн. — аналитика Ozon`:''}. Сегодняшние заказы предварительные.</>
+      : <>Для выбранного товара показана аналитика заказов Ozon. Общие итоги всех товаров за закрытые дни берутся из «Оцифровки».</>}
+    </p>
   </>}
  </section>
 }
@@ -313,7 +322,7 @@ function History({chartWindow}){
      aria-expanded={expandedStatuses} aria-controls="history-status-expanded"
      title={expandedStatuses?'Свернуть диаграмму':'Развернуть диаграмму статусов'}>
      <span className="history-status-ring" style={{background:summary.gradient}} aria-hidden="true"><span>{num(summary.total)}</span></span>
-     <span className="history-status-toggle-label">{expandedStatuses?'Свернуть':'Диаграмма'} <BarChart3 size={14}/></span>
+     <span className="history-status-toggle-label">{expandedStatuses?'Свернуть':'Отправления'} <BarChart3 size={14}/></span>
     </button>
    </aside>
   </div>
@@ -329,7 +338,7 @@ function History({chartWindow}){
      <span className="history-status-bar-value">{num(item.count)} <small>({item.percentage.toFixed(1)}%)</small></span>
     </div>)}
    </div>
-   <p className="history-status-footnote">«Другие статусы» включают отправления, ожидающие упаковки, отгрузки и прочие состояния. Доли рассчитаны от всех отправлений выбранного периода.</p>
+   <p className="history-status-footnote">Диаграмма считает отправления, а не единицы товара. Отменённые отправления также включены. «Другие статусы» — ожидающие упаковки, отгрузки и прочие состояния.</p>
   </section>}
   {hist?.errors?.length>0&&<Notice>Не все данные удалось обновить: {hist.errors.join('; ')}. Ранее сохранённая история оставлена.</Notice>}
   <div className="filters">
