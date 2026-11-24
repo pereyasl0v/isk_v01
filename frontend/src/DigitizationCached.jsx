@@ -338,7 +338,7 @@ export default function DigitizationCached({state,digi,act}){
   {cacheState.error&&<div className="notice warning digitization-cache-notice"><AlertTriangle size={18}/>{cacheState.error}</div>}
   {autoPhase==='error'&&<div className="notice warning digitization-cache-notice"><AlertTriangle size={18}/>{autoLoad.error}</div>}
   {!invalid&&!cacheState.loading&&!cacheState.hit&&<section className="panel digitization-cache-empty">
-   <Database size={28}/><div><h3>Не хватает локальных дней</h3>
+   <Database size={28}/><div><h3>{automaticBusy?'Загружаем данные из Ozon':'Не хватает локальных дней'}</h3>
     {automaticBusy&&<p>Загружаем только отсутствующие дни. Данные появятся здесь после завершения.</p>}
     {waitingForYesterday&&!autoEligible&&<p>Данные за вчера автоматически загрузятся после 08:00 по Москве.</p>}
     {!automaticBusy&&autoEligible&&autoPhase!=='error'&&<p>При отсутствии данных ИСК автоматически запрашивает их из Ozon.</p>}
