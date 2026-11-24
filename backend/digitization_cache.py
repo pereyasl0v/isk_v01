@@ -11,6 +11,16 @@ from .legacy import ApiError
 from .ozon import POSTING_NUMBER
 
 
+def manual_digitization_latest_day(now_moscow):
+    """Allow manual retry for yesterday after 08:00 Moscow time.
+
+    Before 08:00 only the day before yesterday (or older) is eligible.
+    Callers must pass Moscow-local time.
+    """
+    days_back = 1 if now_moscow.hour >= 8 else 2
+    return now_moscow.date() - timedelta(days=days_back)
+
+
 def _daterange(first, last):
     day = first
     while day <= last:
