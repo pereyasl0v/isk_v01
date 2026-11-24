@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {getDigitizationPeriod} from './digitization-period.mjs';
+import {getDigitizationPeriod, shouldAutoLoadDigitization} from './digitization-period.mjs';
 
 test('7-day range ends yesterday in Moscow time',()=>{
  assert.deepEqual(getDigitizationPeriod(7,new Date('2026-11-15T09:00:00Z')),{
@@ -42,4 +42,20 @@ test('range handles leap day correctly',()=>{
 test('rejects non-positive or fractional day counts',()=>{
  assert.throws(()=>getDigitizationPeriod(0),RangeError);
  assert.throws(()=>getDigitizationPeriod(1.5),RangeError);
+});
+
+test('auto loading skips fully cached periods and unknown coverage',()=>{
+ const now=new Date('2026-11-24T16:14:00Z'); // 19:14 Moscow
+ assert.equal(shouldAutoLoadDigitization({missing_days:[]},now),false);
+ assert.equal(shouldAutoLoadDigitization({},now),false);
+ assert.equal(shouldAutoLoadDigitization(null,now),false);
+});
+
+test('auto loading fetches only when a missing day is eligible',()=>{
+ const before=new Date('2026-11-24T04:59:00Z'); // 07:59 Moscow
+ const after=new Date('2026-11-24T05:00:00Z'); // 08:00 Moscow
+ assert.equal(shouldAutoLoadDigitization({missing_days:['2026-11-23']},before),false);
+ assert.equal(shouldAutoLoadDigitization({missing_days:['2026-11-23']},after),true);
+ assert.equal(shouldAutoLoadDigitization({missing_days:['2026-11-22','2026-11-23']},before),true);
+ assert.equal(shouldAutoLoadDigitization({missing_days:['2026-11-24']},after),false);
 });
