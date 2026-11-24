@@ -162,7 +162,7 @@ export default function DigitizationCached({state,digi,act}){
    }
   },120);
   return()=>{live=false;clearTimeout(timer)};
- },[state?.account_id,state?.client_id,dateFrom,dateTo,invalid,digi?.at,state?.digitization_days?.updated_at,state?.job?.running]);
+ },[state?.account_id,state?.client_id,dateFrom,dateTo,invalid,digi?.at,state?.job?.running]);
 
  // Read local coverage for both visible calendar months. This endpoint only
  // inspects SQLite; it does not request anything from Ozon.
@@ -189,7 +189,7 @@ export default function DigitizationCached({state,digi,act}){
    .catch(()=>{if(live)setCalendarMissing(new Set());})
    .finally(()=>{if(live)setCalendarCoverageLoading(false);});
   return()=>{live=false};
- },[calendarOpen,state?.client_id,calendarMonth,maxClosedDay,state?.digitization_days?.updated_at]);
+ },[calendarOpen,state?.client_id,calendarMonth,maxClosedDay,state?.job?.running]);
 
  // SQLite is checked first; one automatic request fills only eligible missing
  // days. Remember the attempt for this visit so an Ozon error cannot trigger
