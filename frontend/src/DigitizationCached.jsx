@@ -186,6 +186,10 @@ export default function DigitizationCached({state,digi,act}){
  const yesterday=getDigitizationPeriod(1).to;
  const historicalMissing=missing.filter(day=>day<yesterday);
  const waitingForYesterday=missing.includes(yesterday);
+ const moscowHour=Number(new Intl.DateTimeFormat('en-GB',{
+  timeZone:'Europe/Moscow',hour:'2-digit',hourCycle:'h23'
+ }).format(new Date()));
+ const canRetryYesterday=waitingForYesterday&&moscowHour>=8;
  const requested=Number(cacheState.coverage?.requested_days||0);
  const available=Number(cacheState.coverage?.available_days||0);
  const legacy=cacheState.coverage?.source==='legacy-period';
@@ -233,7 +237,8 @@ export default function DigitizationCached({state,digi,act}){
  let buttonText='Загрузить из Ozon';
  if(state?.job.running)buttonText='Обновляем…';
  else if(legacy)buttonText='Разложить по дням';
- else if(historicalMissing.length)buttonText='Догрузить '+historicalMissing.length+' дн.';
+ else if(historicalMissing.length)buttonText='Догрузить '+(historicalMissing.length+(canRetryYesterday?1:0))+' дн.';
+ else if(canRetryYesterday)buttonText='Загрузить вчера из Ozon';
 
  return <div className="digitization-cache-page">
   <div className="digitization-cache-header">
@@ -291,7 +296,7 @@ export default function DigitizationCached({state,digi,act}){
        </aside>
       </div></>}
      </div>
-     {historicalMissing.length>0&&!cacheState.loading&&<button className="primary digitization-refresh" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={refresh}>
+     {(historicalMissing.length>0||canRetryYesterday)&&!cacheState.loading&&<button className="primary digitization-refresh" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={refresh}>
       <RefreshCw size={15} className={state?.job.running?'animate-spin':''}/>{buttonText}
      </button>}
     </div>
@@ -307,7 +312,7 @@ export default function DigitizationCached({state,digi,act}){
   {cacheState.error&&<div className="notice warning digitization-cache-notice"><AlertTriangle size={18}/>{cacheState.error}</div>}
   {!invalid&&!cacheState.loading&&!cacheState.hit&&<section className="panel digitization-cache-empty">
    <Database size={28}/><div><h3>Не хватает локальных дней</h3>
-    {waitingForYesterday&&<p>Данные за вчера загружаются автоматически в 08:00 по Москве.</p>}
+    {waitingForYesterday&&<p>Данные за вчера загружаются автоматически после 08:00 по Москве. Если день отсутствует, повторите загрузку кнопкой выше.</p>}
     {historicalMissing.length>0&&<p>Из Ozon можно догрузить отсутствующие данные за более ранние даты.</p>}
    </div>
   </section>}
