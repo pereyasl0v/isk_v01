@@ -1,8 +1,8 @@
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
-from backend.digitization_cache import combine_digitization_days
+from backend.digitization_cache import combine_digitization_days, manual_digitization_latest_day
 from backend.storage import Store
 
 
@@ -51,6 +51,21 @@ class DigitizationDailyStoreTests(unittest.TestCase):
         self.assertEqual(combined['sales_facts']['revenue'], 500)
         self.assertEqual(combined['since'], '2026-09-02')
         self.assertEqual(combined['to'], '2026-09-03')
+
+    def test_manual_yesterday_retry_opens_at_08_moscow(self):
+        moscow = timezone(timedelta(hours=3))
+        self.assertEqual(
+            manual_digitization_latest_day(datetime(2026, 11, 24, 7, 59, tzinfo=moscow)),
+            date(2026, 11, 22),
+        )
+        self.assertEqual(
+            manual_digitization_latest_day(datetime(2026, 11, 24, 8, 0, tzinfo=moscow)),
+            date(2026, 11, 23),
+        )
+        self.assertEqual(
+            manual_digitization_latest_day(datetime(2026, 11, 24, 19, 14, tzinfo=moscow)),
+            date(2026, 11, 23),
+        )
 
     def test_only_missing_days_are_reported(self):
         self.store.save_digitization_day(self.client, '2026-09-01', self.day('2026-09-01'))
