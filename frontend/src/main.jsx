@@ -12,6 +12,7 @@ import ProductDetails from './ProductDetails';
 import BarcodeGenerator from './BarcodeGenerator';
 import {statusLabel,roleLabel,groupStocks} from './presentation';
 import {salesChartWindow,salesRangeTotals,salesTickIndexes} from './sales-chart-range.mjs';
+import {statePollDelay,keepUnchangedState} from './state-polling.mjs';
 import './mobile.css';
 
 const Context=createContext(null);
@@ -422,17 +423,47 @@ function App(){
  useEffect(()=>{reload()},[]);
  useEffect(()=>{
   if(!me?.active_account_id)return;
-  const timer=setInterval(async()=>{try{
-   const s=await api('/state');
-   const finished=!s.job.running&&runningJob.current;
-   runningJob.current=s.job.running?s.job:null;
-   setState(s);
-   if(finished?.kind==='sales')setSales(await api('/sales'));
-   else if(finished)await loadData();
-  }
-   catch(e){if(e.status===401){setMe(null);clearData()}else if(e.status===409)await reload();else setError(e.message)}},1500);
-  return()=>clearInterval(timer);
- },[me?.active_account_id]);
+  let active=true;
+  let timer=null;
+  let inFlight=false;
+  let jobRunning=Boolean(state?.job?.running);
+  const schedule=delay=>{
+   clearTimeout(timer);
+   timer=setTimeout(checkState,delay);
+  };
+  const checkState=async()=>{
+   if(!active||inFlight)return;
+   inFlight=true;
+   try{
+    const s=await api('/state');
+    if(!active)return;
+    jobRunning=Boolean(s.job.running);
+    const finished=!s.job.running&&runningJob.current;
+    runningJob.current=s.job.running?s.job:null;
+    setState(prev=>keepUnchangedState(prev,s));
+    if(finished?.kind==='sales')setSales(await api('/sales'));
+    else if(finished)await loadData();
+   }catch(e){
+    if(!active)return;
+    if(e.status===401){setMe(null);clearData()}
+    else if(e.status===409)await reload();
+    else setError(e.message);
+   }finally{
+    inFlight=false;
+    if(active)schedule(statePollDelay(jobRunning,!document.hidden));
+   }
+  };
+  const onVisibilityChange=()=>{
+   if(!document.hidden&&!inFlight)schedule(0);
+  };
+  schedule(statePollDelay(jobRunning,!document.hidden));
+  document.addEventListener('visibilitychange',onVisibilityChange);
+  return()=>{
+   active=false;
+   clearTimeout(timer);
+   document.removeEventListener('visibilitychange',onVisibilityChange);
+  };
+ },[me?.active_account_id,state?.job?.running]);
  async function act(path,body){
   const chart=path==='/sales/sync';
   if(!chart)setError('');
