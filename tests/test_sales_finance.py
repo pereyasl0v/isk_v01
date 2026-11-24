@@ -53,6 +53,46 @@ class DailyFinancialSalesTests(unittest.TestCase):
         self.assertTrue(result['rows'][1]['sales_partial'])
         self.assertEqual(result['financial_sales_incomplete_days'],['2026-11-19'])
 
+    def test_closed_day_chart_matches_digitization_posting_totals(self):
+        # Daily analytics can differ from the posting-list totals used by
+        # Digitization. The all-products chart must show the same numbers.
+        data = [
+            {
+                'day':'2026-11-18',
+                'orders':{'quantity':5,'amount':987.0,'errors':[]},
+            },
+            {
+                'day':'2026-11-19',
+                'orders':{'quantity':7,'amount':1500.5,'errors':[]},
+            },
+        ]
+        with patch('backend.sales_finance.summarize_digitization',
+                   return_value={'metrics':{'sales_quantity':0,'sales_amount':0},'products':[]}):
+            result = add_financial_sales(orders(),data)
+        self.assertEqual(result['rows'][0]['ordered_units'],5)
+        self.assertEqual(result['rows'][0]['ordered_revenue'],987.0)
+        self.assertEqual(result['rows'][1]['ordered_units'],7)
+        self.assertEqual(result['rows'][1]['ordered_revenue'],1500.5)
+        self.assertEqual(result['rows'][0]['ordered_source'],'digitization_postings')
+        self.assertEqual(result['rows'][2]['ordered_units'],2)
+        self.assertEqual(result['rows'][2]['ordered_source'],'ozon_analytics_or_live')
+        # SKU analytics are kept separate until posting SKU detail is stored.
+        self.assertEqual(result['by_sku'][0]['ordered_units'],8)
+        self.assertEqual(result['orders_reconciled_days'],['2026-11-18','2026-11-19'])
+
+    def test_failed_cached_order_day_never_overwrites_analytics(self):
+        data = [
+            {'day':'2026-11-19',
+             'orders':{'quantity':999,'amount':99999,'errors':['FBO недоступен']}},
+        ]
+        with patch('backend.sales_finance.summarize_digitization',
+                   return_value={'metrics':{'sales_quantity':0,'sales_amount':0},'products':[]}):
+            result = add_financial_sales(orders(),data)
+        self.assertEqual(result['rows'][1]['ordered_units'],8)
+        self.assertEqual(result['rows'][1]['ordered_revenue'],1700)
+        self.assertEqual(result['rows'][1]['ordered_source'],'ozon_analytics_or_live')
+        self.assertEqual(result['orders_reconciled_days'],[])
+
     def test_marketplace_buyout_load_failure_marks_finance_partial(self):
         summary={
             'metrics':{'sales_quantity':1,'sales_amount':150},
