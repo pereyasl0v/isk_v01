@@ -2,7 +2,7 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Database, RefreshCw, AlertTriangle, CircleCheck, X} from 'lucide-react';
 import Digitization from './Digitization';
 import './digitizationCached.css';
-import {getDigitizationPeriod} from './digitization-period.mjs';
+import {getDigitizationPeriod, shouldAutoLoadDigitization} from './digitization-period.mjs';
 
 const dateTime=v=>v?new Date(v).toLocaleString('ru-RU'):'—';
 const parseIso=value=>{
@@ -117,15 +117,25 @@ export default function DigitizationCached({state,digi,act}){
 
  const [periodDigi,setPeriodDigi]=useState(null);
  const [cacheState,setCacheState]=useState({
-  loading:true,hit:false,daily:false,updatedAt:null,error:'',coverage:{}
+  key:null,loading:true,hit:false,daily:false,updatedAt:null,error:'',coverage:{}
  });
+ const [autoLoad,setAutoLoad]=useState({key:null,phase:'idle',error:''});
+ const attemptedSync=useRef(new Set());
+ const pendingSync=useRef(new Set());
+ const [minuteTick,setMinuteTick]=useState(0);
  const invalid=Boolean(dateFrom&&dateTo&&dateFrom>dateTo);
+ const periodKey=[state?.account_id||'',dateFrom,dateTo].join('|');
+
+ useEffect(()=>{
+  const timer=setInterval(()=>setMinuteTick(value=>value+1),60000);
+  return()=>clearInterval(timer);
+ },[]);
 
  useEffect(()=>{
   if(!state||!dateFrom||!dateTo||invalid)return;
   let live=true;
   const timer=setTimeout(async()=>{
-   setCacheState(s=>({...s,loading:true,error:''}));
+   setCacheState(s=>({...s,key:periodKey,loading:true,error:''}));
    try{
     const q=new URLSearchParams({date_from:dateFrom,date_to:dateTo});
     const response=await fetch('/api/digitization?'+q,{credentials:'same-origin'});
@@ -137,22 +147,22 @@ export default function DigitizationCached({state,digi,act}){
     if(data.available){
      setPeriodDigi(data);
      setCacheState({
-      loading:false,hit:true,daily,updatedAt:coverage.updated_at||data.at||null,
+      key:periodKey,loading:false,hit:true,daily,updatedAt:coverage.updated_at||data.at||null,
       error:'',coverage
      });
     }else{
      setPeriodDigi(null);
-     setCacheState({loading:false,hit:false,daily:false,updatedAt:coverage.updated_at||null,error:'',coverage});
+     setCacheState({key:periodKey,loading:false,hit:false,daily:false,updatedAt:coverage.updated_at||null,error:'',coverage});
     }
    }catch(error){
     if(live){
      setPeriodDigi(null);
-     setCacheState({loading:false,hit:false,daily:false,updatedAt:null,error:error.message||'Ошибка локальной базы.',coverage:{}});
+     setCacheState({key:periodKey,loading:false,hit:false,daily:false,updatedAt:null,error:error.message||'Ошибка локальной базы.',coverage:{}});
     }
    }
   },120);
   return()=>{live=false;clearTimeout(timer)};
- },[state?.client_id,dateFrom,dateTo,invalid,digi?.at,state?.digitization_days?.updated_at]);
+ },[state?.account_id,state?.client_id,dateFrom,dateTo,invalid,digi?.at,state?.digitization_days?.updated_at,state?.job?.running]);
 
  // Read local coverage for both visible calendar months. This endpoint only
  // inspects SQLite; it does not request anything from Ozon.
@@ -181,23 +191,46 @@ export default function DigitizationCached({state,digi,act}){
   return()=>{live=false};
  },[calendarOpen,state?.client_id,calendarMonth,maxClosedDay,state?.digitization_days?.updated_at]);
 
+ // SQLite is checked first; one automatic request fills only eligible missing
+ // days. Remember the attempt for this visit so an Ozon error cannot trigger
+ // an infinite retry loop. A later visit can retry naturally.
+ useEffect(()=>{
+  if(!state?.account_id||state.job?.running||invalid||cacheState.key!==periodKey||cacheState.loading)return;
+  if(!shouldAutoLoadDigitization(cacheState.coverage))return;
+  if(attemptedSync.current.has(periodKey)||pendingSync.current.has(periodKey))return;
+  pendingSync.current.add(periodKey);
+  setAutoLoad({key:periodKey,phase:'starting',error:''});
+  act('/digitization/sync',{date_from:dateFrom,date_to:dateTo})
+   .then(result=>{
+    pendingSync.current.delete(periodKey);
+    if(result?.started===true){
+     attemptedSync.current.add(periodKey);
+     setAutoLoad({key:periodKey,phase:'started',error:''});
+    }else if(result?.status===409){
+     // Another job is running. Try again once that job finishes.
+     setAutoLoad({key:periodKey,phase:'idle',error:''});
+    }else{
+     attemptedSync.current.add(periodKey);
+     setAutoLoad({key:periodKey,phase:'error',error:result?.error||'Не удалось автоматически запустить загрузку.'});
+    }
+   })
+   .catch(error=>{
+    pendingSync.current.delete(periodKey);
+    attemptedSync.current.add(periodKey);
+    setAutoLoad({key:periodKey,phase:'error',error:error.message||'Ошибка автозагрузки.'});
+   });
+ },[state?.account_id,state?.job?.running,invalid,cacheState,periodKey,minuteTick]);
+
  const active=periodDigi||emptyPeriod(dateFrom,dateTo);
- const missing=cacheState.coverage?.missing_days||[];
+ const missing=cacheState.key===periodKey?(cacheState.coverage?.missing_days||[]):[];
  const yesterday=getDigitizationPeriod(1).to;
- const historicalMissing=missing.filter(day=>day<yesterday);
  const waitingForYesterday=missing.includes(yesterday);
- const moscowHour=Number(new Intl.DateTimeFormat('en-GB',{
-  timeZone:'Europe/Moscow',hour:'2-digit',hourCycle:'h23'
- }).format(new Date()));
- const canRetryYesterday=waitingForYesterday&&moscowHour>=8;
+ const autoEligible=shouldAutoLoadDigitization(cacheState.coverage);
+ const autoPhase=autoLoad.key===periodKey?autoLoad.phase:'idle';
+ const automaticBusy=autoPhase==='starting'||(autoPhase==='started'&&state?.job?.running);
  const requested=Number(cacheState.coverage?.requested_days||0);
  const available=Number(cacheState.coverage?.available_days||0);
  const legacy=cacheState.coverage?.source==='legacy-period';
-
- const refresh=()=>{
-  if(!state||state.job.running||invalid||!dateFrom||!dateTo)return;
-  act('/digitization/sync',{date_from:dateFrom,date_to:dateTo});
- };
 
  const selectCalendarDay=day=>{
   if(!rangeDraft){
@@ -229,16 +262,12 @@ export default function DigitizationCached({state,digi,act}){
  ];
 
  let statusText='Локальных данных выбранного периода пока нет';
- if(cacheState.loading)statusText='Собираем период из локальной SQLite-базы…';
- else if(legacy)statusText='Старый снимок периода · обновите один раз для дневной базы';
+ if(cacheState.loading)statusText='Проверяем локальную базу SQLite…';
+ else if(automaticBusy)statusText='Автоматически загружаем отсутствующие дни из Ozon…';
+ else if(state?.job?.running&&autoEligible)statusText='Ожидаем завершения текущей загрузки…';
+ else if(legacy)statusText='Старый снимок периода · обновляем дневную базу автоматически';
  else if(cacheState.daily)statusText='Локально: '+available+' из '+requested+' закрытых дней';
  else if(available>0)statusText='Локально: '+available+' из '+requested+' дней · не хватает '+missing.length;
-
- let buttonText='Загрузить из Ozon';
- if(state?.job.running)buttonText='Обновляем…';
- else if(legacy)buttonText='Разложить по дням';
- else if(historicalMissing.length)buttonText='Догрузить '+(historicalMissing.length+(canRetryYesterday?1:0))+' дн.';
- else if(canRetryYesterday)buttonText='Загрузить вчера из Ozon';
 
  return <div className="digitization-cache-page">
   <div className="digitization-cache-header">
@@ -296,12 +325,9 @@ export default function DigitizationCached({state,digi,act}){
        </aside>
       </div></>}
      </div>
-     {(historicalMissing.length>0||canRetryYesterday)&&!cacheState.loading&&<button className="primary digitization-refresh" disabled={!state||state.job.running||invalid||!dateFrom||!dateTo} onClick={refresh}>
-      <RefreshCw size={15} className={state?.job.running?'animate-spin':''}/>{buttonText}
-     </button>}
     </div>
-    <div className={'digitization-cache-status '+(cacheState.daily?'hit':cacheState.loading?'loading':legacy?'legacy':'miss')}>
-     {cacheState.daily?<CircleCheck size={15}/>:cacheState.loading?<RefreshCw size={15} className="animate-spin"/>:<Database size={15}/>}
+    <div className={'digitization-cache-status '+(cacheState.daily?'hit':cacheState.loading||automaticBusy?'loading':legacy?'legacy':'miss')}>
+     {cacheState.daily?<CircleCheck size={15}/>:cacheState.loading||automaticBusy?<RefreshCw size={15} className="animate-spin"/>:<Database size={15}/>}
      <span>{statusText}</span>
      {cacheState.updatedAt&&<small>обновлено {dateTime(cacheState.updatedAt)}</small>}
     </div>
@@ -310,13 +336,15 @@ export default function DigitizationCached({state,digi,act}){
 
   {invalid&&<div className="notice warning digitization-cache-notice"><AlertTriangle size={18}/>Дата окончания не может быть раньше даты начала.</div>}
   {cacheState.error&&<div className="notice warning digitization-cache-notice"><AlertTriangle size={18}/>{cacheState.error}</div>}
+  {autoPhase==='error'&&<div className="notice warning digitization-cache-notice"><AlertTriangle size={18}/>{autoLoad.error}</div>}
   {!invalid&&!cacheState.loading&&!cacheState.hit&&<section className="panel digitization-cache-empty">
    <Database size={28}/><div><h3>Не хватает локальных дней</h3>
-    {waitingForYesterday&&<p>Данные за вчера загружаются автоматически после 08:00 по Москве. Если день отсутствует, повторите загрузку кнопкой выше.</p>}
-    {historicalMissing.length>0&&<p>Из Ozon можно догрузить отсутствующие данные за более ранние даты.</p>}
+    {automaticBusy&&<p>Загружаем только отсутствующие дни. Данные появятся здесь после завершения.</p>}
+    {waitingForYesterday&&!autoEligible&&<p>Данные за вчера автоматически загрузятся после 08:00 по Москве.</p>}
+    {!automaticBusy&&autoEligible&&autoPhase!=='error'&&<p>При отсутствии данных ИСК автоматически запрашивает их из Ozon.</p>}
    </div>
   </section>}
 
-  {!invalid&&cacheState.hit&&<div className="digitization-content"><Digitization state={state} digi={active} act={act}/></div>}
+  {!invalid&&cacheState.hit&&<div className="digitization-content"><Digitization state={state} digi={active} act={act} autoLoadComparisons={cacheState.daily}/></div>}
  </div>;
 }
