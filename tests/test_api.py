@@ -490,8 +490,11 @@ class AuthApiTests(unittest.TestCase):
             main.schedule_morning_digitization(at_eight-timedelta(seconds=1))
             download.assert_not_called()
 
-            self.assertEqual(self.client.post('/api/digitization/sync',headers=HEAD,json=body).status_code,200)
-            self.assertIsNone(self.wait()['job']['error'])
+            # Simulate an early manual request before the 08:00 Moscow cutoff.
+            # After 08:00, manual sync is intentionally allowed to retry yesterday.
+            with patch.object(main,'manual_digitization_latest_day',return_value=older):
+                self.assertEqual(self.client.post('/api/digitization/sync',headers=HEAD,json=body).status_code,200)
+                self.assertIsNone(self.wait()['job']['error'])
             self.assertEqual([call.args[1] for call in download.call_args_list],[older])
 
             main.runtime_accounts.clear()
