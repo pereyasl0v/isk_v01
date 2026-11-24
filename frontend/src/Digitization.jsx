@@ -1,9 +1,10 @@
 import ScrollTable from "./ScrollTable";
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {BarChart3, RefreshCw, WalletCards, ReceiptText, Truck, Boxes, AlertTriangle, Calculator, ArrowUpRight, ArrowDownRight, Minus} from 'lucide-react';
 import {useProductCosts} from './digitization-product-costs';
 import {currentInventoryMetrics} from './inventory-capitalization.mjs';
 import {previousPeriodRange, compareMetric, comparisonTone, calculateDigitizationPeriodMetrics} from './digitization-comparison.mjs';
+import {shouldAutoLoadDigitization} from './digitization-period.mjs';
 
 const nf=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
 const intf=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0});
@@ -53,7 +54,7 @@ function periodDays(first,last){
  return result>0?result:null;
 }
 
-export default function Digitization({state,digi,act}){
+export default function Digitization({state,digi,act,autoLoadComparisons=false}){
  const defaults=useMemo(()=>{const end=new Date();const start=new Date(end);start.setDate(start.getDate()-29);return {from:iso(start),to:iso(end)}},[]);
  const client=state?.client_id||'local';
  const comparisonVisibilityKey=`isk-digitization-show-comparisons-${client}`;
@@ -67,6 +68,8 @@ export default function Digitization({state,digi,act}){
  const [comparisonDigi,setComparisonDigi]=useState(null);
  const [comparisonInventoryHistory,setComparisonInventoryHistory]=useState([]);
  const [comparisonState,setComparisonState]=useState({loading:true,available:false,error:'',coverage:{}});
+ const attemptedComparisonSync=useRef(new Set());
+ const pendingComparisonSync=useRef(new Set());
  const settingsKey=`isk-digitization-settings-${client}`;
  const productCosts=useProductCosts(state.account_id,client);
  const {costs}=productCosts;
@@ -107,8 +110,8 @@ export default function Digitization({state,digi,act}){
   return()=>{live=false};
  },[state,digi?.since,digi?.effective_to,digi?.to,digi?.at]);
 
- // Read the immediately preceding equal-length period from SQLite. No Ozon
- // requests are made automatically; missing days can be loaded on demand.
+ // Read the preceding period from SQLite before requesting any Ozon data.
+ // When comparisons are enabled, missing days are filled once automatically.
  useEffect(()=>{
   if(!showComparisons){
    setComparisonDigi(null);
@@ -139,6 +142,18 @@ export default function Digitization({state,digi,act}){
     const data=await response.json();
     if(!response.ok)throw new Error(data.detail||'Не удалось получить предыдущий период.');
     if(!live)return;
+    const comparisonKey=[state.account_id,comparisonRange.from,comparisonRange.to].join('|');
+    if(autoLoadComparisons&&shouldAutoLoadDigitization(data.cache)&&
+       !attemptedComparisonSync.current.has(comparisonKey)&&
+       !pendingComparisonSync.current.has(comparisonKey)){
+     pendingComparisonSync.current.add(comparisonKey);
+     act('/digitization/sync',{date_from:comparisonRange.from,date_to:comparisonRange.to})
+      .then(result=>{
+       pendingComparisonSync.current.delete(comparisonKey);
+       if(result?.started===true||result?.status!==409)attemptedComparisonSync.current.add(comparisonKey);
+      })
+      .catch(()=>{pendingComparisonSync.current.delete(comparisonKey);attemptedComparisonSync.current.add(comparisonKey);});
+    }
     if(!data.available){
      setComparisonDigi(null);
      setComparisonInventoryHistory([]);
@@ -167,7 +182,7 @@ export default function Digitization({state,digi,act}){
     }
    });
   return()=>{live=false};
- },[state?.client_id,state?.job?.running,comparisonRange?.from,comparisonRange?.to,digi?.at,showComparisons]);
+ },[state?.client_id,state?.job?.running,comparisonRange?.from,comparisonRange?.to,digi?.at,showComparisons,autoLoadComparisons]);
 
  const saveSetting=(field,value)=>{
   setSettings(prev=>{const next={...prev,[field]:n(value)};localStorage.setItem(settingsKey,JSON.stringify(next));return next});
@@ -291,8 +306,7 @@ export default function Digitization({state,digi,act}){
   </div>}
   {showComparisons&&comparisonRange&&(comparisonState.loading||state?.job?.running)&&<div className="digitization-comparison-status loading"><RefreshCw size={15} className="animate-spin"/><span>{state?.job?.running?'Ожидаем завершения загрузки…':'Проверяем данные предыдущего периода…'}</span></div>}
   {showComparisons&&comparisonRange&&!comparisonState.available&&!comparisonState.loading&&!state?.job?.running&&<div className="digitization-comparison-status missing">
-   <span>{comparisonState.error||('Для сравнения нужны данные за '+dateLabel(comparisonRange.from)+' — '+dateLabel(comparisonRange.to)+'. '+(comparisonState.coverage?.missing_days?.length?'Не хватает дней: '+comparisonState.coverage.missing_days.length+'.':''))}</span>
-   <button type="button" disabled={!state||state.job.running} onClick={()=>act('/digitization/sync',{date_from:comparisonRange.from,date_to:comparisonRange.to})}>Загрузить предыдущий период</button>
+   <span>{comparisonState.error||('Для сравнения нужны данные за '+dateLabel(comparisonRange.from)+' — '+dateLabel(comparisonRange.to)+'. '+(comparisonState.coverage?.missing_days?.length?'Недостающие дни будут загружены из Ozon автоматически, когда это станет возможно.':''))}</span>
   </div>}
   {showComparisons&&!comparisonRange&&selectedPeriodDays>31&&<div className="digitization-comparison-status limited"><span>Сравнение доступно для периодов до одного месяца (31 дня). Выбрано: {selectedPeriodDays} дн.</span></div>}
 
