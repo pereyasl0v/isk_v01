@@ -20,3 +20,18 @@ export function getDigitizationPeriod(days, now=new Date()){
  start.setUTCDate(start.getUTCDate()-(days-1));
  return {from:start.toISOString().slice(0,10),to:end.toISOString().slice(0,10)};
 }
+
+/**
+ * Local SQLite always wins. Request Ozon only for genuinely missing closed
+ * days. Yesterday becomes eligible after 08:00 Moscow time, when the scheduled
+ * sync is expected to have started.
+ */
+export function shouldAutoLoadDigitization(coverage, now=new Date()){
+ const missing=coverage?.missing_days;
+ if(!Array.isArray(missing)||!missing.length)return false;
+ const yesterday=getDigitizationPeriod(1,now).to;
+ const hour=Number(new Intl.DateTimeFormat('en-GB',{
+  timeZone:'Europe/Moscow',hour:'2-digit',hourCycle:'h23'
+ }).format(now));
+ return missing.some(day=>typeof day==='string'&&(day<yesterday||(day===yesterday&&hour>=8)));
+}
