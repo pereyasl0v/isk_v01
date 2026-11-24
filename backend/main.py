@@ -25,7 +25,7 @@ from .inventory import summarize, aggregate
 from .replenishment import calculate as replenishment_calculate
 from .market_search import router as market_router
 from .digitization import summarize as digitization_summarize
-from .digitization_cache import combine_digitization_days, download_digitization_day, requested_days
+from .digitization_cache import combine_digitization_days, download_digitization_day, requested_days, manual_digitization_latest_day
 from .product_documents import router as product_documents_router
 from .barcode_archive import router as barcode_archive_router
 from .costing import clean_workspace, parse_legacy_xlsx, calculate_workspace
@@ -672,9 +672,9 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
             if effective_last < first:
                 progress('В выбранном периоде пока нет закрытых дней Ozon.')
             else:
-                # Yesterday is reserved for the 08:00 Moscow run. Manual
-                # requests may fill gaps through the day before yesterday.
-                manual_last=datetime.now(MOSCOW_TZ).date()-timedelta(days=2)
+                # Yesterday is scheduled for 08:00 Moscow. If that attempt
+                # fails or is missed, allow a manual retry after 08:00.
+                manual_last=manual_digitization_latest_day(datetime.now(MOSCOW_TZ))
                 target_last=effective_last if morning else min(effective_last,manual_last)
                 target_days=store.digitization_missing_days(
                     s['client'],first.isoformat(),target_last.isoformat()
