@@ -440,12 +440,16 @@ function App(){
    const result=await api(path,body);
    if(result.started===false){
     if(chart)setSales(await api('/sales'));
-    return;
+    return result;
    }
    const job={kind:chart?'sales':null,running:true,message:'Запускаем загрузку…',error:null};
    runningJob.current=job;
    setState(s=>({...s,job}));
-  }catch(e){if(!chart||e.status!==409)setError(e.message)}
+   return result;
+  }catch(e){
+   if(!chart||e.status!==409)setError(e.message);
+   return {started:false,status:e.status,error:e.message};
+  }
  }
  async function logout(){try{await api('/auth/logout',{})}finally{setMe(null);clearData()}}
  if(!authChecked||loading)return <div className="auth-screen"><div className="auth-card">Загружаем ИСК…</div></div>;
