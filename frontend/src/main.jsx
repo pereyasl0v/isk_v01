@@ -12,6 +12,7 @@ import ProductDetails from './ProductDetails';
 import BarcodeGenerator from './BarcodeGenerator';
 import {statusLabel,roleLabel,groupStocks} from './presentation';
 import {salesChartWindow,salesRangeTotals,salesTickIndexes,postingsInChartWindow} from './sales-chart-range.mjs';
+import {shipmentStatusSummary} from './shipment-status-summary.mjs';
 import {statePollDelay,keepUnchangedState} from './state-polling.mjs';
 import './mobile.css';
 
@@ -282,6 +283,7 @@ function Stocks(){
 function History({chartWindow}){
  const {hist}=useApp();
  const [q,setQ]=useState('');const [status,setStatus]=useState('');const [scheme,setScheme]=useState('all');
+ const [expandedStatuses,setExpandedStatuses]=useState(false);
  const postings=postingsInChartWindow(hist?.postings||[],chartWindow);
  const scoped=postings.filter(p=>scheme==='all'||String(p.scheme||'FBO').toUpperCase()===scheme);
  const rows=scoped.filter(p=>String(p.number||'').includes(q)&&(!status||p.status===status)).map(p=>({
@@ -289,30 +291,46 @@ function History({chartWindow}){
   units:(p.products||[]).reduce((n,r)=>n+Number(r.quantity||0),0),
   items:(p.products||[]).map(r=>`${r.offer_id||r.sku} × ${r.quantity}`).join('; ')
  }));
- const counts={
-  fbo:postings.filter(p=>String(p.scheme||'FBO').toUpperCase()==='FBO').length,
-  fbs:postings.filter(p=>String(p.scheme||'FBO').toUpperCase()==='FBS').length
- };
+ const summary=shipmentStatusSummary(scoped);
  const periodDate=day=>day?.split('-').reverse().join('.')||'—';
  const statuses=[...new Set(scoped.map(p=>p.status).filter(Boolean))].sort();
  return <section className="panel">
   <div className="history-overview-header">
    <div className="history-overview-title">
     <h3>История отправлений Ozon</h3>
+    <p className="history-overview-period">Период: {periodDate(chartWindow.from)} — {periodDate(chartWindow.to)}</p>
     <p className="muted">Последняя проверка: {date(hist?.at)}</p>
    </div>
-   <aside className="history-orders-summary" aria-label="Заказы и период истории">
-    <strong className="history-orders-heading">Заказы</strong>
-    <div className="history-orders-counts" title="Количество отправлений за выбранный период">
-     <div><span>FBO</span><strong>{num(counts.fbo)}</strong></div>
-     <div><span>FBS</span><strong>{num(counts.fbs)}</strong></div>
+   <aside className="history-status-preview" aria-label="Статусы отправлений за выбранный период">
+    <div className="history-status-figures">
+     {summary.preview.map(item=><div className="history-status-figure" key={item.key}>
+      <span><i aria-hidden="true" style={{backgroundColor:item.color}}/>{item.label}</span>
+      <strong>{num(item.count)}</strong>
+     </div>)}
     </div>
-    <div className="history-orders-period">
-     <span>Период</span>
-     <strong>{periodDate(chartWindow.from)} — {periodDate(chartWindow.to)}</strong>
-    </div>
+    <button type="button" className="history-status-toggle"
+     onClick={()=>setExpandedStatuses(value=>!value)}
+     aria-expanded={expandedStatuses} aria-controls="history-status-expanded"
+     title={expandedStatuses?'Свернуть диаграмму':'Развернуть диаграмму статусов'}>
+     <span className="history-status-ring" style={{background:summary.gradient}} aria-hidden="true"><span>{num(summary.total)}</span></span>
+     <span className="history-status-toggle-label">{expandedStatuses?'Свернуть':'Диаграмма'} <BarChart3 size={14}/></span>
+    </button>
    </aside>
   </div>
+  {expandedStatuses&&<section className="history-status-expanded" id="history-status-expanded" aria-label="Подробная диаграмма статусов">
+   <div className="history-status-expanded-heading">
+    <div><strong>Распределение статусов</strong><p>Все отправления за {periodDate(chartWindow.from)} — {periodDate(chartWindow.to)}</p></div>
+    <span>Всего: {num(summary.total)}</span>
+   </div>
+   <div className="history-status-bars">
+    {summary.items.map(item=><div className="history-status-bar-row" key={item.key}>
+     <span className="history-status-bar-label"><i aria-hidden="true" style={{backgroundColor:item.color}}/>{item.label}</span>
+     <div className="history-status-bar-track" aria-hidden="true"><div style={{width:item.percentage+'%',backgroundColor:item.color}}/></div>
+     <span className="history-status-bar-value">{num(item.count)} <small>({item.percentage.toFixed(1)}%)</small></span>
+    </div>)}
+   </div>
+   <p className="history-status-footnote">«Другие статусы» включают отправления, ожидающие упаковки, отгрузки и прочие состояния. Доли рассчитаны от всех отправлений выбранного периода.</p>
+  </section>}
   {hist?.errors?.length>0&&<Notice>Не все данные удалось обновить: {hist.errors.join('; ')}. Ранее сохранённая история оставлена.</Notice>}
   <div className="filters">
    <Filter value={q} set={setQ} placeholder="Номер отправления"/>
