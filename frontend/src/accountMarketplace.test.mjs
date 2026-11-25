@@ -23,3 +23,16 @@ test('WB flow is a non-functional placeholder, Ozon still uses the existing API'
   assert.match(connection,/api\('\/connect'/);
   assert.match(connection,/кабинет WB не создаётся/);
 });
+
+test('only a green upper-right indicator marks the selected account',()=>{
+  const styles=readFileSync(new URL('./accountMarketplace.css',import.meta.url),'utf8');
+  assert.match(connection,/selected&&<span className="marketplace-account-indicator"/);
+  assert.match(connection,/aria-label="Выбранный кабинет"/);
+  assert.match(styles,/\.marketplace-account-indicator\{position:absolute;top:16px;right:16px;/);
+  assert.match(styles,/background:#23a36a/);
+  assert.doesNotMatch(connection,/Активный|Подключён|>Выбран</);
+  assert.doesNotMatch(connection,/marketplace-account-current|marketplace-selected-button|marketplace-active-connection/);
+  assert.match(connection,/account\.connected&&isOzon&&!selected&&<button/);
+  assert.match(connection,/!account\.connected&&<span className="disconnected-label">Ключ удалён/);
+  assert.match(connection,/onClick=\{disconnect\}/);
+});
