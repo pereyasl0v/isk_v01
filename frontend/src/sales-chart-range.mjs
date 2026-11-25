@@ -95,3 +95,48 @@ export function postingsInChartWindow(postings, chartWindow) {
     return day !== null && day >= chartWindow.from && day <= chartWindow.to;
   });
 }
+
+
+/**
+ * A brushed selection on "Заказано товаров" is the history's time range too.
+ * If the points have not loaded (or the selection became stale), fall back to
+ * the chosen 7/14/30/90-day chart window without inventing a narrower range.
+ */
+export function salesSelectionWindow(chartWindow, selectedRange) {
+  if (!Array.isArray(selectedRange) || selectedRange.length !== 2 ||
+      !Array.isArray(chartWindow?.points)) return chartWindow;
+  const dates = new Set(chartWindow.points.map(point => point.date));
+  const [a, b] = selectedRange;
+  if (!dates.has(a) || !dates.has(b)) return chartWindow;
+  const from = a <= b ? a : b;
+  const to = a <= b ? b : a;
+  return {...chartWindow, from, to};
+}
+
+/**
+ * Scope shipment history to the same selected product as the order chart.
+ * A shipment may contain several products; show and count only lines matching
+ * the selected SKU. Never attribute a whole multi-product shipment to one SKU.
+ * Older rows without SKU can match an offer ID only when a known product in
+ * the inventory maps that offer to the requested SKU.
+ */
+export function postingsForSalesSelection(postings, chartWindow, sku = 'all', products = []) {
+  const inWindow = postingsInChartWindow(postings, chartWindow);
+  if (sku === 'all' || sku === null || sku === undefined) return inWindow;
+  const wanted = String(sku).trim();
+  if (!wanted) return [];
+  const offers = new Set((Array.isArray(products) ? products : [])
+    .filter(product => String(product?.sku ?? '').trim() === wanted)
+    .map(product => String(product?.offer_id ?? '').trim())
+    .filter(Boolean));
+  return inWindow.flatMap(posting => {
+    const matching = (Array.isArray(posting?.products) ? posting.products : [])
+      .filter(product => {
+        const rowSku = String(product?.sku ?? '').trim();
+        if (rowSku) return rowSku === wanted;
+        const offer = String(product?.offer_id ?? '').trim();
+        return Boolean(offer && offers.has(offer));
+      });
+    return matching.length ? [{...posting, products: matching}] : [];
+  });
+}
