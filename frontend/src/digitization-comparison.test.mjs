@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {previousPeriodRange, compareMetric, comparisonTone, calculateDigitizationPeriodMetrics} from './digitization-comparison.mjs';
 
 test('previous range matches the selected period length for a week, two weeks and a month', () => {
@@ -44,4 +45,22 @@ test('period metrics use the same local product costs and tax settings', () => {
   assert.equal(result.taxes,58.56);
   assert.equal(result.cleanWithoutOps,403.44);
   assert.equal(result.cleanProfit,393.44);
+});
+
+
+test('cached comparison stays readable while Ozon job is rate-limited or running', () => {
+  const component=readFileSync(new URL('./Digitization.jsx',import.meta.url),'utf8');
+  const loadingEffect=component.slice(
+    component.indexOf('// Read the preceding period from SQLite'),
+    component.indexOf(' const saveSetting=',component.indexOf('// Read the preceding period from SQLite'))
+  );
+  assert.ok(loadingEffect.includes("fetch('/api/digitization?'+q"));
+  assert.doesNotMatch(loadingEffect,/if\(state\?\.job\?\.running\)return;/,
+    'Local comparison read must not be blocked by a running Ozon job');
+  assert.match(loadingEffect,/autoLoadComparisons&&!state\?\.job\?\.running&&shouldAutoLoadDigitization/,
+    'Network sync still must not start when an Ozon job already runs');
+  assert.match(component,/comparisonRange&&comparisonState\.loading&&/,
+    'Loading state follows local DB fetch, never Ozon job state');
+  assert.doesNotMatch(component,/comparisonState\.loading\|\|state\?\.job\?\.running/,
+    'Do not show waiting for Ozon when data is already available in SQLite');
 });
