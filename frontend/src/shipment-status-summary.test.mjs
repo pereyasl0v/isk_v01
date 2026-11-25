@@ -47,3 +47,28 @@ test('status summary reflects the same selected Moscow days as the orders chart'
  assert.deepEqual(week.items.map(x=>x.count),[1,0,1,1]);
  assert.deepEqual(fortnight.items.map(x=>x.count),[1,1,1,1]);
 });
+
+
+test('shipment count and item quantities are distinct, including cancelled items',()=>{
+ const summary=shipmentStatusSummary([
+  {status:'delivered',products:[{sku:'1',quantity:2}]},
+  {status:'cancelled',products:[{sku:'2',quantity:1}]}
+ ]);
+ assert.equal(summary.total,2);
+ assert.equal(summary.units,3);
+ assert.equal(summary.cancelledPostings,1);
+ assert.equal(summary.cancelledUnits,1);
+ assert.equal(summary.items.find(item=>item.key==='delivered').count,1);
+ const empty=shipmentStatusSummary([]);
+ assert.equal(empty.units,0);
+ assert.equal(empty.cancelledUnits,0);
+});
+
+test('selected-SKU shipments count only matched units, not the entire bundle',()=>{
+ const summary=shipmentStatusSummary([
+  {status:'cancelled',products:[{sku:'100',quantity:1}]},
+  {status:'delivered',products:[{sku:'100',quantity:2}]}
+ ]);
+ assert.deepEqual({postings:summary.total,units:summary.units,cancelled:summary.cancelledUnits},
+  {postings:2,units:3,cancelled:1});
+});
