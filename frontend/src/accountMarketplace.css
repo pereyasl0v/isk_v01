@@ -17,6 +17,8 @@
 .marketplace-add-option-text small{font-size:10px;color:#829186;white-space:nowrap}
 .marketplace-symbol{width:39px;height:39px;min-width:39px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:11px;color:#fff;font-weight:850;font-size:17px;letter-spacing:-1.2px;line-height:1;text-transform:lowercase;font-family:Inter,"Segoe UI",sans-serif}
 .marketplace-symbol-ozon{background:#1769f4;box-shadow:0 2px 5px #1769f420}
+/* Optical alignment: lowercase glyphs otherwise sit below the square's visual centre. */
+.marketplace-symbol-ozon .marketplace-symbol-text{display:block;line-height:1;letter-spacing:0;transform:translate(-1px,-2px)}
 .marketplace-symbol-wb{background:linear-gradient(140deg,#c02baf,#7928c3);box-shadow:0 2px 5px #8c2ab51b}
 .marketplace-panel-title{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .marketplace-panel-title h3{font-size:16px;color:#314b3d}
