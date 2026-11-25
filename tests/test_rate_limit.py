@@ -116,12 +116,15 @@ class RateLimitTests(unittest.TestCase):
                 )
             return {'accruals':[]}
         api = Ozon('123','secret',transport=transport,sleep=sleeps.append)
-        with api.auto_retry_429(messages.append):
+        delays = []
+        with api.auto_retry_429(messages.append,on_wait=delays.append):
             result = api.call('/v1/finance/accrual/by-day',{'date':'2026-11-24'})
         self.assertEqual(result, {'accruals':[]})
         self.assertEqual(sleeps,[125.0])
+        self.assertEqual(delays,[125.0])
         self.assertEqual(len(calls),2)
-        self.assertTrue(any('125 сек.' in text for text in messages))
+        self.assertTrue(any('Загрузка продолжится автоматически' in text for text in messages))
+        self.assertTrue(all('429' not in text for text in messages))
 
     def test_digitization_429_works_on_real_http_error_path(self):
         sleeps = []
