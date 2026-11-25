@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {salesChartWindow, salesRangeTotals, salesTickIndexes, postingsInChartWindow, postingMoscowDay} from './sales-chart-range.mjs';
+import {salesChartWindow, salesRangeTotals, salesTickIndexes, postingsInChartWindow, postingMoscowDay, salesSelectionWindow, postingsForSalesSelection} from './sales-chart-range.mjs';
 
 test('90-day chart keeps last two tick labels separated', () => {
   const ticks = salesTickIndexes(90);
@@ -111,4 +111,59 @@ test('changing chart controls also changes the posting history time coverage',()
   ['nov-15','nov-20','nov-24']);
  assert.deepEqual(postingsInChartWindow(postings,salesChartWindow([],30,now)).map(p=>p.number),
   ['nov-15','nov-20','nov-24']);
+});
+
+
+test('brushed chart dates also define the shipment history range, including reverse selection',()=>{
+ const now=new Date('2026-11-24T18:00:00Z');
+ const points=['2026-11-20','2026-11-21','2026-11-22','2026-11-23','2026-11-24'].map(date=>({date}));
+ const chart={...salesChartWindow([],14,now),points};
+ const selected=salesSelectionWindow(chart,['2026-11-23','2026-11-21']);
+ assert.deepEqual({from:selected.from,to:selected.to},{from:'2026-11-21',to:'2026-11-23'});
+ const postings=[
+  {number:'before',created_at:'2026-11-20T12:00:00Z'},
+  {number:'first',created_at:'2026-11-21T12:00:00Z'},
+  {number:'last',created_at:'2026-11-23T12:00:00Z'},
+  {number:'after',created_at:'2026-11-24T12:00:00Z'}
+ ];
+ assert.deepEqual(postingsInChartWindow(postings,selected).map(p=>p.number),['first','last']);
+ assert.equal(salesSelectionWindow(chart,null),chart);
+ assert.equal(salesSelectionWindow(chart,['2026-11-10','2026-11-21']),chart);
+ assert.equal(salesSelectionWindow({...chart,points:[]},['2026-11-21','2026-11-23']).from,chart.from);
+});
+
+test('choosing one product filters shipment dates and product lines, preserving source data',()=>{
+ const chart={from:'2026-11-21',to:'2026-11-23'};
+ const postings=[
+  {number:'mixed',created_at:'2026-11-22T12:00:00Z',status:'delivered',products:[
+   {sku:'100',offer_id:'A',quantity:2},
+   {sku:200,offer_id:'B',quantity:5}
+  ]},
+  {number:'other',created_at:'2026-11-22T15:00:00Z',status:'cancelled',products:[{sku:'200',offer_id:'B',quantity:3}]},
+  {number:'outside',created_at:'2026-11-24T15:00:00Z',products:[{sku:'100',quantity:7}]},
+  {number:'matching',created_at:'2026-11-23T10:00:00Z',products:[{sku:100,quantity:1}]}
+ ];
+ const result=postingsForSalesSelection(postings,chart,'100');
+ assert.deepEqual(result.map(p=>p.number),['mixed','matching']);
+ assert.deepEqual(result.map(p=>p.products.reduce((sum,item)=>sum+item.quantity,0)),[2,1]);
+ assert.equal(result[0].status,'delivered');
+ assert.equal(postings[0].products.length,2,'Must not mutate multi-product shipment');
+ assert.deepEqual(postingsForSalesSelection(postings,chart,'all').map(p=>p.number),['mixed','other','matching']);
+ assert.deepEqual(postingsForSalesSelection(postings,chart,'999'),[]);
+});
+
+test('SKU match has priority; missing SKU may use a verified inventory offer ID',()=>{
+ const chart={from:'2026-11-22',to:'2026-11-23'};
+ const productCatalog=[{sku:'100',offer_id:'OZ-100'}];
+ const postings=[
+  {number:'legacy',created_at:'2026-11-22T12:00:00Z',products:[
+   {sku:null,offer_id:'OZ-100',quantity:2},
+   {sku:'200',offer_id:'OZ-100',quantity:5}
+  ]},
+  {number:'unknown',created_at:'2026-11-22T12:00:00Z',products:[{sku:null,offer_id:'UNKNOWN',quantity:1}]}
+ ];
+ const rows=postingsForSalesSelection(postings,chart,'100',productCatalog);
+ assert.deepEqual(rows.map(p=>p.number),['legacy']);
+ assert.deepEqual(rows[0].products,[{sku:null,offer_id:'OZ-100',quantity:2}]);
+ assert.deepEqual(postingsForSalesSelection(postings,chart,'100',[]),[]);
 });
