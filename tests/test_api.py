@@ -215,6 +215,38 @@ class AuthApiTests(unittest.TestCase):
         finally:
             created.close()
 
+    def test_legacy_account_records_are_labeled_ozon_in_api(self):
+        # A new marketplace selector must never silently reclassify or rewrite
+        # existing Ozon IDs, keys, permissions, snapshots or active sessions.
+        first=self.connect(client_id='123')
+        second=self.connect(client_id='456')
+        original_ids={first['account_id'],second['account_id']}
+        me=self.client.get('/api/auth/me')
+        self.assertEqual(me.status_code,200,me.text)
+        self.assertEqual(me.json()['active_account_id'],second['account_id'])
+        accounts=me.json()['accounts']
+        self.assertEqual({row['id'] for row in accounts},original_ids)
+        self.assertEqual({row['marketplace'] for row in accounts},{'ozon'})
+        self.assertEqual({row['client_id'] for row in accounts},{'123','456'})
+        self.assertTrue(all(row['connected'] for row in accounts))
+
+        directory=self.client.get('/api/accounts')
+        self.assertEqual(directory.status_code,200,directory.text)
+        self.assertEqual({row['marketplace'] for row in directory.json()['accounts']},{'ozon'})
+
+        selected=self.client.post('/api/accounts/select',headers=HEAD,
+                                  json={'account_id':first['account_id']})
+        self.assertEqual(selected.status_code,200,selected.text)
+        self.assertEqual(self.client.get('/api/auth/me').json()['active_account_id'],first['account_id'])
+
+        disconnected=self.client.post('/api/disconnect',headers=HEAD,json={})
+        self.assertEqual(disconnected.status_code,200,disconnected.text)
+        by_id={row['id']:row for row in self.client.get('/api/accounts').json()['accounts']}
+        self.assertEqual(set(by_id),original_ids)
+        self.assertEqual(by_id[first['account_id']]['marketplace'],'ozon')
+        self.assertFalse(by_id[first['account_id']]['connected'])
+        self.assertTrue(by_id[second['account_id']]['connected'])
+
     def test_disconnect_keeps_account_and_history_for_reconnect(self):
         account=self.connect()
         scope='account:'+account['account_id']
