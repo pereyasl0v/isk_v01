@@ -508,6 +508,58 @@ class AuthApiTests(unittest.TestCase):
             self.assertEqual(download.call_count,2)
         self.assertEqual(main.store.digitization_missing_days(scope,older.isoformat(),yesterday.isoformat()),[])
 
+    def test_ozon_waiting_is_a_normal_running_job_with_retry_deadline(self):
+        # An active 429 wait is a calm running state, not a failed job.
+        from contextlib import contextmanager
+        from datetime import timedelta
+        import threading
+
+        self.connect()
+        day=datetime.now(main.MOSCOW_TZ).date()-timedelta(days=3)
+        entered=threading.Event()
+        release=threading.Event()
+
+        @contextmanager
+        def recovery(api,progress,on_wait=None,on_resume=None):
+            api.on_wait=on_wait
+            api.on_resume=on_resume
+            yield
+
+        def download(api, day_value, progress):
+            api.on_wait(1562)
+            progress('Ozon временно ограничил частоту запросов. Загрузка продолжится автоматически.')
+            entered.set()
+            if not release.wait(timeout=5):
+                raise RuntimeError('Timed out waiting for test release')
+            api.on_resume()
+            progress('Ограничение Ozon снято, продолжаем загрузку…')
+            return {}
+
+        with patch.object(FakeOzon,'_as_date',create=True,side_effect=lambda value:value), \\
+             patch.object(FakeOzon,'_closed_last_day',create=True,side_effect=lambda value:(value,False)), \\
+             patch.object(FakeOzon,'auto_retry_429',create=True,new=recovery), \\
+             patch.object(main,'download_digitization_day',side_effect=download):
+            try:
+                response=self.client.post('/api/digitization/sync',headers=HEAD,json={
+                    'date_from':day.isoformat(),'date_to':day.isoformat()
+                })
+                self.assertEqual(response.status_code,200,response.text)
+                self.assertTrue(entered.wait(timeout=5))
+                job=self.client.get('/api/state').json()['job']
+                self.assertTrue(job['running'])
+                self.assertEqual(job['kind'],'digitization')
+                self.assertIsNone(job['error'])
+                self.assertNotIn('429',job['message'])
+                self.assertIsNotNone(job['retry_at'])
+                delay=(datetime.fromisoformat(job['retry_at'])-datetime.now(timezone.utc)).total_seconds()
+                self.assertGreater(delay,1500)
+            finally:
+                release.set()
+            result=self.wait()['job']
+            self.assertFalse(result['running'])
+            self.assertIsNone(result['retry_at'])
+            self.assertIsNone(result['error'])
+
     def test_failed_morning_digitization_is_not_retried_that_day(self):
         from datetime import timedelta
 
