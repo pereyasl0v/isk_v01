@@ -655,8 +655,12 @@ function App(){
     const finished=!s.job.running&&runningJob.current;
     runningJob.current=s.job.running?s.job:null;
     setState(prev=>keepUnchangedState(prev,s));
-    if(finished?.kind==='sales')setSales(await api('/sales'));
-    else if(finished)await loadData();
+    if(finished?.kind==='sales'){
+      // Sales and shipment history are refreshed in one backend job.
+      // Commit both on screen together so their totals aren't out of sync.
+      const [nextSales,nextHistory]=await Promise.all([api('/sales'),api('/history')]);
+      if(active){setSales(nextSales);setHist(nextHistory)}
+    }else if(finished)await loadData();
    }catch(e){
     if(!active)return;
     if(e.status===401){setMe(null);clearData()}
@@ -684,7 +688,11 @@ function App(){
   try{
    const result=await api(path,body);
    if(result.started===false){
-    if(chart)setSales(await api('/sales'));
+    if(chart){
+      const [nextSales,nextHistory]=await Promise.all([api('/sales'),api('/history')]);
+      setSales(nextSales);
+      setHist(nextHistory);
+    }
     return result;
    }
    const job={kind:chart?'sales':null,running:true,message:'Запускаем загрузку…',error:null};
