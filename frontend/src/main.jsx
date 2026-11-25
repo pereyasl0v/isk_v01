@@ -2,7 +2,7 @@ import ScrollTable from "./ScrollTable";
 import React, {useEffect, useState, createContext, useContext, useRef} from 'react';
 import {createRoot} from 'react-dom/client';
 import {BrowserRouter, NavLink, Routes, Route, Navigate, useLocation, useNavigate} from 'react-router-dom';
-import {Boxes, LayoutDashboard, Package, Warehouse, Truck, Calculator, Plug, ListChecks, RefreshCw, ArrowUpRight, Search, Download, CircleCheck, AlertCircle, ArrowRight, LogOut, BarChart3, Plus, Users, ShieldCheck, Barcode, Menu, X} from 'lucide-react';
+import {Boxes, LayoutDashboard, Package, Warehouse, Truck, Calculator, Plug, ListChecks, RefreshCw, ArrowUpRight, Search, Download, CircleCheck, AlertCircle, ArrowRight, LogOut, BarChart3, Plus, Users, ShieldCheck, Barcode, Menu, X, Clock3} from 'lucide-react';
 import './style.css';
 import Replenishment from './Replenishment';
 import MarketPage from './market';
@@ -13,6 +13,8 @@ import BarcodeGenerator from './BarcodeGenerator';
 import {statusLabel,roleLabel,groupStocks} from './presentation';
 import {salesChartWindow,salesRangeTotals,salesTickIndexes,postingsInChartWindow} from './sales-chart-range.mjs';
 import {shipmentStatusSummary} from './shipment-status-summary.mjs';
+import OzonRetryStatus from './OzonRetryStatus';
+import {isOzonRetryWaiting} from './ozon-retry-status.mjs';
 import {statePollDelay,keepUnchangedState} from './state-polling.mjs';
 import './mobile.css';
 
@@ -457,6 +459,7 @@ function AppNavigation({items,username,onLogout}){
 }
 function RequireAccount({children}){const {me}=useApp();return me?.active_account_id?children:<Navigate to="/connection" replace/>}
 function App(){
+ const location=useLocation();
  const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);const [sales,setSales]=useState(null);
  const [error,setError]=useState('');const [loading,setLoading]=useState(true);const [authChecked,setAuthChecked]=useState(false);const runningJob=useRef(null);
  async function loadData(){const [i,h,d,sa]=await Promise.all([api('/inventory'),api('/history'),api('/digitization'),api('/sales')]);setInv(i);setHist(h);setDigi(d);setSales(sa)}
@@ -547,7 +550,7 @@ function App(){
      </div>
      <button className="primary" disabled={state.job.running} onClick={()=>act('/account/sync',{})}>
       <RefreshCw size={16} className={state.job.running&&state.job.kind!=='sales'?'animate-spin':''}/>
-      {state.job.running&&state.job.kind!=='sales'?'Обновляем…':'Обновить'}
+      {isOzonRetryWaiting(state.job)?'Ожидаем Ozon…':state.job.running&&state.job.kind!=='sales'?'Обновляем…':'Обновить'}
      </button>
     </div>}
     <div className="header-actions ml-auto">
@@ -557,7 +560,13 @@ function App(){
    </header>
    <div className="workspace">
     {error&&<div role="alert"><Notice>{error}<button className="ml-3" onClick={()=>setError('')}>Закрыть</button></Notice></div>}
-    {state?.job.running&&state.job.kind!=='sales'&&<div className="progress"><RefreshCw size={17} className="animate-spin"/>{state.job.message}</div>}{state?.job.error&&<Notice>{state.job.error}</Notice>}
+    {state?.job.running&&state.job.kind!=='sales'&&(
+      isOzonRetryWaiting(state.job)
+       ? location.pathname!=='/digitization'&&<div className="progress ozon-retry-banner" role="status">
+          <Clock3 size={18}/><OzonRetryStatus retryAt={state.job.retry_at}/>
+         </div>
+       : <div className="progress"><RefreshCw size={17} className="animate-spin"/>{state.job.message}</div>
+     )}{state?.job.error&&<Notice>{state.job.error}</Notice>}
     <Routes>
      <Route path="/connection" element={<Connection/>}/>
      <Route path="/admin/users" element={me.user.role==='admin'?<AdminUsers/>:<Navigate to="/" replace/>}/>
