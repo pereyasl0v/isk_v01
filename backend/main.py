@@ -7,6 +7,7 @@ import secrets
 import sqlite3
 import threading
 import time
+from contextlib import nullcontext
 from contextlib import asynccontextmanager
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from pathlib import Path
@@ -743,7 +744,14 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
                 for section,period in (('inventory',0),('history',lookback)):
                     sync_kind(section,period)
             else:
-                sync_kind(kind,days)
+                # 429 in digitization pauses and resumes the current HTTP call
+                # instead of ending the job and requiring a new period selection.
+                # Worker-local context prevents unrelated requests from pausing.
+                recovery=(s['api'].auto_retry_429(progress)
+                          if kind=='digitization' and hasattr(s['api'],'auto_retry_429')
+                          else nullcontext())
+                with recovery:
+                    sync_kind(kind,days)
             after=s['api'].cache_counters() if hasattr(s['api'],'cache_counters') else before
             cache_hits=max(0,int(after.get('hits',0))-int(before.get('hits',0)))
             api_requests=max(0,int(after.get('api_requests',0))-int(before.get('api_requests',0)))
