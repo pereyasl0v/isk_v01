@@ -42,8 +42,22 @@ try: os.chmod(DATA,0o700)
 except OSError: pass
 ENCRYPTION_KEY=load_encryption_key()
 store=Store(DATA/'inventory.sqlite3',encryption_key=ENCRYPTION_KEY)
+# Deployment controller checks this file from inside the container before
+# restarting. It is intentionally not exposed through any HTTP endpoint.
+ACTIVE_JOB_MARKER=DATA/'.isk_active_job'
+
+def update_active_job_marker():
+    """Called under the runtime lock after every job state transition."""
+    if any(runtime.get('job',{}).get('running') for runtime in runtime_accounts.values()):
+        ACTIVE_JOB_MARKER.touch(exist_ok=True)
+    else:
+        ACTIVE_JOB_MARKER.unlink(missing_ok=True)
+
 @asynccontextmanager
 async def lifespan(app):
+    # A previous container crash may leave an obsolete marker in the volume.
+    # Clearing it on startup is safe because no old in-process jobs survive.
+    ACTIVE_JOB_MARKER.unlink(missing_ok=True)
     stop=threading.Event()
     worker=threading.Thread(target=run_digitization_schedule,args=(stop,),daemon=True)
     worker.start()
@@ -606,6 +620,7 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
             return {'started':False}
         s['job']={'kind':kind,'running':True,'message':'Подключаемся к Ozon…',
                   'error':None,'retry_at':None}
+        update_active_job_marker()
     def sync_kind(kind,days):
         if kind=='inventory':
             products,stocks=s['api'].download(progress)
@@ -824,6 +839,7 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
             with lock:
                 s['job']['retry_at']=None
                 s['job']['running']=False
+                update_active_job_marker()
     threading.Thread(target=work,daemon=True).start()
     return {'started':True}
 
