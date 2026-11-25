@@ -506,6 +506,53 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(data['rows'][0]['ordered_units'],7)
         self.assertEqual(data['rows'][-1]['ordered_units'],3)
 
+    def test_sales_refresh_shares_one_snapshot_with_shipment_history(self):
+        # The live graph and shipment counts must use the same Ozon response,
+        # and a sales job also updates the /api/history endpoint.
+        from datetime import timedelta
+
+        account=self.connect()
+        scope='account:'+account['account_id']
+        first,today=main.sales_chart_period(14)
+        snapshot={
+            'since':(today-timedelta(days=16)).isoformat()+'T00:00:00+03:00',
+            'to':today.isoformat()+'T23:59:59+03:00',
+            'sources':{'fbo':{'ok':True},'fbs':{'ok':True}},
+            'errors':[],
+            'postings':[
+                {'number':'one','scheme':'FBO','status':'delivered',
+                 'created_at':today.isoformat()+'T09:00:00+03:00',
+                 'products':[{'sku':'100','offer_id':'A','quantity':2}]},
+                {'number':'two','scheme':'FBS','status':'cancelled',
+                 'created_at':today.isoformat()+'T10:00:00+03:00',
+                 'products':[{'sku':'100','offer_id':'A','quantity':1}]}
+            ]
+        }
+        def from_snapshot(api, day, progress, history=None):
+            self.assertIs(history,snapshot,'graph and history must use the same fetched snapshot')
+            self.assertEqual(day,today)
+            return ({'date':today.isoformat(),'ordered_units':3,
+                     'ordered_revenue':532},[
+                {'date':today.isoformat(),'sku':'100','ordered_units':3,'ordered_revenue':532}
+            ])
+
+        with patch.object(FakeOzon,'postings',autospec=True,return_value=snapshot) as postings, \\
+             patch.object(FakeOzon,'current_day_orders',create=True,new=from_snapshot):
+            started=self.client.post('/api/sales/sync',headers=HEAD,
+                                     json={'days':14,'backfill':False})
+            self.assertEqual(started.status_code,200,started.text)
+            self.assertTrue(started.json()['started'])
+            self.assertIsNone(self.wait()['job']['error'])
+            postings.assert_called_once()
+            self.assertEqual(postings.call_args.args[1],16)
+
+        history=self.client.get('/api/history').json()
+        self.assertEqual(len(history['postings']),2)
+        self.assertEqual(sum(p['products'][0]['quantity'] for p in history['postings']),3)
+        orders=self.client.get('/api/sales').json()
+        self.assertEqual(orders['rows'][-1]['ordered_units'],3)
+        self.assertEqual(main.store.latest(scope,'history')['postings'][0]['status'],'cancelled')
+
     def test_digitization_downloads_yesterday_at_eight_and_manual_history_once(self):
         from datetime import timedelta
 
