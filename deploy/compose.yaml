@@ -1,0 +1,72 @@
+name: isk-vps
+
+# VPS deployment: GitHub Actions builds this image on GitHub-hosted runners.
+# Never use the development compose file with build: on a 1 GB VPS.
+services:
+  isk:
+    image: ghcr.io/pereyasl0v/isk_v01:stable
+    restart: unless-stopped
+    environment:
+      OZON_FBO_DATA_DIR: /data
+      ISK_ALLOWED_HOSTS: "${ISK_DOMAIN:?Set_ISK_DOMAIN_in_dotenv},localhost,127.0.0.1"
+      ISK_ALLOWED_ORIGINS: "https://${ISK_DOMAIN:?Set_ISK_DOMAIN_in_dotenv}"
+      ISK_PUBLIC_URL: "https://${ISK_DOMAIN:?Set_ISK_DOMAIN_in_dotenv}"
+      ISK_SECURE_COOKIE: "true"
+      ISK_ENCRYPTION_KEY_FILE: /run/secrets/isk_encryption_key
+      WB_DESTINATION: "${WB_DESTINATION:-1259570991}"
+    secrets:
+      - isk_encryption_key
+    volumes:
+      - isk_data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/auth/status',timeout=5)"
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      isk:
+        condition: service_healthy
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+    environment:
+      ISK_DOMAIN: "${ISK_DOMAIN:?Set_ISK_DOMAIN_in_dotenv}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+volumes:
+  isk_data:
+  caddy_data:
+  caddy_config:
+
+secrets:
+  isk_encryption_key:
+    file: ./secrets/isk_encryption_key
