@@ -484,47 +484,43 @@ function Connection(){
 
   <section className="panel marketplace-accounts-panel">
    <div className="marketplace-panel-title">
-    <h3>Подключённые кабинеты</h3>
+    <h3>Список кабинетов</h3>
     <span className="marketplace-account-total">{accounts.length} {accounts.length===1?'кабинет':accounts.length%10>=2&&accounts.length%10<=4&&(accounts.length%100<12||accounts.length%100>14)?'кабинета':'кабинетов'}</span>
    </div>
    {!accounts.length&&<div className="marketplace-accounts-empty">
     <Plug size={24}/>
-    <strong>Пока нет подключённых кабинетов</strong>
+    <strong>Пока нет кабинетов</strong>
     <p>Нажмите «Добавить кабинет» и выберите маркетплейс. Ozon уже доступен.</p>
    </div>}
    <div className="account-list marketplace-account-list">
     {accounts.map(account=>{
      const isOzon=(account.marketplace||'ozon')==='ozon';
      const selected=me?.active_account_id===account.id;
-     return <div className={'account-row marketplace-account-row'+(selected?' marketplace-account-selected':'')} key={account.id}>
+     return <div className="account-row marketplace-account-row" key={account.id}>
+      {selected&&<span className="marketplace-account-indicator" role="img"
+       aria-label="Выбранный кабинет" title="Выбранный кабинет"/>}
       <div className="marketplace-account-identity">
        <span className={'marketplace-symbol '+(isOzon?'marketplace-symbol-ozon':'marketplace-symbol-wb')} aria-hidden="true">{isOzon?'oz':'wb'}</span>
        <div className="marketplace-account-info">
         <div className="marketplace-account-title">
          <strong>Кабинет {account.client_id}</strong>
          <span className={'marketplace-account-platform '+(isOzon?'platform-ozon':'platform-wb')}>{isOzon?'Ozon':'Wildberries'}</span>
-         {selected&&<span className="marketplace-account-current"><CircleCheck size={12}/> Активный</span>}
         </div>
-        <span className={account.connected?'connected-label':'disconnected-label'}>
-         {account.connected?'Подключён':'Ключ удалён'}
-        </span>
+        {!account.connected&&<span className="disconnected-label">Ключ удалён</span>}
         {isOzon&&<small>Права: {account.roles?.join(', ')||'нет данных'}</small>}
         {isOzon&&account.connected&&<small>Срок действия ключа: {date(account.expires_at)}</small>}
        </div>
       </div>
       <div className="account-actions marketplace-account-actions">
-       {account.connected&&isOzon&&<button type="button" className={selected?'marketplace-selected-button':'marketplace-select-button'}
-        disabled={busy||selected} onClick={()=>select(account.id)}>
-        {selected?'Выбран':'Выбрать'}
-       </button>}
+       {account.connected&&isOzon&&!selected&&<button type="button" className="marketplace-select-button"
+        disabled={busy} onClick={()=>select(account.id)}>Выбрать</button>}
        {!account.connected&&isOzon&&<button type="button" className="marketplace-select-button" disabled={busy}
         onClick={()=>renewOzon(account.client_id)}>Обновить ключ</button>}
       </div>
      </div>;
     })}
    </div>
-   {active&&state&&<div className="marketplace-active-connection">
-    <div><CircleCheck size={18}/><span>Сейчас используется <strong>Ozon · кабинет {state.client_id}</strong></span></div>
+   {active&&state&&<div className="marketplace-account-footer">
     <button type="button" disabled={busy||state.job.running} onClick={disconnect}>
      <LogOut size={15}/> Удалить сохранённый ключ
     </button>
