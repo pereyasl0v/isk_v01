@@ -11,7 +11,7 @@ import DigitizationCached from './DigitizationCached';
 import ProductDetails from './ProductDetails';
 import BarcodeGenerator from './BarcodeGenerator';
 import {statusLabel,roleLabel,groupStocks} from './presentation';
-import {salesChartWindow,salesRangeTotals,salesTickIndexes,postingsInChartWindow} from './sales-chart-range.mjs';
+import {salesChartWindow,salesRangeTotals,salesTickIndexes,salesSelectionWindow,postingsForSalesSelection} from './sales-chart-range.mjs';
 import {shipmentStatusSummary} from './shipment-status-summary.mjs';
 import OzonRetryStatus from './OzonRetryStatus';
 import {isOzonRetryWaiting} from './ozon-retry-status.mjs';
@@ -45,29 +45,22 @@ function Card({label,value,note,icon:Icon=Package,to}){
 function Overview(){
  const {inv,state,act,sales}=useApp();const s=inv?.summary;
  const [period,setPeriod]=useState(14);
- const chartWindow=salesChartWindow(sales?.rows,period);
- return <><div className="overview-heading"><div><h1>Обзор кабинета</h1><p className="muted mt-2">Продажи и остатки Ozon</p></div></div>
- <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6 overview-metrics"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек" to="/products"/></div>
- <SalesHistoryChart data={sales} state={state} act={act} inv={inv} period={period} setPeriod={setPeriod} chartWindow={chartWindow}/>
- {inv?.warning&&<Notice>{inv.warning}</Notice>}
- <div className="mt-5"><History chartWindow={chartWindow}/></div></>
-}
-function SalesHistoryChart({data,state,act,inv,period,setPeriod,chartWindow}){
- const [hovered,setHovered]=useState(null);
  const [sku,setSku]=useState('all');
  const [selectedRange,setSelectedRange]=useState(null);
+ const chartWindow=salesChartWindow(sales?.rows,period);
+ const historyWindow=salesSelectionWindow(chartWindow,selectedRange);
+ return <><div className="overview-heading"><div><h1>Обзор кабинета</h1><p className="muted mt-2">Продажи и остатки Ozon</p></div></div>
+ <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6 overview-metrics"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек" to="/products"/></div>
+ <SalesHistoryChart data={sales} state={state} act={act} inv={inv} period={period} setPeriod={setPeriod} chartWindow={chartWindow}
+  sku={sku} setSku={setSku} selectedRange={selectedRange} setSelectedRange={setSelectedRange}/>
+ {inv?.warning&&<Notice>{inv.warning}</Notice>}
+ <div className="mt-5"><History chartWindow={historyWindow} sku={sku} inv={inv}/></div></>
+}
+function SalesHistoryChart({data,state,act,inv,period,setPeriod,chartWindow,sku,setSku,selectedRange,setSelectedRange}){
+ const [hovered,setHovered]=useState(null);
  const selectionStart=useRef(null);
  const [chartWidth,setChartWidth]=useState(960);
  const chartRef=useRef(null);
- const hasSelection=selectedRange!==null;
- useEffect(()=>{
-  if(!hasSelection)return;
-  function clearOutside(event){
-   if(!chartRef.current?.contains(event.target))setSelectedRange(null);
-  }
-  document.addEventListener('click',clearOutside,true);
-  return ()=>document.removeEventListener('click',clearOutside,true);
- },[hasSelection]);
  const pendingPeriodSync=useRef(null);
  const refreshSales=useRef(null);
  const allPoints=chartWindow.points;
@@ -158,10 +151,7 @@ function SalesHistoryChart({data,state,act,inv,period,setPeriod,chartWindow}){
  const selectionIndexes=selectedRange?.map(day=>points.findIndex(point=>point.date===day))||[];
  const selectedTotal=selectionIndexes.length===2&&selectionIndexes.every(index=>index>=0)
   ?salesRangeTotals(points,selectionIndexes[0],selectionIndexes[1]):null;
- const visibleRange=selectedTotal?points.slice(selectedTotal.startIndex,selectedTotal.endIndex+1):points;
- const closedRange=visibleRange.filter(row=>row.date<chartWindow.to);
- const matchedClosedDays=sku==='all'?closedRange.filter(row=>row.ordered_source==='digitization_postings').length:0;
- const analyticsClosedDays=closedRange.length-matchedClosedDays;
+
  const rangeBandStep=plotWidth/Math.max(1,points.length-1);
  const rangeBandLeft=selectedTotal?Math.max(left,x(selectedTotal.startIndex)-rangeBandStep/2):0;
  const rangeBandRight=selectedTotal?Math.min(width-right,x(selectedTotal.endIndex)+rangeBandStep/2):0;
@@ -246,12 +236,8 @@ function SalesHistoryChart({data,state,act,inv,period,setPeriod,chartWindow}){
      <span>Заказано: <strong>{num(selectedTotal.orderedUnits)} шт.</strong></span>
      <span>На сумму: <strong>{num(selectedTotal.orderedAmount)} ₽</strong></span>
      {selectedTotal.deliveredKnownDays>0&&<span>Доставлено: <strong>{num(selectedTotal.deliveredUnits)} шт.</strong>{!selectedTotal.deliveryComplete&&<small> (неполные данные)</small>}</span>}
+     <button type="button" className="sales-range-reset" onClick={()=>setSelectedRange(null)}>Сбросить интервал</button>
     </div>}
-    <p className="sales-chart-source-note">
-     {sku==='all'
-      ? <>За закрытые дни: {matchedClosedDays} дн. из локальной базы «Оцифровки»{analyticsClosedDays>0?`, ${analyticsClosedDays} дн. — аналитика Ozon`:''}. Сегодняшние заказы предварительные.</>
-      : <>Для выбранного товара показана аналитика заказов Ozon. Общие итоги всех товаров за закрытые дни берутся из «Оцифровки».</>}
-    </p>
   </>}
  </section>
 }
@@ -292,11 +278,16 @@ function Stocks(){
  </section>
  </div>
 }
-function History({chartWindow}){
+function History({chartWindow,sku,inv}){
  const {hist}=useApp();
  const [q,setQ]=useState('');const [status,setStatus]=useState('');const [scheme,setScheme]=useState('all');
  const [expandedStatuses,setExpandedStatuses]=useState(false);
- const postings=postingsInChartWindow(hist?.postings||[],chartWindow);
+ useEffect(()=>{
+  setQ('');
+  setStatus('');
+  setScheme('all');
+ },[chartWindow.from,chartWindow.to,sku]);
+ const postings=postingsForSalesSelection(hist?.postings||[],chartWindow,sku,inv?.products||[]);
  const scoped=postings.filter(p=>scheme==='all'||String(p.scheme||'FBO').toUpperCase()===scheme);
  const rows=scoped.filter(p=>String(p.number||'').includes(q)&&(!status||p.status===status)).map(p=>({
   ...p,scheme:p.scheme||'FBO',event_date:p.created_at||p.in_process_at,
@@ -304,14 +295,11 @@ function History({chartWindow}){
   items:(p.products||[]).map(r=>`${r.offer_id||r.sku} × ${r.quantity}`).join('; ')
  }));
  const summary=shipmentStatusSummary(scoped);
- const periodDate=day=>day?.split('-').reverse().join('.')||'—';
  const statuses=[...new Set(scoped.map(p=>p.status).filter(Boolean))].sort();
  return <section className="panel">
   <div className="history-overview-header">
    <div className="history-overview-title">
     <h3>История отправлений Ozon</h3>
-    <p className="history-overview-period">Период: {periodDate(chartWindow.from)} — {periodDate(chartWindow.to)}</p>
-    <p className="muted">Последняя проверка: {date(hist?.at)}</p>
    </div>
    <aside className="history-status-preview" aria-label="Статусы отправлений за выбранный период">
     <div className="history-status-figures">
@@ -331,7 +319,7 @@ function History({chartWindow}){
   </div>
   {expandedStatuses&&<section className="history-status-expanded" id="history-status-expanded" aria-label="Подробная диаграмма статусов">
    <div className="history-status-expanded-heading">
-    <div><strong>Распределение статусов</strong><p>Все отправления за {periodDate(chartWindow.from)} — {periodDate(chartWindow.to)}</p></div>
+    <div><strong>Распределение статусов</strong></div>
     <span>Всего: {num(summary.total)}</span>
    </div>
    <div className="history-status-bars">
@@ -349,7 +337,7 @@ function History({chartWindow}){
    <select aria-label="Схема отправления" value={scheme} onChange={e=>{setScheme(e.target.value);setStatus('');}}><option value="all">FBO и FBS</option><option value="FBO">Только FBO</option><option value="FBS">Только FBS</option></select>
    <select aria-label="Статус" value={status} onChange={e=>setStatus(e.target.value)}><option value="">Все статусы</option>{statuses.map(value=><option key={value} value={value}>{statusLabel(value)}</option>)}</select>
   </div>
-  <div className="fbo-history-table"><Table key={chartWindow.from+':'+chartWindow.to} label="История отправлений Ozon" rows={rows} pageSize={8} columns={[["scheme","Схема",v=>v],["number","Отправление"],["event_date","Создано / обработка",v=>date(v)],["status","Статус",statusLabel],["substatus","Подстатус",v=>v||'—'],["warehouse_name","Склад",v=>v||'—'],["items","Состав"],["units","Единиц",num]]}/></div>
+  <div className="fbo-history-table"><Table key={chartWindow.from+':'+chartWindow.to+':'+sku} label="История отправлений Ozon" rows={rows} pageSize={8} columns={[["scheme","Схема",v=>v],["number","Отправление"],["event_date","Создано / обработка",v=>date(v)],["status","Статус",statusLabel],["substatus","Подстатус",v=>v||'—'],["warehouse_name","Склад",v=>v||'—'],["items","Состав"],["units","Единиц",num]]}/></div>
  </section>
 }
 function LoginScreen({onSuccess}){
