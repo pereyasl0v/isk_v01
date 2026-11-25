@@ -600,7 +600,8 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
             sales_first=max(earliest,min(requested_first,date.fromisoformat(oldest)))
         if morning and not store.claim_morning_digitization(s['client'],date_from.isoformat()):
             return {'started':False}
-        s['job']={'kind':kind,'running':True,'message':'Подключаемся к Ozon…','error':None}
+        s['job']={'kind':kind,'running':True,'message':'Подключаемся к Ozon…',
+                  'error':None,'retry_at':None}
     def sync_kind(kind,days):
         if kind=='inventory':
             products,stocks=s['api'].download(progress)
@@ -747,9 +748,20 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
                 # 429 in digitization pauses and resumes the current HTTP call
                 # instead of ending the job and requiring a new period selection.
                 # Worker-local context prevents unrelated requests from pausing.
-                recovery=(s['api'].auto_retry_429(progress)
-                          if kind=='digitization' and hasattr(s['api'],'auto_retry_429')
-                          else nullcontext())
+                def on_rate_limit_wait(delay):
+                    with lock:
+                        s['job']['retry_at']=(
+                            datetime.now(timezone.utc)+timedelta(seconds=delay)
+                        ).isoformat()
+
+                def on_rate_limit_resume():
+                    with lock:
+                        s['job']['retry_at']=None
+
+                recovery=(s['api'].auto_retry_429(
+                    progress,on_wait=on_rate_limit_wait,on_resume=on_rate_limit_resume
+                ) if kind=='digitization' and hasattr(s['api'],'auto_retry_429')
+                  else nullcontext())
                 with recovery:
                     sync_kind(kind,days)
             after=s['api'].cache_counters() if hasattr(s['api'],'cache_counters') else before
@@ -769,6 +781,7 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
             progress(message)
         finally:
             with lock:
+                s['job']['retry_at']=None
                 s['job']['running']=False
     threading.Thread(target=work,daemon=True).start()
     return {'started':True}
