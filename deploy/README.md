@@ -179,3 +179,100 @@ closing it. Do not expose Docker TCP socket or port 8000 publicly. On a 10 GB
 disk, monitor `df -h` and SQLite size; 1 GB RAM may limit processing large
 Ozon reports. Avoid placing passwords or the encryption key in GitHub, CI logs,
 or support chats.
+
+
+## 7. Automated GitHub Actions → VPS with safe deferred updates
+
+After the backend/frontend/Docker checks and GHCR publish finish, GitHub
+Actions can SSH into the VPS and **queue** the release. A root-owned systemd
+timer checks the pending flag every minute. It pulls a new image and restarts
+the app **only when there is no active Ozon job**. If digitization is waiting
+through HTTP 429, the release stays queued, even for hours. Neither the queue
+nor the deployment agent removes SQLite/TLS Docker volumes.
+
+**First update the VPS manually when all Ozon tasks are idle**, so the running
+container has the new private `/data/.isk_active_job` marker. Do not enable
+the auto-deploy queue while an older application build is running a job.
+
+### One-time installation on VPS
+
+On your trusted Windows Git Bash computer, in this repository:
+```bash
+git checkout feature/ozon-digitization
+git pull --ff-only origin feature/ozon-digitization
+scp -i ~/.ssh/isk_vps_ed25519 \
+  deploy/{auto-update.sh,request-update.sh,install-auto-deploy.sh,isk-auto-update.service,isk-auto-update.timer} \
+  deploy@84.21.191.28:/home/deploy/
+```
+
+On VPS, **after** the manual update and while the application is idle:
+```bash
+sudo bash /home/deploy/install-auto-deploy.sh
+sudo systemctl list-timers isk-auto-update.timer --no-pager
+```
+
+Installation makes the scripts root-owned and executable at
+`/usr/local/sbin/isk-auto-update` and `/usr/local/sbin/isk-request-update`.
+The `deploy` Linux user receives passwordless sudo permission **only for**
+`/usr/local/sbin/isk-request-update`, which accepts no arguments and cannot
+execute user-supplied commands. It creates a private queued-deployment flag.
+
+### Dedicated forced-command SSH key
+
+**Never reuse the normal VPS administration SSH key for GitHub Actions.**
+On Windows Git Bash:
+```bash
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/isk_actions_deploy -C github-actions-isk
+PUB="$(cat ~/.ssh/isk_actions_deploy.pub)"
+ssh -i ~/.ssh/isk_vps_ed25519 deploy@84.21.191.28 \
+  "umask 077; mkdir -p ~/.ssh; printf '%s\n' 'restrict,command=\"sudo -n /usr/local/sbin/isk-request-update\" $PUB' >> ~/.ssh/authorized_keys"
+```
+
+The `restrict,command=...` SSH entry allows this key only to queue an update:
+no interactive shell, TCP forwarding, or arbitrary sudo. Keep the existing
+ordinary SSH key for troubleshooting.
+
+Verify the SSH server's real **host key fingerprint** before pinning it:
+```bash
+ssh-keyscan -t ed25519 84.21.191.28 > isk_host_keys
+ssh-keygen -lf isk_host_keys
+ssh -i ~/.ssh/isk_vps_ed25519 deploy@84.21.191.28 \
+  'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub'
+```
+The SHA256 fingerprints must match. **Do not proceed** if they differ.
+
+Set three repository **Actions secrets** at GitHub →
+`pereyasl0v/isk_v01` → Settings → Secrets and variables → Actions:
+- `ISK_DEPLOY_SSH_KEY`: complete contents of `~/.ssh/isk_actions_deploy`
+  (private key, including BEGIN/END lines). Paste into GitHub secret UI only,
+  never a chat message or committed file.
+- `ISK_DEPLOY_KNOWN_HOSTS`: complete line from `isk_host_keys`, including
+  `84.21.191.28 ssh-ed25519 ...`.
+- `ISK_DEPLOY_HOST`: `84.21.191.28`.
+
+If these secrets are not yet configured, the deploy job reports that
+auto-deploy is unconfigured and skips SSH. The normal pipeline still builds
+and publishes the Docker image.
+
+After the next successful push on `feature/ozon-digitization`, GitHub's
+**Queue safe VPS update** job connects by pinned SSH, queues the update and
+exits. The systemd timer later applies the image once ISK becomes idle.
+
+### Operations and verification
+
+```bash
+sudo systemctl list-timers isk-auto-update.timer --no-pager
+sudo journalctl -u isk-auto-update.service -n 50 --no-pager
+sudo docker compose -f /opt/isk/compose.yaml ps
+sudo test -e /var/lib/isk-deploy/pending && echo "Queued" || echo "No queued update"
+```
+
+A new Ozon task is briefly refused during the actual version switch;
+existing running tasks are protected. A server/container crash cannot
+guarantee completion of an interrupted Ozon job; saved SQLite days remain.
+If an update fails, its pending flag remains for the next timer run.
+To temporarily pause auto-deployment, run
+`sudo systemctl stop isk-auto-update.timer`; re-enable with
+`sudo systemctl start isk-auto-update.timer`.
+
+Do not delete `/opt/isk/secrets`, `/opt/isk/.env` or Docker named volumes.
