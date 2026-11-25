@@ -35,6 +35,8 @@ jobs:
         working-directory: frontend
       - run: node --test src/ozon-retry-status.test.mjs
         working-directory: frontend
+      - run: node --test src/accountMarketplace.test.mjs
+        working-directory: frontend
       - run: node --test src/digitization-period.test.mjs
         working-directory: frontend
       - run: node --test src/state-polling.test.mjs
