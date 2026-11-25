@@ -131,7 +131,8 @@ export default function Digitization({state,digi,act,autoLoadComparisons=false})
    setComparisonState({loading:false,available:false,error:'',coverage:{}});
    return;
   }
-  if(state?.job?.running)return;
+  // This request reads SQLite only, so cached comparisons remain accessible
+  // even when a background Ozon job is waiting for its rate limit to reset.
   let live=true;
   setComparisonDigi(null);
   setComparisonInventoryHistory([]);
@@ -143,7 +144,7 @@ export default function Digitization({state,digi,act,autoLoadComparisons=false})
     if(!response.ok)throw new Error(data.detail||'Не удалось получить предыдущий период.');
     if(!live)return;
     const comparisonKey=[state.account_id,comparisonRange.from,comparisonRange.to].join('|');
-    if(autoLoadComparisons&&shouldAutoLoadDigitization(data.cache)&&
+    if(autoLoadComparisons&&!state?.job?.running&&shouldAutoLoadDigitization(data.cache)&&
        !attemptedComparisonSync.current.has(comparisonKey)&&
        !pendingComparisonSync.current.has(comparisonKey)){
      pendingComparisonSync.current.add(comparisonKey);
@@ -304,8 +305,8 @@ export default function Digitization({state,digi,act,autoLoadComparisons=false})
    </label>
    {showComparisons&&comparisonRange&&comparisonState.available&&<span className="digitization-comparison-period">Сравнение: {dateLabel(comparisonRange.from)} — {dateLabel(comparisonRange.to)}</span>}
   </div>}
-  {showComparisons&&comparisonRange&&(comparisonState.loading||state?.job?.running)&&<div className="digitization-comparison-status loading"><RefreshCw size={15} className="animate-spin"/><span>{state?.job?.running?'Ожидаем завершения загрузки…':'Проверяем данные предыдущего периода…'}</span></div>}
-  {showComparisons&&comparisonRange&&!comparisonState.available&&!comparisonState.loading&&!state?.job?.running&&<div className="digitization-comparison-status missing">
+  {showComparisons&&comparisonRange&&comparisonState.loading&&<div className="digitization-comparison-status loading"><RefreshCw size={15} className="animate-spin"/><span>Проверяем сохранённые данные предыдущего периода…</span></div>}
+  {showComparisons&&comparisonRange&&!comparisonState.available&&!comparisonState.loading&&<div className="digitization-comparison-status missing">
    <span>{comparisonState.error||('Для сравнения нужны данные за '+dateLabel(comparisonRange.from)+' — '+dateLabel(comparisonRange.to)+'. '+(comparisonState.coverage?.missing_days?.length?'Недостающие дни будут загружены из Ozon автоматически, когда это станет возможно.':''))}</span>
   </div>}
   {showComparisons&&!comparisonRange&&selectedPeriodDays>31&&<div className="digitization-comparison-status limited"><span>Сравнение доступно для периодов до одного месяца (31 дня). Выбрано: {selectedPeriodDays} дн.</span></div>}
