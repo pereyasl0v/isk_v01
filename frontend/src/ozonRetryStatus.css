@@ -1,0 +1,13 @@
+.ozon-retry-status{display:inline-flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;min-width:0;font-size:12px;line-height:1.5;color:#486453}
+.ozon-retry-heading{font-weight:680;color:#284e38}
+.ozon-retry-subtitle{font-size:12px;color:#4c6957}
+.ozon-retry-clock{font-weight:750;color:#244c36;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ozon-retry-note{font-size:11px;color:#728578}
+.ozon-retry-status.compact{font-size:11px;gap:1px}
+.ozon-retry-status.compact .ozon-retry-heading{font-size:11px}
+.ozon-retry-status.compact .ozon-retry-subtitle{font-size:11px}
+.progress.ozon-retry-banner{align-items:center;background:#f2f7f3;color:#3b624e;border:1px solid #dbeadf;border-radius:10px;padding:11px 14px}
+.progress.ozon-retry-banner>svg{color:#61836a;flex-shrink:0}
+.digitization-cache-status.ozon-retry-wait{background:#f0f7f2;color:#41684f;align-items:center;padding:10px 12px}
+.digitization-cache-status.ozon-retry-wait>svg{color:#53775f;flex-shrink:0}
+@media(max-width:650px){.progress.ozon-retry-banner{align-items:flex-start}.digitization-cache-status.ozon-retry-wait{align-items:flex-start}}
