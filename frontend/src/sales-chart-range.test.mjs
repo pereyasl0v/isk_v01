@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {salesChartWindow, salesRangeTotals, salesTickIndexes, postingsInChartWindow, postingMoscowDay, salesSelectionWindow, postingsForSalesSelection} from './sales-chart-range.mjs';
 
 test('90-day chart keeps last two tick labels separated', () => {
@@ -166,4 +167,20 @@ test('SKU match has priority; missing SKU may use a verified inventory offer ID'
  assert.deepEqual(rows.map(p=>p.number),['legacy']);
  assert.deepEqual(rows[0].products,[{sku:null,offer_id:'OZ-100',quantity:2}]);
  assert.deepEqual(postingsForSalesSelection(postings,chart,'100',[]),[]);
+});
+
+
+test('overview shares chart range and selected product with shipment history without duplicate source notes',()=>{
+ const code=readFileSync(new URL('./main.jsx',import.meta.url),'utf8');
+ const overview=code.split('function Overview(){')[1]?.split('function ProductCatalog(){')[0];
+ const history=code.split('function History({')[1]?.split('function LoginScreen(')[0];
+ assert.ok(overview);
+ assert.match(overview,/const historyWindow=salesSelectionWindow\(chartWindow,selectedRange\)/);
+ assert.match(overview,/<History chartWindow=\{historyWindow\} sku=\{sku\} inv=\{inv\}/);
+ assert.match(overview,/value=\{sku\} onChange=\{e=>\{setSku\(e.target.value\);setHovered\(null\)\}\}/);
+ assert.match(overview,/Сбросить интервал/);
+ assert.doesNotMatch(overview,/sales-chart-source-note|За закрытые дни:/);
+ assert.ok(history);
+ assert.match(history,/postingsForSalesSelection\(hist\?\.postings\|\|\[\],chartWindow,sku,inv\?\.products\|\|\[\]\)/);
+ assert.doesNotMatch(history,/Последняя проверка:|history-overview-period|Период:/);
 });
