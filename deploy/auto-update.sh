@@ -52,6 +52,12 @@ if probe; then :; else
   exit 0
 fi
 docker compose up -d --wait --remove-orphans
+# Compose may reuse the running container when the image is unchanged.
+# Clear the persistent gate explicitly before marking the update successful.
+docker compose exec -T isk python -c '
+from pathlib import Path
+Path("/data/.isk_deploying").unlink(missing_ok=True)
+'
 gate_set=0
 rm -f /var/lib/isk-deploy/pending
 docker image prune -f
