@@ -36,3 +36,10 @@ test('only a green upper-right indicator marks the selected account',()=>{
   assert.match(connection,/!account\.connected&&<span className="disconnected-label">Ключ удалён/);
   assert.match(connection,/onClick=\{disconnect\}/);
 });
+
+test('Ozon letters are optically centered in every blue square',()=>{
+  const styles=readFileSync(new URL('./accountMarketplace.css',import.meta.url),'utf8');
+  assert.match(styles,/\.marketplace-symbol-ozon \.marketplace-symbol-text\{[^}]*letter-spacing:0;transform:translate\(-1px,-2px\)/);
+  assert.equal((connection.match(/className="marketplace-symbol-text">oz<\/span>/g)||[]).length,3,
+    'Ozon labels in menu, account card, and form share the same alignment');
+});
