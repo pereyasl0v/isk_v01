@@ -16,6 +16,7 @@ import {shipmentStatusSummary} from './shipment-status-summary.mjs';
 import OzonRetryStatus from './OzonRetryStatus';
 import {isOzonRetryWaiting} from './ozon-retry-status.mjs';
 import {statePollDelay,keepUnchangedState} from './state-polling.mjs';
+import './accountMarketplace.css';
 import './mobile.css';
 
 const Context=createContext(null);
@@ -368,29 +369,207 @@ function LoginScreen({onSuccess}){
  </form></div>
 }
 function Connection(){
- const {state,me,reload,setError}=useApp();const [client,setClient]=useState('');const [key,setKey]=useState('');
- const [busy,setBusy]=useState(false);const navigate=useNavigate();const accounts=me?.accounts||[];
- async function connect(e){e.preventDefault();setBusy(true);setError('');try{await api('/connect',{client_id:client.trim(),api_key:key.trim()});setKey('');await reload();navigate('/')}catch(err){setError(err.message)}finally{setBusy(false)}}
- async function select(id){setBusy(true);try{await api('/accounts/select',{account_id:id});await reload();navigate('/')}catch(err){setError(err.message)}finally{setBusy(false)}}
- async function disconnect(){setBusy(true);try{await api('/disconnect',{});await reload()}catch(err){setError(err.message)}finally{setBusy(false)}}
+ const {state,me,reload,setError}=useApp();
+ const navigate=useNavigate();
+ const accounts=me?.accounts||[];
  const active=accounts.find(a=>a.id===me?.active_account_id);
- return <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-  <section className="panel"><div className="panel-title"><h3>Мои кабинеты Ozon</h3><Plug size={20}/></div>
-   {!accounts.length&&<p className="muted">Пока нет подключённых кабинетов. Добавьте первый кабинет — ключ сохранится в зашифрованном виде и не потеряется после перезапуска сервера.</p>}
-   <div className="account-list">{accounts.map(a=><div className="account-row" key={a.id}>
-    <div><strong>Кабинет {a.client_id}</strong><span className={a.connected?'connected-label':'disconnected-label'}>{a.connected?'Подключён':'Ключ удалён'}</span><small>Права: {a.roles?.join(', ')||'нет данных'}</small>{a.connected&&<small className="block">Срок ключа Ozon: {date(a.expires_at)}</small>}</div>
-    <div className="account-actions">{a.connected&&<button className={me.active_account_id===a.id?'primary':''} disabled={busy||me.active_account_id===a.id} onClick={()=>select(a.id)}>{me.active_account_id===a.id?'Выбран':'Выбрать'}</button>}</div>
-   </div>)}</div>
-   {active&&state&&<><div className="connected mt-4"><CircleCheck size={22}/><strong>Активный кабинет {state.client_id}</strong></div><button className="mt-4" disabled={busy||state.job.running} onClick={disconnect}><LogOut size={16}/> Удалить сохранённый ключ</button></>}
+ const [client,setClient]=useState('');
+ const [key,setKey]=useState('');
+ const [busy,setBusy]=useState(false);
+ const [formError,setFormError]=useState('');
+ const [addMenuOpen,setAddMenuOpen]=useState(false);
+ const [addMode,setAddMode]=useState(null);
+ const addMenuRef=useRef(null);
+ const addButtonRef=useRef(null);
+ const addFirstOptionRef=useRef(null);
+
+ useEffect(()=>{
+  if(!addMenuOpen)return;
+  addFirstOptionRef.current?.focus();
+  const closeOnOutside=event=>{
+   if(addMenuRef.current&&!addMenuRef.current.contains(event.target))setAddMenuOpen(false);
+  };
+  const closeOnEscape=event=>{
+   if(event.key==='Escape'){
+    setAddMenuOpen(false);
+    addButtonRef.current?.focus();
+   }
+  };
+  document.addEventListener('pointerdown',closeOnOutside);
+  document.addEventListener('keydown',closeOnEscape);
+  return()=>{
+   document.removeEventListener('pointerdown',closeOnOutside);
+   document.removeEventListener('keydown',closeOnEscape);
+  };
+ },[addMenuOpen]);
+
+ function chooseMarketplace(marketplace){
+  setAddMenuOpen(false);
+  setAddMode(marketplace);
+  setClient('');
+  setKey('');
+  setFormError('');
+ }
+ function renewOzon(clientId){
+  setClient(clientId);
+  setKey('');
+  setFormError('');
+  setAddMode('ozon');
+  setAddMenuOpen(false);
+ }
+ function closeAdd(){
+  setAddMode(null);
+  setClient('');
+  setKey('');
+  setFormError('');
+ }
+ async function connect(event){
+  event.preventDefault();
+  setBusy(true);
+  setFormError('');
+  try{
+   await api('/connect',{client_id:client.trim(),api_key:key.trim()});
+   closeAdd();
+   await reload();
+   navigate('/');
+  }catch(err){setFormError(err.message)}
+  finally{setBusy(false)}
+ }
+ async function select(id){
+  setBusy(true);
+  setError('');
+  try{
+   await api('/accounts/select',{account_id:id});
+   await reload();
+   navigate('/');
+  }catch(err){setError(err.message)}
+  finally{setBusy(false)}
+ }
+ async function disconnect(){
+  setBusy(true);
+  setError('');
+  try{await api('/disconnect',{});await reload()}
+  catch(err){setError(err.message)}
+  finally{setBusy(false)}
+ }
+
+ return <div className="marketplace-accounts-page">
+  <div className="marketplace-accounts-header">
+   <div>
+    <h1>Мои кабинеты</h1>
+    <p>Все подключения к маркетплейсам в одном месте.</p>
+   </div>
+   <div className="marketplace-add-menu-wrap" ref={addMenuRef}>
+    <button type="button" className="marketplace-add-trigger" ref={addButtonRef}
+     aria-expanded={addMenuOpen} aria-controls="marketplace-add-menu"
+     aria-haspopup="true" disabled={busy}
+     onClick={()=>setAddMenuOpen(open=>!open)}>
+     <Plus size={16}/> Добавить кабинет <ChevronDown size={15} className={addMenuOpen?'marketplace-chevron-open':''}/>
+    </button>
+    {addMenuOpen&&<div id="marketplace-add-menu" className="marketplace-add-menu"
+     role="group" aria-label="Выберите маркетплейс">
+     <button type="button" ref={addFirstOptionRef} className="marketplace-add-option" onClick={()=>chooseMarketplace('ozon')}>
+      <span className="marketplace-symbol marketplace-symbol-ozon" aria-hidden="true">oz</span>
+      <span className="marketplace-add-option-text"><strong>Добавить кабинет Ozon</strong><small>Подключение через Seller API</small></span>
+      <ArrowRight size={15}/>
+     </button>
+     <button type="button" className="marketplace-add-option" onClick={()=>chooseMarketplace('wb')}>
+      <span className="marketplace-symbol marketplace-symbol-wb" aria-hidden="true">wb</span>
+      <span className="marketplace-add-option-text"><strong>Добавить кабинет WB</strong><small>Скоро · Wildberries</small></span>
+      <ArrowRight size={15}/>
+     </button>
+    </div>}
+   </div>
+  </div>
+
+  <section className="panel marketplace-accounts-panel">
+   <div className="marketplace-panel-title">
+    <h3>Подключённые кабинеты</h3>
+    <span className="marketplace-account-total">{accounts.length} {accounts.length===1?'кабинет':accounts.length%10>=2&&accounts.length%10<=4&&(accounts.length%100<12||accounts.length%100>14)?'кабинета':'кабинетов'}</span>
+   </div>
+   {!accounts.length&&<div className="marketplace-accounts-empty">
+    <Plug size={24}/>
+    <strong>Пока нет подключённых кабинетов</strong>
+    <p>Нажмите «Добавить кабинет» и выберите маркетплейс. Ozon уже доступен.</p>
+   </div>}
+   <div className="account-list marketplace-account-list">
+    {accounts.map(account=>{
+     const isOzon=(account.marketplace||'ozon')==='ozon';
+     const selected=me?.active_account_id===account.id;
+     return <div className={'account-row marketplace-account-row'+(selected?' marketplace-account-selected':'')} key={account.id}>
+      <div className="marketplace-account-identity">
+       <span className={'marketplace-symbol '+(isOzon?'marketplace-symbol-ozon':'marketplace-symbol-wb')} aria-hidden="true">{isOzon?'oz':'wb'}</span>
+       <div className="marketplace-account-info">
+        <div className="marketplace-account-title">
+         <strong>Кабинет {account.client_id}</strong>
+         <span className={'marketplace-account-platform '+(isOzon?'platform-ozon':'platform-wb')}>{isOzon?'Ozon':'Wildberries'}</span>
+         {selected&&<span className="marketplace-account-current"><CircleCheck size={12}/> Активный</span>}
+        </div>
+        <span className={account.connected?'connected-label':'disconnected-label'}>
+         {account.connected?'Подключён':'Ключ удалён'}
+        </span>
+        {isOzon&&<small>Права: {account.roles?.join(', ')||'нет данных'}</small>}
+        {isOzon&&account.connected&&<small>Срок действия ключа: {date(account.expires_at)}</small>}
+       </div>
+      </div>
+      <div className="account-actions marketplace-account-actions">
+       {account.connected&&isOzon&&<button type="button" className={selected?'marketplace-selected-button':'marketplace-select-button'}
+        disabled={busy||selected} onClick={()=>select(account.id)}>
+        {selected?'Выбран':'Выбрать'}
+       </button>}
+       {!account.connected&&isOzon&&<button type="button" className="marketplace-select-button" disabled={busy}
+        onClick={()=>renewOzon(account.client_id)}>Обновить ключ</button>}
+      </div>
+     </div>;
+    })}
+   </div>
+   {active&&state&&<div className="marketplace-active-connection">
+    <div><CircleCheck size={18}/><span>Сейчас используется <strong>Ozon · кабинет {state.client_id}</strong></span></div>
+    <button type="button" disabled={busy||state.job.running} onClick={disconnect}>
+     <LogOut size={15}/> Удалить сохранённый ключ
+    </button>
+   </div>}
   </section>
-  <section className="panel"><div className="panel-title"><h3>Добавить / обновить кабинет</h3><Plus size={20}/></div>
-   <form onSubmit={connect}><label className="field">Идентификатор кабинета<input autoComplete="off" inputMode="numeric" pattern="[0-9]+" required value={client} onChange={e=>setClient(e.target.value)}/></label>
-    <label className="field mt-4">Ключ API<input autoComplete="new-password" type="password" required minLength={10} value={key} onChange={e=>setKey(e.target.value)}/></label>
-    <button className="primary mt-5" disabled={busy}>{busy?'Проверяем доступ…':'Сохранить подключение'}<ArrowRight size={16}/></button>
+
+  {addMode==='ozon'&&<section className="panel marketplace-add-panel" aria-labelledby="marketplace-ozon-form-title">
+   <div className="marketplace-add-panel-heading">
+    <div className="marketplace-add-panel-title">
+     <span className="marketplace-symbol marketplace-symbol-ozon" aria-hidden="true">oz</span>
+     <div><h3 id="marketplace-ozon-form-title">{accounts.some(a=>a.client_id===client)?'Обновить кабинет Ozon':'Добавить кабинет Ozon'}</h3>
+      <p>Подключите кабинет по Client ID и API-ключу Ozon.</p></div>
+    </div>
+    <button className="marketplace-close-panel" type="button" onClick={closeAdd} disabled={busy} aria-label="Закрыть форму"><X size={18}/></button>
+   </div>
+   {formError&&<div className="notice marketplace-form-error" role="alert">{formError}</div>}
+   <form className="marketplace-ozon-form" onSubmit={connect}>
+    <label className="field">Client ID кабинета Ozon
+     <input autoComplete="off" inputMode="numeric" pattern="[0-9]+" required value={client} onChange={event=>setClient(event.target.value)} placeholder="Например, 123456"/>
+    </label>
+    <label className="field">API-ключ Ozon
+     <input autoComplete="new-password" type="password" required minLength={10} value={key} onChange={event=>setKey(event.target.value)} placeholder="Введите ключ с доступом на чтение"/>
+    </label>
+    <div className="marketplace-form-actions">
+     <button className="primary" type="submit" disabled={busy}>{busy?'Проверяем доступ…':'Сохранить подключение'}<ArrowRight size={16}/></button>
+     <button type="button" onClick={closeAdd} disabled={busy}>Отмена</button>
+    </div>
    </form>
-   
-  </section>
- </div>
+  </section>}
+
+  {addMode==='wb'&&<section className="panel marketplace-add-panel marketplace-wb-placeholder" aria-labelledby="marketplace-wb-placeholder-title">
+   <div className="marketplace-add-panel-heading">
+    <div className="marketplace-add-panel-title">
+     <span className="marketplace-symbol marketplace-symbol-wb" aria-hidden="true">wb</span>
+     <div><h3 id="marketplace-wb-placeholder-title">Wildberries</h3><p>Подключение кабинета WB</p></div>
+    </div>
+    <button className="marketplace-close-panel" type="button" onClick={closeAdd} aria-label="Закрыть"><X size={18}/></button>
+   </div>
+   <div className="marketplace-wb-message">
+    <span className="marketplace-wb-coming">Скоро в ИСК</span>
+    <p>Подключение кабинетов Wildberries находится в разработке. Пока эта функция неактивна: кабинет WB не создаётся, данные не загружаются и вводить API-ключ не нужно.</p>
+   </div>
+   <button type="button" onClick={closeAdd}>Понятно</button>
+  </section>}
+ </div>;
 }
 function Logs(){const {state}=useApp();return <section className="panel"><div className="panel-title"><h3>Журнал текущего подключения</h3><span className="badge">Текущее подключение</span></div><Table rows={[...(state?.logs||[])].reverse()} columns={[["at","Время"],["message","Событие"]]}/></section>}
 function AdminUsers(){
@@ -554,7 +733,7 @@ function App(){
      </button>
     </div>}
     <div className="header-actions ml-auto">
-     <NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink>
+     <NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Ozon · Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink>
      <button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button>
     </div>
    </header>
