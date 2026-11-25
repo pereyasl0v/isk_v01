@@ -7,6 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM python:3.12-slim AS runtime
+LABEL org.opencontainers.image.source="https://github.com/pereyasl0v/isk_v01"
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 OZON_FBO_DATA_DIR=/data
 WORKDIR /app
 COPY backend/requirements.txt /tmp/requirements.txt
