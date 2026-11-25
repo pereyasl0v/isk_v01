@@ -102,8 +102,8 @@ class AuthApiTests(unittest.TestCase):
                 raise RuntimeError('Test background job never released')
             return {'postings':[], 'sources':{'fbo':{'ok':True},'fbs':{'ok':True}},
                     'errors':[]}
-        with patch.object(main,'ACTIVE_JOB_MARKER',marker), \\
-             patch.object(main,'DEPLOY_GATE',gate), \\
+        with patch.object(main,'ACTIVE_JOB_MARKER',marker), \
+             patch.object(main,'DEPLOY_GATE',gate), \
              patch.object(FakeOzon,'postings',new=slow_postings):
             gate.touch()
             response=self.client.post('/api/history/sync',headers=HEAD,json={'days':7})
