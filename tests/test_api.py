@@ -535,9 +535,9 @@ class AuthApiTests(unittest.TestCase):
             progress('Ограничение Ozon снято, продолжаем загрузку…')
             return {}
 
-        with patch.object(FakeOzon,'_as_date',create=True,side_effect=lambda value:value), \\
-             patch.object(FakeOzon,'_closed_last_day',create=True,side_effect=lambda value:(value,False)), \\
-             patch.object(FakeOzon,'auto_retry_429',create=True,new=recovery), \\
+        with patch.object(FakeOzon,'_as_date',create=True,side_effect=lambda value:value), \
+             patch.object(FakeOzon,'_closed_last_day',create=True,side_effect=lambda value:(value,False)), \
+             patch.object(FakeOzon,'auto_retry_429',create=True,new=recovery), \
              patch.object(main,'download_digitization_day',side_effect=download):
             try:
                 response=self.client.post('/api/digitization/sync',headers=HEAD,json={
