@@ -45,6 +45,7 @@ store=Store(DATA/'inventory.sqlite3',encryption_key=ENCRYPTION_KEY)
 # Deployment controller checks this file from inside the container before
 # restarting. It is intentionally not exposed through any HTTP endpoint.
 ACTIVE_JOB_MARKER=DATA/'.isk_active_job'
+DEPLOY_GATE=DATA/'.isk_deploying'
 
 def update_active_job_marker():
     """Called under the runtime lock after every job state transition."""
@@ -58,6 +59,7 @@ async def lifespan(app):
     # A previous container crash may leave an obsolete marker in the volume.
     # Clearing it on startup is safe because no old in-process jobs survive.
     ACTIVE_JOB_MARKER.unlink(missing_ok=True)
+    DEPLOY_GATE.unlink(missing_ok=True)
     stop=threading.Event()
     worker=threading.Thread(target=run_digitization_schedule,args=(stop,),daemon=True)
     worker.start()
@@ -593,6 +595,8 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
             s['logs'].append({'at':time.strftime('%H:%M:%S'),'message':message})
             s['logs']=s['logs'][-200:]
     with lock:
+        if DEPLOY_GATE.exists():
+            raise HTTPException(409,'ИСК устанавливает обновление. Повторите запуск после обновления.')
         if s['job']['running']:
             raise HTTPException(409,'Загрузка уже выполняется.')
         if kind=='sales':
