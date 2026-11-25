@@ -26,7 +26,18 @@ export function postingStatusGroup(posting){
 export function shipmentStatusSummary(postings){
  const rows=Array.isArray(postings)?postings:[];
  const totals={delivering:0,delivered:0,cancelled:0,other:0};
- for(const posting of rows)totals[postingStatusGroup(posting)]++;
+ let units=0,cancelledUnits=0;
+ for(const posting of rows){
+  const group=postingStatusGroup(posting);
+  totals[group]++;
+  const quantity=(Array.isArray(posting?.products)?posting.products:[])
+   .reduce((sum,item)=>{
+    const n=Number(item?.quantity);
+    return sum+(Number.isFinite(n)&&n>0?n:0);
+   },0);
+  units+=quantity;
+  if(group==='cancelled')cancelledUnits+=quantity;
+ }
  const total=rows.length;
  const items=TYPES.map(type=>({
   ...type,count:totals[type.key],percentage:total?totals[type.key]/total*100:0
@@ -39,6 +50,9 @@ export function shipmentStatusSummary(postings){
  });
  return {
   total,
+  units,
+  cancelledUnits,
+  cancelledPostings:totals.cancelled,
   items,
   preview:items.slice(0,3),
   gradient:stops.length?'conic-gradient('+stops.join(', ')+')':'#e7ece9'
