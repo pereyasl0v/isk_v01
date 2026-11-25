@@ -658,8 +658,20 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
             # not two fetches that may see different states or hit rate limits.
             history_data=None
             history_error=None
+            previous_history=store.latest(s['client'],'history') or {}
+            # Fetch all chosen dates only if the persisted history doesn't
+            # cover them yet. Subsequent refreshes fetch just two recent days,
+            # greatly reducing Ozon API pressure (particularly on 90-day views).
+            covered_since=str(previous_history.get('since') or '')[:10]
+            required_since=(requested_first-timedelta(days=1)).isoformat()
+            sources=previous_history.get('sources') or {}
+            fully_covered=bool(
+                covered_since and covered_since<=required_since
+                and all((sources.get(scheme) or {}).get('ok') for scheme in ('fbo','fbs'))
+            )
+            history_days=2 if fully_covered else days+2
             try:
-                history_data=s['api'].postings(days+2,progress)
+                history_data=s['api'].postings(history_days,progress)
                 if history_data.get('errors'):
                     raise ApiError('Неполная история отправлений: '+ '; '.join(history_data['errors']))
             except ApiError as exc:
