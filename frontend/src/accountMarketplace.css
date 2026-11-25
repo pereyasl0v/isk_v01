@@ -27,8 +27,8 @@
 .marketplace-accounts-empty strong{font-size:14px;color:#4f6c5a}
 .marketplace-accounts-empty p{max-width:430px;font-size:12px;color:#84958a;line-height:1.6}
 .marketplace-account-list{margin-top:18px;gap:10px}
-.account-row.marketplace-account-row{padding:16px;align-items:center;gap:14px;border:1px solid #e3eae5;border-radius:11px;background:#fff;transition:border-color .15s,background .15s}
-.account-row.marketplace-account-selected{border-color:#bcd8c4;background:#fbfdfb}
+.account-row.marketplace-account-row{position:relative;padding:16px 36px 16px 16px;align-items:center;gap:14px;border:1px solid #e3eae5;border-radius:11px;background:#fff}
+.marketplace-account-indicator{position:absolute;top:16px;right:16px;display:block;width:11px;height:11px;border-radius:50%;background:#23a36a;box-shadow:0 0 0 3px #e2f6e9;pointer-events:none}
 .account-row.marketplace-account-row>.marketplace-account-identity{display:flex;flex-direction:row;align-items:flex-start;gap:13px;min-width:0;flex:1}
 .marketplace-account-info{min-width:0;display:flex;flex-direction:column;gap:6px;overflow-wrap:anywhere}
 .marketplace-account-title{display:flex;flex-wrap:wrap;align-items:center;gap:7px 9px;min-width:0}
@@ -36,18 +36,12 @@
 .marketplace-account-platform{display:inline-flex;align-items:center;padding:3px 7px;border-radius:5px;font-size:10px;font-weight:750;line-height:1.25}
 .marketplace-account-platform.platform-ozon{background:#e9f1ff;color:#1764d8}
 .marketplace-account-platform.platform-wb{background:#f6eafa;color:#9638b2}
-.marketplace-account-current{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:650;color:#26835c}
 .marketplace-account-info>.connected-label,.marketplace-account-info>.disconnected-label{font-size:11px}
 .marketplace-account-info>small{font-size:11px;line-height:1.4;color:#7c8c80}
 .marketplace-account-actions{flex-shrink:0}
-.marketplace-select-button,.marketplace-selected-button{font-size:11px;min-width:91px;padding:8px 12px}
-.marketplace-selected-button{background:#e9f4ec;border-color:#c6dfce;color:#2d7151}
-.marketplace-selected-button:disabled{opacity:1;cursor:default}
-.marketplace-active-connection{margin-top:19px;padding:13px 15px;border-radius:10px;background:#f4f9f5;border:1px solid #e3eee5;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.marketplace-active-connection>div{display:flex;align-items:center;gap:8px;min-width:0;font-size:11px;color:#5e7667}
-.marketplace-active-connection>div svg{color:#41966d;flex-shrink:0}
-.marketplace-active-connection strong{color:#2c6045;font-weight:700}
-.marketplace-active-connection button{font-size:11px;padding:8px 11px;flex-shrink:0;color:#6e756e;background:white}
+.marketplace-select-button{font-size:11px;min-width:91px;padding:8px 12px}
+.marketplace-account-footer{margin-top:16px;display:flex;justify-content:flex-end}
+.marketplace-account-footer button{font-size:11px;padding:8px 11px;color:#6e756e;background:white}
 .marketplace-add-panel{border:1px solid #dae8df;padding:23px 24px}
 .marketplace-add-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:21px}
 .marketplace-add-panel-title{display:flex;align-items:center;gap:12px}
@@ -71,7 +65,6 @@
  .marketplace-accounts-panel,.marketplace-add-panel{padding:18px}
  .marketplace-account-row{flex-wrap:wrap}
  .marketplace-account-actions{margin-left:52px}
- .marketplace-active-connection{flex-direction:column;align-items:flex-start}
  .marketplace-ozon-form{grid-template-columns:1fr}
  .marketplace-form-actions{grid-column:1}
 }
