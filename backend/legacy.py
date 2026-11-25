@@ -221,19 +221,18 @@ class Ozon:
             self._last_request_at = time.monotonic()
 
     @contextmanager
-    def auto_retry_429(self, progress):
-        """Keep an active digitization job running when Ozon temporarily returns 429.
+    def auto_retry_429(self, progress, on_wait=None, on_resume=None):
+        """Keep digitization active and optionally publish retry timing.
 
-        The context is scoped to the calling thread. The caller continues its
-        original request with the same payload; previously completed daily
-        SQLite records are not repeated.
+        Recovery callbacks are scoped to the current worker thread so another
+        account job cannot change this worker's on-screen waiting state.
         """
-        old = getattr(self._rate_limit_recovery, 'progress', None)
-        self._rate_limit_recovery.progress = progress
+        old = getattr(self._rate_limit_recovery, 'callbacks', None)
+        self._rate_limit_recovery.callbacks = (progress, on_wait, on_resume)
         try:
             yield
         finally:
-            self._rate_limit_recovery.progress = old
+            self._rate_limit_recovery.callbacks = old
 
     @staticmethod
     def _retry_after_seconds(value):
@@ -252,17 +251,24 @@ class Ozon:
                 return None
 
     def _wait_for_429(self, path, retry_after=None):
-        progress = getattr(self._rate_limit_recovery, 'progress', None)
-        if progress is None:
+        callbacks = getattr(self._rate_limit_recovery, 'callbacks', None)
+        if callbacks is None:
             return False
+        progress, on_wait, on_resume = callbacks
         suggested = self._retry_after_seconds(retry_after)
         delay = max(60.0, suggested if suggested is not None else 60.0)
+        if on_wait:
+            on_wait(delay)
         progress(
-            f'Ozon HTTP 429: лимит запросов для {path}. '
-            f'Ожидаем {math.ceil(delay)} сек., затем автоматически продолжим оцифровку.'
+            'Ozon временно ограничил частоту запросов. '
+            'Загрузка продолжится автоматически — повторно выбирать период не нужно.'
         )
-        self.sleep(delay)
-        progress(f'Ожидание Ozon завершено: повторяем запрос {path} и продолжаем выбранный период.')
+        try:
+            self.sleep(delay)
+        finally:
+            if on_resume:
+                on_resume()
+        progress('Ограничение Ozon снято, продолжаем загрузку выбранного периода…')
         return True
 
     def call(self, path, payload):
