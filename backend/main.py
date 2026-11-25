@@ -653,10 +653,27 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
                     store.latest(s['client'],'history'),
                 ))
 
+            # Refresh posting history alongside the sales period. Today's order
+            # totals and shipment counts must be computed from one Ozon response,
+            # not two fetches that may see different states or hit rate limits.
+            history_data=None
+            history_error=None
+            try:
+                history_data=s['api'].postings(days+2,progress)
+                if history_data.get('errors'):
+                    raise ApiError('Неполная история отправлений: '+ '; '.join(history_data['errors']))
+            except ApiError as exc:
+                history_error=exc
+                progress('Историю отправлений пока не удалось обновить: '+str(exc))
+
             live_error=None
             if refresh_today:
                 try:
-                    row,by_sku=s['api'].current_day_orders(today,progress)
+                    if history_data is not None and history_error is None:
+                        row,by_sku=s['api'].current_day_orders(today,progress,history_data)
+                    else:
+                        raise history_error or ApiError('История отправлений недоступна.')
+
                     orders['rows']=[saved for saved in orders['rows'] if saved['date']!=today_text]+[row]
                     orders['by_sku']=[saved for saved in orders['by_sku'] if saved['date']!=today_text]+by_sku
                     orders['orders_live_day']=today_text
@@ -669,8 +686,16 @@ def launch(s,kind,days=90,date_from=None,date_to=None,backfill=True,morning=Fals
                 save_orders(delivery_days)
                 delivery_days.update(delivered_snapshot(s['api'],requested_first,today,previous,progress))
                 save_orders(delivery_days)
+            if history_data is not None and history_error is None:
+                # The existing save_history implementation merges by FBO/FBS
+                # number and retains older periods and status observations.
+                store.save_history(s['client'],history_data)
+                refresh_delivery_from_events(s['client'])
+                save_orders(delivery_days)
             if live_error:
                 raise live_error
+            if history_error:
+                progress('История Ozon не обновлена; сохранённые отправления оставлены без изменений.')
         elif kind=='digitization':
             first=s['api']._as_date(date_from)
             requested_last=s['api']._as_date(date_to)
