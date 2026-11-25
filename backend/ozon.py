@@ -359,9 +359,13 @@ class Ozon(BaseOzon):
             'postings': ordered,
         }
 
-    def current_day_orders(self, day, progress):
-        history = self.postings(1, progress)
-        if history['errors']:
+    def current_day_orders(self, day, progress, history=None):
+        # Sales and shipment history use the SAME API snapshot when the caller
+        # provides one. No second, potentially inconsistent or rate-limited
+        # request is needed to calculate today's item count.
+        if history is None:
+            history = self.postings(1, progress)
+        if history.get('errors'):
             raise ApiError('Неполная история заказов: ' + '; '.join(history['errors']))
 
         iso_day = day.isoformat()
