@@ -1,6 +1,8 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Database, RefreshCw, AlertTriangle, CircleCheck, X} from 'lucide-react';
+import {CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Database, RefreshCw, AlertTriangle, CircleCheck, X, Clock3} from 'lucide-react';
 import Digitization from './Digitization';
+import OzonRetryStatus from './OzonRetryStatus';
+import {isOzonRetryWaiting} from './ozon-retry-status.mjs';
 import './digitizationCached.css';
 import {getDigitizationPeriod, shouldAutoLoadDigitization} from './digitization-period.mjs';
 
@@ -261,11 +263,9 @@ export default function DigitizationCached({state,digi,act}){
   {id:90,label:'90 дней'}
  ];
 
- const rateLimitWaiting=state?.job?.running&&state?.job?.kind==='digitization'&&
-  state?.job?.message?.startsWith('Ozon HTTP 429');
+ const rateLimitWaiting=isOzonRetryWaiting(state?.job);
  let statusText='Локальных данных выбранного периода пока нет';
- if(rateLimitWaiting)statusText=state.job.message;
- else if(cacheState.loading)statusText='Проверяем локальную базу SQLite…';
+ if(cacheState.loading)statusText='Проверяем локальную базу SQLite…';
  else if(automaticBusy)statusText='Автоматически загружаем отсутствующие дни из Ozon…';
  else if(state?.job?.running&&autoEligible)statusText='Ожидаем завершения текущей загрузки…';
  else if(legacy)statusText='Старый снимок периода · обновляем дневную базу автоматически';
@@ -329,10 +329,10 @@ export default function DigitizationCached({state,digi,act}){
       </div></>}
      </div>
     </div>
-    <div className={'digitization-cache-status '+(rateLimitWaiting||cacheState.loading||automaticBusy?'loading':cacheState.daily?'hit':legacy?'legacy':'miss')}>
-     {rateLimitWaiting||cacheState.loading||automaticBusy?<RefreshCw size={15} className="animate-spin"/>:cacheState.daily?<CircleCheck size={15}/>:<Database size={15}/>}
-     <span role={rateLimitWaiting?'status':undefined}>{statusText}</span>
-     {cacheState.updatedAt&&<small>обновлено {dateTime(cacheState.updatedAt)}</small>}
+    <div className={'digitization-cache-status '+(rateLimitWaiting?'ozon-retry-wait':cacheState.loading||automaticBusy?'loading':cacheState.daily?'hit':legacy?'legacy':'miss')}>
+     {rateLimitWaiting?<Clock3 size={16}/>:cacheState.loading||automaticBusy?<RefreshCw size={15} className="animate-spin"/>:cacheState.daily?<CircleCheck size={15}/>:<Database size={15}/>}
+     {rateLimitWaiting?<OzonRetryStatus retryAt={state.job.retry_at}/>:<span>{statusText}</span>}
+     {!rateLimitWaiting&&cacheState.updatedAt&&<small>обновлено {dateTime(cacheState.updatedAt)}</small>}
     </div>
    </section>
   </div>
