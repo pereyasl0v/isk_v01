@@ -88,6 +88,38 @@ class AuthApiTests(unittest.TestCase):
             time.sleep(.01)
         self.fail('Background job did not finish')
 
+    def test_auto_deploy_marker_tracks_background_jobs_and_gate_blocks_new_jobs(self):
+        import threading
+        self.connect()
+        marker=Path(self.tmp.name)/'.isk_active_job'
+        gate=Path(self.tmp.name)/'.isk_deploying'
+        started=threading.Event()
+        done=threading.Event()
+
+        def slow_postings(api,days,progress):
+            started.set()
+            if not done.wait(timeout=5):
+                raise RuntimeError('Test background job never released')
+            return {'postings':[], 'sources':{'fbo':{'ok':True},'fbs':{'ok':True}},
+                    'errors':[]}
+        with patch.object(main,'ACTIVE_JOB_MARKER',marker), \\
+             patch.object(main,'DEPLOY_GATE',gate), \\
+             patch.object(FakeOzon,'postings',new=slow_postings):
+            gate.touch()
+            response=self.client.post('/api/history/sync',headers=HEAD,json={'days':7})
+            self.assertEqual(response.status_code,409)
+            self.assertFalse(marker.exists())
+            gate.unlink()
+            try:
+                response=self.client.post('/api/history/sync',headers=HEAD,json={'days':7})
+                self.assertEqual(response.status_code,200,response.text)
+                self.assertTrue(started.wait(timeout=5))
+                self.assertTrue(marker.exists())
+            finally:
+                done.set()
+            self.assertIsNone(self.wait()['job']['error'])
+            self.assertFalse(marker.exists())
+
     def test_login_required_and_csrf(self):
         anonymous=TestClient(main.app)
         self.assertEqual(anonymous.get('/api/auth/me').status_code,401)
