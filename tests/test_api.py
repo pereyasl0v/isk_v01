@@ -536,7 +536,7 @@ class AuthApiTests(unittest.TestCase):
                 {'date':today.isoformat(),'sku':'100','ordered_units':3,'ordered_revenue':532}
             ])
 
-        with patch.object(FakeOzon,'postings',autospec=True,return_value=snapshot) as postings, \\
+        with patch.object(FakeOzon,'postings',autospec=True,return_value=snapshot) as postings, \
              patch.object(FakeOzon,'current_day_orders',create=True,new=from_snapshot):
             started=self.client.post('/api/sales/sync',headers=HEAD,
                                      json={'days':14,'backfill':False})
