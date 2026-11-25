@@ -300,6 +300,12 @@ function History({chartWindow,sku,inv}){
   <div className="history-overview-header">
    <div className="history-overview-title">
     <h3>История отправлений Ozon</h3>
+    <p className="history-quantity-summary">
+     {num(summary.total)} отправл. · {num(summary.units)} шт. товара
+    </p>
+    {summary.cancelledUnits>0&&<p className="history-cancelled-units">
+     В том числе отменено: {num(summary.cancelledUnits)} шт.
+    </p>}
    </div>
    <aside className="history-status-preview" aria-label="Статусы отправлений за выбранный период">
     <div className="history-status-figures">
