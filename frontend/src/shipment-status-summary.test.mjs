@@ -75,10 +75,14 @@ test('selected-SKU shipments count only matched units, not the entire bundle',()
 });
 
 
-test('history dashboard labels items separately and reloads both sources after refresh',()=>{
+test('history hides duplicate counts and row footer, but keeps navigation buttons',()=>{
  const code=readFileSync(new URL('./main.jsx',import.meta.url),'utf8');
- assert.match(code,/num\(summary\.total\)\} отправл\./);
- assert.match(code,/num\(summary\.units\)\} шт\. товара/);
- assert.match(code,/num\(summary\.cancelledUnits\)\} шт\./);
+ const history=code.split('function History({')[1]?.split('function LoginScreen(')[0];
+ assert.ok(history);
+ assert.doesNotMatch(history,/history-quantity-summary|history-cancelled-units/);
+ assert.match(history,/showPaginationSummary=\{false\}/);
+ assert.match(code,/showPaginationSummary&&<span>/);
+ assert.match(code,/onClick=\{\(\)=>setPage\(safe-1\)\}>Назад/);
+ assert.match(code,/onClick=\{\(\)=>setPage\(safe\+1\)\}>Далее/);
  assert.match(code,/Promise\.all\(\[api\('\/sales'\),api\('\/history'\)\]\)/);
 });
