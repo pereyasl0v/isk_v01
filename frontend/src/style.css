@@ -127,6 +127,8 @@
 /* Shipment status summary: three key states and an expandable breakdown. */
 .history-overview-header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px 30px;margin-bottom:20px;flex-wrap:wrap}
 .history-overview-title{display:flex;flex-direction:column;gap:7px;min-width:210px}
+.history-quantity-summary{color:#355c4a;font-size:12px;font-weight:650;font-variant-numeric:tabular-nums}
+.history-cancelled-units{font-size:11px;color:#9a736a;font-variant-numeric:tabular-nums}
 .history-overview-period{font-size:12px;font-weight:600;color:#365947;font-variant-numeric:tabular-nums}
 .history-status-preview{display:flex;gap:20px;align-items:center;justify-content:flex-end;margin-left:auto}
 .history-status-figures{display:flex;flex-direction:column;gap:8px;min-width:174px}
