@@ -469,7 +469,7 @@ function Connection(){
     {addMenuOpen&&<div id="marketplace-add-menu" className="marketplace-add-menu"
      role="group" aria-label="Выберите маркетплейс">
      <button type="button" ref={addFirstOptionRef} className="marketplace-add-option" onClick={()=>chooseMarketplace('ozon')}>
-      <span className="marketplace-symbol marketplace-symbol-ozon" aria-hidden="true">oz</span>
+      <span className="marketplace-symbol marketplace-symbol-ozon" aria-hidden="true"><span className="marketplace-symbol-text">oz</span></span>
       <span className="marketplace-add-option-text"><strong>Добавить кабинет Ozon</strong><small>Подключение через Seller API</small></span>
       <ArrowRight size={15}/>
      </button>
@@ -500,7 +500,7 @@ function Connection(){
       {selected&&<span className="marketplace-account-indicator" role="img"
        aria-label="Выбранный кабинет" title="Выбранный кабинет"/>}
       <div className="marketplace-account-identity">
-       <span className={'marketplace-symbol '+(isOzon?'marketplace-symbol-ozon':'marketplace-symbol-wb')} aria-hidden="true">{isOzon?'oz':'wb'}</span>
+       <span className={'marketplace-symbol '+(isOzon?'marketplace-symbol-ozon':'marketplace-symbol-wb')} aria-hidden="true">{isOzon?<span className="marketplace-symbol-text">oz</span>:'wb'}</span>
        <div className="marketplace-account-info">
         <div className="marketplace-account-title">
          <strong>Кабинет {account.client_id}</strong>
@@ -530,7 +530,7 @@ function Connection(){
   {addMode==='ozon'&&<section className="panel marketplace-add-panel" aria-labelledby="marketplace-ozon-form-title">
    <div className="marketplace-add-panel-heading">
     <div className="marketplace-add-panel-title">
-     <span className="marketplace-symbol marketplace-symbol-ozon" aria-hidden="true">oz</span>
+     <span className="marketplace-symbol marketplace-symbol-ozon" aria-hidden="true"><span className="marketplace-symbol-text">oz</span></span>
      <div><h3 id="marketplace-ozon-form-title">{accounts.some(a=>a.client_id===client)?'Обновить кабинет Ozon':'Добавить кабинет Ozon'}</h3>
       <p>Подключите кабинет по Client ID и API-ключу Ozon.</p></div>
     </div>
