@@ -261,8 +261,11 @@ export default function DigitizationCached({state,digi,act}){
   {id:90,label:'90 дней'}
  ];
 
+ const rateLimitWaiting=state?.job?.running&&state?.job?.kind==='digitization'&&
+  state?.job?.message?.startsWith('Ozon HTTP 429');
  let statusText='Локальных данных выбранного периода пока нет';
- if(cacheState.loading)statusText='Проверяем локальную базу SQLite…';
+ if(rateLimitWaiting)statusText=state.job.message;
+ else if(cacheState.loading)statusText='Проверяем локальную базу SQLite…';
  else if(automaticBusy)statusText='Автоматически загружаем отсутствующие дни из Ozon…';
  else if(state?.job?.running&&autoEligible)statusText='Ожидаем завершения текущей загрузки…';
  else if(legacy)statusText='Старый снимок периода · обновляем дневную базу автоматически';
@@ -326,9 +329,9 @@ export default function DigitizationCached({state,digi,act}){
       </div></>}
      </div>
     </div>
-    <div className={'digitization-cache-status '+(cacheState.daily?'hit':cacheState.loading||automaticBusy?'loading':legacy?'legacy':'miss')}>
-     {cacheState.daily?<CircleCheck size={15}/>:cacheState.loading||automaticBusy?<RefreshCw size={15} className="animate-spin"/>:<Database size={15}/>}
-     <span>{statusText}</span>
+    <div className={'digitization-cache-status '+(rateLimitWaiting||cacheState.loading||automaticBusy?'loading':cacheState.daily?'hit':legacy?'legacy':'miss')}>
+     {rateLimitWaiting||cacheState.loading||automaticBusy?<RefreshCw size={15} className="animate-spin"/>:cacheState.daily?<CircleCheck size={15}/>:<Database size={15}/>}
+     <span role={rateLimitWaiting?'status':undefined}>{statusText}</span>
      {cacheState.updatedAt&&<small>обновлено {dateTime(cacheState.updatedAt)}</small>}
     </div>
    </section>
