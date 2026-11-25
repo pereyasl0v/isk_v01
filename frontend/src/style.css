@@ -26,7 +26,7 @@
 .fbo-history-table .table-scroll{max-height:none}
 .fbo-history-table th{padding:8px 10px}
 .fbo-history-table td{padding:6px 10px}
-.fbo-history-table .pagination{margin-top:10px}
+.fbo-history-table .pagination{margin-top:10px;justify-content:flex-end}
 
 .stock-history-chart{margin-top:20px}
 .stock-history-chart .panel-title{margin-bottom:14px}
