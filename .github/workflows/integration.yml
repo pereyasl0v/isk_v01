@@ -48,3 +48,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t isk-unified:ci .
+
+  publish:
+    name: Publish ready-to-run VPS image
+    if: github.event_name == 'push'
+    needs: [backend, frontend, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Authenticate to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish only after all checks pass
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/pereyasl0v/isk_v01:stable
+            ghcr.io/pereyasl0v/isk_v01:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
