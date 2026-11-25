@@ -193,7 +193,7 @@ function SalesHistoryChart({data,state,act,inv,period,setPeriod,chartWindow,sku,
  };
  return <section className="panel sales-chart">
   <div className="panel-title"><div><h3>Заказано товаров</h3></div>
-   <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null);setSelectedRange(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null);setSelectedRange(null);}}>{value} дн.</button>)}</div>
+   <div className="sales-chart-controls"><select aria-label="Товар для графика" value={sku} onChange={e=>{setSku(e.target.value);setHovered(null)}}><option value="all">Все товары</option>{skuOptions.map(value=><option key={value} value={value}>{skuNames.get(value)||('SKU '+value)}</option>)}</select><div className="segmented">{[7,14,30,90].map(value=><button key={value} className={period===value?'selected':''} onClick={()=>{setPeriod(value);setHovered(null);setSelectedRange(null);}}>{value} дн.</button>)}</div>
    </div>
   </div>
   {state?.job.running&&state.job.kind==='sales'&&<p role="status" className="muted">{state.job.message}</p>}
