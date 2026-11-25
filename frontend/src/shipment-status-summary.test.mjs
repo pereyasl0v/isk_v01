@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {postingStatusGroup,shipmentStatusSummary} from './shipment-status-summary.mjs';
 import {postingsInChartWindow,salesChartWindow} from './sales-chart-range.mjs';
 
@@ -71,4 +72,13 @@ test('selected-SKU shipments count only matched units, not the entire bundle',()
  ]);
  assert.deepEqual({postings:summary.total,units:summary.units,cancelled:summary.cancelledUnits},
   {postings:2,units:3,cancelled:1});
+});
+
+
+test('history dashboard labels items separately and reloads both sources after refresh',()=>{
+ const code=readFileSync(new URL('./main.jsx',import.meta.url),'utf8');
+ assert.match(code,/num\(summary\.total\)\} отправл\./);
+ assert.match(code,/num\(summary\.units\)\} шт\. товара/);
+ assert.match(code,/num\(summary\.cancelledUnits\)\} шт\./);
+ assert.match(code,/Promise\.all\(\[api\('\/sales'\),api\('\/history'\)\]\)/);
 });
