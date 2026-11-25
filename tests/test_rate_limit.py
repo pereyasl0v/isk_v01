@@ -87,16 +87,21 @@ class RateLimitTests(unittest.TestCase):
             return {'accruals':[{'id':'success'}]}
 
         api = Ozon('123','secret',transport=transport,sleep=sleeps.append)
-        with api.auto_retry_429(messages.append):
+        waiting = []
+        resumed = []
+        with api.auto_retry_429(messages.append, on_wait=waiting.append, on_resume=lambda:resumed.append(True)):
             result = api.call('/v1/finance/accrual/by-day', payload)
         self.assertEqual(result, {'accruals':[{'id':'success'}]})
         self.assertEqual(len(attempts), 3)
         self.assertTrue(all(item == ('/v1/finance/accrual/by-day',payload) for item in attempts))
         self.assertEqual(sleeps, [60.0, 60.0])
-        self.assertTrue(any('Ozon HTTP 429' in text for text in messages))
-        self.assertTrue(any('автоматически продолжим' in text for text in messages))
+        self.assertTrue(any('Ozon временно ограничил частоту запросов' in text for text in messages))
+        self.assertTrue(any('Загрузка продолжится автоматически' in text for text in messages))
+        self.assertTrue(all('429' not in text for text in messages))
+        self.assertEqual(waiting, [60.0, 60.0])
+        self.assertEqual(resumed, [True, True])
         self.assertEqual(api.cache_counters()['api_requests'],3)
-        self.assertIsNone(api._rate_limit_recovery.progress)
+        self.assertIsNone(api._rate_limit_recovery.callbacks)
 
     def test_digitization_429_respects_longer_retry_after_from_ozon(self):
         sleeps = []
@@ -150,7 +155,7 @@ class RateLimitTests(unittest.TestCase):
             with self.assertRaisesRegex(ApiError,'403'):
                 api.call('/v1/finance/accrual/by-day',{'date':'2026-11-24'})
         self.assertEqual(sleeps, [])
-        self.assertIsNone(api._rate_limit_recovery.progress)
+        self.assertIsNone(api._rate_limit_recovery.callbacks)
 
         rate_limited = Ozon(
             '123','secret',
