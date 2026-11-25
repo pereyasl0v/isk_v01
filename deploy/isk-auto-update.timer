@@ -1,0 +1,11 @@
+[Unit]
+Description=Apply queued ISK update after Ozon processing finishes
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=1min
+AccuracySec=15s
+Unit=isk-auto-update.service
+
+[Install]
+WantedBy=timers.target
