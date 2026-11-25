@@ -182,7 +182,11 @@ def import_digitization_product_costs(body: LegacyProductCosts,
 
 
 def public_account(account):
-    return {'id':account['id'],'client_id':account['client_id'],'connected':account['connected'],
+    # Every existing record in ozon_accounts is an Ozon account.
+    # Expose the marketplace explicitly so clients can render a multi-market
+    # account directory without changing IDs, encryption, or SQLite data.
+    return {'id':account['id'],'marketplace':'ozon',
+            'client_id':account['client_id'],'connected':account['connected'],
             'roles':[r.get('name','') for r in account['roles'].get('roles',[])],
             'expires_at':account['roles'].get('expires_at'),'updated_at':account['updated_at']}
 
