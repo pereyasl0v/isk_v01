@@ -1,0 +1,10 @@
+# Automatic public TLS for ISK, including free IP-based sslip.io hostnames.
+# The backend is never published directly; only Caddy reaches isk:8000.
+{$ISK_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy isk:8000
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy no-referrer
+  }
+}
