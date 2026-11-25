@@ -1,6 +1,9 @@
 """Read-only Ozon adapter. Contract: user-provided Seller API body, 2026-10-10."""
 import hashlib
 import json
+import math
+from contextlib import contextmanager
+from email.utils import parsedate_to_datetime
 import os
 import threading
 import time
@@ -62,6 +65,8 @@ class Ozon:
         self._response_cache_at = {}
         self._rate_lock = threading.Lock()
         self._last_request_at = 0.0
+        # Per-worker context: a paused digitization never changes other API jobs.
+        self._rate_limit_recovery = threading.local()
         self._persistent_cache_hits = 0
         self._api_requests = 0
         data_dir = Path(os.environ.get(
@@ -215,6 +220,51 @@ class Ozon:
                 self.sleep(wait)
             self._last_request_at = time.monotonic()
 
+    @contextmanager
+    def auto_retry_429(self, progress):
+        """Keep an active digitization job running when Ozon temporarily returns 429.
+
+        The context is scoped to the calling thread. The caller continues its
+        original request with the same payload; previously completed daily
+        SQLite records are not repeated.
+        """
+        old = getattr(self._rate_limit_recovery, 'progress', None)
+        self._rate_limit_recovery.progress = progress
+        try:
+            yield
+        finally:
+            self._rate_limit_recovery.progress = old
+
+    @staticmethod
+    def _retry_after_seconds(value):
+        if value is None:
+            return None
+        try:
+            seconds = float(value)
+            return seconds if math.isfinite(seconds) and seconds >= 0 else None
+        except (ValueError, TypeError, OverflowError):
+            try:
+                moment = parsedate_to_datetime(value)
+                if moment.tzinfo is None:
+                    return None
+                return max(0.0, (moment - datetime.now(timezone.utc)).total_seconds())
+            except (ValueError, TypeError, OverflowError):
+                return None
+
+    def _wait_for_429(self, path, retry_after=None):
+        progress = getattr(self._rate_limit_recovery, 'progress', None)
+        if progress is None:
+            return False
+        suggested = self._retry_after_seconds(retry_after)
+        delay = max(60.0, suggested if suggested is not None else 60.0)
+        progress(
+            f'Ozon HTTP 429: лимит запросов для {path}. '
+            f'Ожидаем {math.ceil(delay)} сек., затем автоматически продолжим оцифровку.'
+        )
+        self.sleep(delay)
+        progress(f'Ожидание Ozon завершено: повторяем запрос {path} и продолжаем выбранный период.')
+        return True
+
     def call(self, path, payload):
         if path not in ALLOWED:
             raise ApiError('Операция не разрешена модулем чтения.')
@@ -231,11 +281,24 @@ class Ozon:
             return cached
 
         if self.transport:
-            self._api_requests += 1
-            result = self.transport(path, payload)
-            if not isinstance(result, dict):
-                raise ApiError('Неожиданный формат ответа Ozon.')
-            return self._remember(session_key, persistent_key, result)
+            # Test/custom transports use the same recovery semantics as HTTP.
+            while True:
+                self._api_requests += 1
+                try:
+                    result = self.transport(path, payload)
+                except urllib.error.HTTPError as exc:
+                    if exc.code == 429 and self._wait_for_429(
+                        path, exc.headers.get('Retry-After') if exc.headers else None
+                    ):
+                        continue
+                    raise
+                except ApiError as exc:
+                    if str(exc).startswith('Ozon HTTP 429') and self._wait_for_429(path):
+                        continue
+                    raise
+                if not isinstance(result, dict):
+                    raise ApiError('Неожиданный формат ответа Ozon.')
+                return self._remember(session_key, persistent_key, result)
 
         request = urllib.request.Request(BASE + path,
             data=json.dumps(payload).encode(), method='POST', headers={
@@ -248,7 +311,8 @@ class Ozon:
                 return None
 
         opener = urllib.request.build_opener(NoRedirect())
-        for attempt in range(6):
+        attempt = 0
+        while True:
             try:
                 self._throttle(path)
                 self._api_requests += 1
@@ -268,16 +332,17 @@ class Ozon:
                 return self._remember(session_key, persistent_key, result)
             except urllib.error.HTTPError as exc:
                 code = exc.code
+                header = exc.headers.get('Retry-After') if exc.headers else None
+                if code == 429 and self._wait_for_429(path, header):
+                    # Stay on the same HTTP request, page/cursor and day.
+                    # No extra work is requested from the user.
+                    continue
                 if code in (429, 500, 502, 503, 504) and attempt < 5:
-                    try:
-                        header = exc.headers.get('Retry-After')
-                        delay = float(header) if header is not None else float(2 ** attempt)
-                        delay = max(1.0, delay)
-                    except (ValueError, TypeError):
-                        delay = float(2 ** attempt)
+                    suggested = self._retry_after_seconds(header)
+                    delay = max(1.0, suggested if suggested is not None else float(2 ** attempt))
 
                     # Long Retry-After usually means a method-specific quota,
-                    # not a short burst. Do not freeze the local app for hours.
+                    # not a short burst. Do not freeze other jobs for hours.
                     if delay > 120:
                         if path == PLACEMENT_CREATE_PATH:
                             raise ApiError(
@@ -290,6 +355,7 @@ class Ozon:
                             f'Повторите примерно через {int(delay)} сек.'
                         ) from None
                     self.sleep(delay)
+                    attempt += 1
                     continue
 
                 hints = {400:'Проверьте параметры запроса и актуальность схемы API.',
