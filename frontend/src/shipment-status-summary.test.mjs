@@ -75,13 +75,15 @@ test('selected-SKU shipments count only matched units, not the entire bundle',()
 });
 
 
-test('history hides duplicate counts and row footer, but keeps navigation buttons',()=>{
+test('history removes stray brace and duplicate counts, shows page-only footer and keeps navigation',()=>{
  const code=readFileSync(new URL('./main.jsx',import.meta.url),'utf8');
  const history=code.split('function History({')[1]?.split('function LoginScreen(')[0];
  assert.ok(history);
  assert.doesNotMatch(history,/history-quantity-summary|history-cancelled-units/);
- assert.match(history,/showPaginationSummary=\{false\}/);
- assert.match(code,/showPaginationSummary&&<span>/);
+ assert.doesNotMatch(history,/<h3>История отправлений Ozon<\/h3>\s*\}/);
+ assert.match(history,/showPaginationSummary="pages"/);
+ assert.match(code,/showPaginationSummary==='pages'\?<span aria-live="polite">Страница \{safe\+1\} из \{pages\}<\/span>/);
+ assert.match(code,/showPaginationSummary&&<span>\{num\(rows.length\)\} строк/);
  assert.match(code,/onClick=\{\(\)=>setPage\(safe-1\)\}>Назад/);
  assert.match(code,/onClick=\{\(\)=>setPage\(safe\+1\)\}>Далее/);
  assert.match(code,/Promise\.all\(\[api\('\/sales'\),api\('\/history'\)\]\)/);
