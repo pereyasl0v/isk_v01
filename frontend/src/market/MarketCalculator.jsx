@@ -105,7 +105,12 @@ export default function MarketCalculator({ shipment } = {}) {
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [archiveError, setArchiveError] = useState("");
   const [loadingId, setLoadingId] = useState(null);
-  const [collapsedProductIds, setCollapsedProductIds] = useState(() => new Set());
+  const [collapsedProductIds, setCollapsedProductIds] = useState(() => new Set((shipment?.data?.products ?? []).map(product => product.id)));
+  const shipmentProductIds = shipment?.data?.products?.map(product => product.id).join("|") ?? "";
+
+  useEffect(() => {
+    setCollapsedProductIds(new Set((shipment?.data?.products ?? []).map(product => product.id)));
+  }, [shipment?.id, shipmentProductIds]);
 
   const validProducts = draft.products.filter(product => product.name.trim() && n(product.quantity) >= 1);
   const route = draft.selectedRoute;

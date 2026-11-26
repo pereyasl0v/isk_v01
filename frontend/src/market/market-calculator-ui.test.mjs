@@ -13,7 +13,9 @@ test('add-product action stays visible while scrolling through the product list'
 
 
 test('each product can collapse to its summary and cost composition lives in the standalone cost section', () => {
-  assert.ok(component.includes('const [collapsedProductIds, setCollapsedProductIds] = useState(() => new Set())'));
+  assert.ok(component.includes('const [collapsedProductIds, setCollapsedProductIds] = useState(() => new Set((shipment?.data?.products ?? []).map(product => product.id)))'));
+  assert.ok(component.includes('setCollapsedProductIds(new Set((shipment?.data?.products ?? []).map(product => product.id)))'));
+  assert.ok(component.includes('}, [shipment?.id, shipmentProductIds]);'));
   assert.ok(component.includes('className={"mc-product-card " + (expanded ? "is-expanded" : "is-collapsed")}'));
   assert.ok(component.includes('aria-expanded={expanded} aria-controls={fieldsId}'));
   const summaryStart = component.indexOf('<span className="mc-product-summary">');
