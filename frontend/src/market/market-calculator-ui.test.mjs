@@ -19,7 +19,25 @@ test('each product can collapse to its own cost summary and keeps its cost break
   assert.match(component, /<span className="mc-product-quantity">\{quantity\(product\.quantity\)\} шт\.<\/span>/);
   assert.match(component, /<span className="mc-product-unit-cost">\{unitCost != null \? money\(unitCost\) \+ " \/ шт\."/);
   assert.match(component, /<Breakdown product=\{calculatedProduct\} route=\{route\} showProductTotals=\{true\} \/>/);
-  assert.doesNotMatch(component, /<h2>Себестоимость<\/h2>/);
-  assert.doesNotMatch(component, /mc-results-section|mc-product-result/);
+  assert.match(component, /<h2>Себестоимость<\/h2>/);
+  assert.match(component, /className="mc-results-section"/);
+  assert.doesNotMatch(component, /mc-product-result/);
   assert.match(styles, /\.mc \.mc-product-card\.is-expanded \.mc-product-toggle-icon\{transform:rotate\(180deg\)\}/);
+});
+
+
+test('product details come first, route selection follows them, and total cost is shown last', () => {
+  const productsIndex = component.indexOf('{draft.products.map(product =>');
+  const routeIndex = component.indexOf('<section className="mc-panel mc-route-select-panel">');
+  const costIndex = component.indexOf('<section className="mc-results-section">');
+  assert.ok(productsIndex >= 0 && routeIndex > productsIndex, 'route selector follows the product fields');
+  assert.ok(costIndex > routeIndex, 'cost summary follows route selection and route parameters');
+});
+
+test('packaging percentage is a shared general parameter, not a field on the first product', () => {
+  const sharedFieldIndex = component.indexOf('label="Вес упаковки от нетто"');
+  const productsIndex = component.indexOf('{draft.products.map(product =>');
+  assert.ok(sharedFieldIndex >= 0 && sharedFieldIndex < productsIndex);
+  assert.match(component, /className="mc-general-parameters"/);
+  assert.doesNotMatch(component, /index === 0 && <NumberField label="Вес упаковки от нетто"/);
 });

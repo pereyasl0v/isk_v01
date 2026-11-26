@@ -217,3 +217,8 @@
 .mc .mc-product-card.is-collapsed .mc-product-heading{margin-bottom:0}
 .mc .mc-product-edit{padding-top:2px}
 .mc .mc-product-card .mc-breakdown{margin-top:11px}
+
+
+/* Shared packaging percentage belongs to the general shipment parameters. */
+.mc .mc-general-parameters{max-width:380px;margin:0 0 16px}
+@media(max-width:600px){.mc .mc-general-parameters{max-width:100%}}

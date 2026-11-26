@@ -330,26 +330,22 @@ export default function MarketCalculator({ shipment } = {}) {
     {error && <div className="mc-alert mc-alert-error" role="alert"><AlertCircle size={17} />{error}</div>}
     {notice && <div className="mc-alert mc-alert-success" role="status">{notice}</div>}
 
-    <section className="mc-panel">
-      {shipment && <div className="mc-route-select mb-4">
+    {shipment && <section className="mc-panel">
+      <div className="mc-route-select">
         <TextField label="Название поставки" value={shipmentName} onChange={setShipmentName} maxLength={160} />
-      </div>}
-      <label className="mc-field mc-route-select">
-        <span>Маршрут доставки</span>
-        <select value={route} onChange={event => setDraft(current => ({ ...current, selectedRoute: event.target.value }))}>
-          <option value="">Выберите маршрут</option>
-          {Object.entries(routeNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
-        </select>
-      </label>
-    </section>
+      </div>
+    </section>}
 
     <section className="mc-panel">
       <div className="mc-section-heading mc-add-product-sticky">
         <div><h2>Общие параметры</h2></div>
         <button type="button" className="mc-button mc-button-light" onClick={addProduct}><Plus size={16} /> Добавить товар</button>
       </div>
+      <div className="mc-general-parameters">
+        <NumberField label="Вес упаковки от нетто" value={draft.packagingWeightPercent} onChange={value => setDraft(current => ({ ...current, packagingWeightPercent: value }))} unit="%" help="Для всех товаров. Брутто = нетто + вес упаковки." />
+      </div>
 
-      {draft.products.map((product, index) => {
+      {draft.products.map(product => {
         const volume = batchVolumeM3(product);
         const netWeight = batchNetWeightKg(product);
         const goodsYuan = n(product.unitPriceYuan) * n(product.quantity);
@@ -380,8 +376,7 @@ export default function MarketCalculator({ shipment } = {}) {
               <NumberField label="Длина одной штуки" value={product.lengthCm || ""} onChange={value => updateProduct(product.id, "lengthCm", value)} unit="см" />
               <NumberField label="Ширина одной штуки" value={product.widthCm || ""} onChange={value => updateProduct(product.id, "widthCm", value)} unit="см" />
               <NumberField label="Высота одной штуки" value={product.heightCm || ""} onChange={value => updateProduct(product.id, "heightCm", value)} unit="см" />
-              <NumberField label="Вес нетто одной штуки" value={product.unitNetWeightG} onChange={value => updateProduct(product.id, "unitNetWeightG", value)} unit="г" help="Для расчёта маршрута через Южные ворота" />
-              {index === 0 && <NumberField label="Вес упаковки от нетто" value={draft.packagingWeightPercent} onChange={value => setDraft(current => ({ ...current, packagingWeightPercent: value }))} unit="%" help="Для всех товаров. Брутто = нетто + вес упаковки." />}
+              <NumberField label="Вес нетто одной штуки" value={product.unitNetWeightG} onChange={value => updateProduct(product.id, "unitNetWeightG", value)} unit="г" help="Для расчёта маршрута через Южные ворота" />}
             </div>
             <div className="mc-field-grid mc-batch-totals" aria-label="Параметры партии">
               <BatchOutput label="Объём партии" value={volume > 0 ? volumeFormat.format(volume) + " м³" : "—"} />
@@ -394,6 +389,16 @@ export default function MarketCalculator({ shipment } = {}) {
           {route && calculatedProduct && <Breakdown product={calculatedProduct} route={route} showProductTotals={true} />}
         </article>;
       })}
+    </section>
+
+    <section className="mc-panel mc-route-select-panel">
+      <label className="mc-field mc-route-select">
+        <span>Маршрут доставки</span>
+        <select value={route} onChange={event => setDraft(current => ({ ...current, selectedRoute: event.target.value }))}>
+          <option value="">Выберите маршрут</option>
+          {Object.entries(routeNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
+        </select>
+      </label>
     </section>
 
     {route === "route1" &&
@@ -432,13 +437,25 @@ export default function MarketCalculator({ shipment } = {}) {
         </div>
       </section>}
 
-    {route && calculated.warnings.length > 0 && <div className="mc-alert mc-alert-warning"><AlertCircle size={17} /><div>{calculated.warnings.map((warning, index) => <div key={index}>{warning}</div>)}</div></div>}
+    {route && <section className="mc-results-section">
+      <div className="mc-results-heading">
+        <div><h2>Себестоимость</h2></div>
+      </div>
+      {result && <article className={"mc-result-card " + (route === "route1" ? "mc-result-rostov" : "mc-result-south")}>
+        <div className="mc-result-top"><span>{routeNames[route]}</span></div>
+        <strong>{money(result.averageCostPerUnit)} <small>{calculated.products.length > 1 ? "/ шт. в среднем" : "/ шт."}</small></strong>
+        <div className="mc-result-total"><span>Полная стоимость партии</span><b>{money(result.totalRub)}</b></div>
+      </article>}
 
-    {result && !shipment && <div className="mc-header-actions mt-4">
-      <button type="button" className="mc-button mc-button-primary" disabled={saving || formingShipment} onClick={formShipment}>
-        <Package size={16} /> {formingShipment ? "Формируем…" : "Сформировать поставку"}
-      </button>
-    </div>}
+      {calculated.warnings.length > 0 && <div className="mc-alert mc-alert-warning"><AlertCircle size={17} /><div>{calculated.warnings.map((warning, index) => <div key={index}>{warning}</div>)}</div></div>}
+
+      {result && !shipment && <div className="mc-header-actions mt-4">
+        <button type="button" className="mc-button mc-button-primary" disabled={saving || formingShipment} onClick={formShipment}>
+          <Package size={16} /> {formingShipment ? "Формируем…" : "Сформировать поставку"}
+        </button>
+      </div>}
+      {!calculated.products.length && <div className="mc-empty-results"><Package size={27} /><strong>{validContainerVolume ? "Добавь товары, чтобы увидеть себестоимость" : "Укажите полезный объём контейнера больше нуля"}</strong><span>Результаты пересчитываются автоматически при изменении параметров.</span></div>}
+    </section>}
 
     {archiveOpen && <div className="mc-archive-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setArchiveOpen(false); }}>
       <section className="mc-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="mc-archive-title">
