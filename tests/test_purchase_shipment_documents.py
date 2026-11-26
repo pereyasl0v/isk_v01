@@ -24,7 +24,7 @@ class PurchaseShipmentDocumentsTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         main.store = Store(Path(self.temp.name) / "db.sqlite", encryption_key=main.ENCRYPTION_KEY)
         main.runtime_accounts.clear()
-        self.user_id = main.store.create_user("shipment-admin", hash_password(PASSWORD), role="admin")
+        self.user_id = main.store.create_user("shipment-admin", hash_password(PASSWORD), role="admin")["id"]
         self.client = TestClient(main.app)
         login = self.client.post(
             "/api/auth/login",
