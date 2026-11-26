@@ -436,7 +436,7 @@ export default function MarketCalculator({ shipment } = {}) {
         </div>
         <div className="mc-field-grid">
           <NumberField label="Курс юаня для оплаты товара" value={draft.route2.purchaseYuanToRubRate} onChange={value => updateRoute("route2", "purchaseYuanToRubRate", value)} unit="₽ за ¥" />
-          <NumberField label="Курс юаня на момент отправки" value={draft.route2.freightYuanToRubRate} onChange={value => updateRoute("route2", "freightYuanToRubRate", value)} unit="₽ за ¥" />
+          <NumberField label="Курс юаня для оплаты доставки" value={draft.route2.freightYuanToRubRate} onChange={value => updateRoute("route2", "freightYuanToRubRate", value)} unit="₽ за ¥" />
           <NumberField label="Курс доллара в юани" value={draft.route2.usdToYuanRate} onChange={value => updateRoute("route2", "usdToYuanRate", value)} unit="¥ за $" />
           <NumberField label="Автодоставка за килограмм" value={draft.route2.autoFreightUsdPerKg} onChange={value => updateRoute("route2", "autoFreightUsdPerKg", value)} unit="$ / кг" />
           <NumberField label="Упаковка за коробку" value={draft.route2.packagingPerBoxUsd} onChange={value => updateRoute("route2", "packagingPerBoxUsd", value)} unit="$" />
