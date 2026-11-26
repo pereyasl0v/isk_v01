@@ -130,7 +130,9 @@ export function calculatePreliminaryCost(draft) {
 
     const route1Rows = products.map((product, index) => {
       const quantity = Math.max(1, n(product.quantity));
-      const supplierTotalYuan = quantity * n(product.unitPriceYuan) + n(product.deliveryToSashaYuan);
+      const deliveryToGuangzhouYuan = product.deliveryToGuangzhouEnabled === false ? 0 : n(product.deliveryToGuangzhouYuan);
+      const supplierTotalYuan = quantity * n(product.unitPriceYuan)
+        + n(product.deliveryToSashaYuan) + deliveryToGuangzhouYuan;
       const goodsRub = supplierTotalYuan * n(commonRate ?? route1.yuanToRubRate)
         * (1 + n(route1.purchaseMarkupPercent) / 100);
       const freightToRostovRub = n(product.volumeM3) * freightRate;
