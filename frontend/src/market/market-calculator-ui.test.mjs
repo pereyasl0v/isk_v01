@@ -16,8 +16,11 @@ test('each product can collapse to its summary and cost composition lives in the
   assert.ok(component.includes('const [collapsedProductIds, setCollapsedProductIds] = useState(() => new Set())'));
   assert.ok(component.includes('className={"mc-product-card " + (expanded ? "is-expanded" : "is-collapsed")}'));
   assert.ok(component.includes('aria-expanded={expanded} aria-controls={fieldsId}'));
-  assert.ok(component.includes('<span className="mc-product-quantity">{quantity(product.quantity)} шт.</span>'));
-  assert.ok(component.includes('<span className="mc-product-unit-cost">{unitCost != null ? money(unitCost) + " / шт."'));
+  const productSummary = component.match(/<span className="mc-product-summary">([\\s\\S]*?)<\\/span>/)?.[1] || "";
+  assert.match(productSummary, /<strong>\\{product.name.trim\\(\\) \\|\\| "Новый товар"\\}<\\/strong>/);
+  assert.doesNotMatch(productSummary, /mc-product-quantity|mc-product-unit-cost|quantity\\(|unitCost|money\\(/);
+  assert.ok(component.includes('<div><strong>{product.name.trim() || "Товар"}</strong><span>{quantity(product.quantity)} шт.</span></div>'));
+  assert.ok(component.includes('<Breakdown product={product} route={route} showProductTotals={true} />'));
   assert.ok(component.includes('className="mc-cost-products"'));
   assert.ok(component.includes('className="mc-cost-product-heading"'));
   assert.ok(component.includes('<Breakdown product={product} route={route} showProductTotals={true} />'));

@@ -351,8 +351,6 @@ export default function MarketCalculator({ shipment } = {}) {
         const deliveryToGuangzhouEnabled = product.deliveryToGuangzhouEnabled ?? (n(product.deliveryToGuangzhouYuan) > 0);
         const baseGoodsYuan = n(product.unitPriceYuan) * n(product.quantity);
         const goodsYuan = baseGoodsYuan + (route === "route2" && deliveryToGuangzhouEnabled ? n(product.deliveryToGuangzhouYuan) : 0);
-        const calculatedProduct = calculated.products.find(item => item.id === product.id);
-        const unitCost = calculatedProduct?.[route]?.costPerUnit;
         const expanded = !collapsedProductIds.has(product.id);
         const fieldsId = "mc-product-fields-" + product.id;
         return <article className={"mc-product-card " + (expanded ? "is-expanded" : "is-collapsed")} key={product.id}>
@@ -362,8 +360,6 @@ export default function MarketCalculator({ shipment } = {}) {
               aria-label={(expanded ? "Свернуть" : "Развернуть") + " параметры товара " + (product.name.trim() || "без названия")}>
               <span className="mc-product-summary">
                 <strong>{product.name.trim() || "Новый товар"}</strong>
-                <span className="mc-product-quantity">{quantity(product.quantity)} шт.</span>
-                <span className="mc-product-unit-cost">{unitCost != null ? money(unitCost) + " / шт." : route ? "Заполните данные для расчёта" : "Выберите маршрут для расчёта"}</span>
               </span>
               <ChevronDown className="mc-product-toggle-icon" size={18} aria-hidden="true" />
             </button>

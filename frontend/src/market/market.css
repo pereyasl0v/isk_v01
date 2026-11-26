@@ -208,10 +208,8 @@
 /* Product cards can collapse to a compact per-item cost summary. */
 .mc .mc-product-heading{align-items:flex-start}
 .mc .mc-product-toggle{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex:1;min-width:0;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}
-.mc .mc-product-summary{display:flex;flex-direction:column;gap:5px;min-width:0}
+.mc .mc-product-summary{display:flex;min-width:0}
 .mc .mc-product-summary strong{overflow:hidden;color:#31483a;font-size:13px;font-weight:750;text-overflow:ellipsis;white-space:nowrap}
-.mc .mc-product-quantity{color:#52685a;font-size:12px}
-.mc .mc-product-unit-cost{color:#28714d;font-size:12px;font-weight:650}
 .mc .mc-product-toggle-icon{flex:0 0 auto;margin-top:2px;color:#64796b;transition:transform .16s ease}
 .mc .mc-product-card.is-expanded .mc-product-toggle-icon{transform:rotate(180deg)}
 .mc .mc-product-card.is-collapsed .mc-product-heading{margin-bottom:0}
