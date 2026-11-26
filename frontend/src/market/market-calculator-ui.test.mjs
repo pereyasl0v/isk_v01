@@ -70,7 +70,8 @@ test('Guangzhou delivery has a per-product checkbox and reveals the yuan price o
   assert.ok(component.includes('checked={deliveryToGuangzhouEnabled}'));
   assert.ok(component.includes('updateProduct(product.id, "deliveryToGuangzhouEnabled", event.target.checked)'));
   assert.ok(component.includes('{deliveryToGuangzhouEnabled && <NumberField label="Цена за доставку в юанях"'));
-  assert.ok(component.includes('route === "route2" && deliveryToGuangzhouEnabled ? n(product.deliveryToGuangzhouYuan) : 0'));
+  assert.ok(component.includes('const goodsYuan = baseGoodsYuan + (deliveryToGuangzhouEnabled ? n(product.deliveryToGuangzhouYuan) : 0);'));
+  assert.ok(component.includes('label="Стоимость товара в рублях в Китае"'));
   assert.ok(styles.includes('.mc .mc-checkbox-field{display:flex;align-items:center;align-self:end;'));
 });
 
