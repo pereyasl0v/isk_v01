@@ -355,7 +355,7 @@ export default function MarketCalculator({ shipment } = {}) {
         const netWeight = batchNetWeightKg(product);
         const deliveryToGuangzhouEnabled = product.deliveryToGuangzhouEnabled ?? (n(product.deliveryToGuangzhouYuan) > 0);
         const baseGoodsYuan = n(product.unitPriceYuan) * n(product.quantity);
-        const goodsYuan = baseGoodsYuan + (route === "route2" && deliveryToGuangzhouEnabled ? n(product.deliveryToGuangzhouYuan) : 0);
+        const goodsYuan = baseGoodsYuan + (deliveryToGuangzhouEnabled ? n(product.deliveryToGuangzhouYuan) : 0);
         const expanded = !collapsedProductIds.has(product.id);
         const fieldsId = "mc-product-fields-" + product.id;
         return <article className={"mc-product-card " + (expanded ? "is-expanded" : "is-collapsed")} key={product.id}>
@@ -391,7 +391,7 @@ export default function MarketCalculator({ shipment } = {}) {
               <BatchOutput label="Вес нетто партии" value={netWeight > 0 ? volumeFormat.format(netWeight) + " кг" : "—"} />
               <BatchOutput label="Вес брутто партии" value={netWeight > 0 ? volumeFormat.format(grossWeightWithPackaging(netWeight, draft.packagingWeightPercent)) + " кг" : "—"} />
               <BatchOutput label="Стоимость товара в юанях" value={volumeFormat.format(goodsYuan) + " ¥"} />
-              {route && <BatchOutput label={route === "route2" && deliveryToGuangzhouEnabled ? "Стоимость товара с доставкой до Гуанчжоу, в рублях" : "Стоимость товара в рублях без доставки и надбавок"} value={money(goodsYuan * n(yuanRate))} />}
+              {route && <BatchOutput label="Стоимость товара в рублях в Китае" value={money(goodsYuan * n(yuanRate))} />}
             </div>
           </div>}
         </article>;
