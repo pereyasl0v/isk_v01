@@ -200,3 +200,6 @@
 .shipments-page .shipment-empty{padding:32px;text-align:center;color:#50685b}
 .shipments-page .shipment-empty svg{margin:0 auto 8px;color:#256c4d}
 .shipments-page .shipment-empty h2{color:#20382b}
+
+/* Keep the add-product action available while scrolling through a long shipment. */
+.mc .mc-add-product-sticky{position:sticky;top:10px;z-index:30;padding:8px 10px;margin:-8px -10px 15px;border:1px solid #e0e8e2;border-radius:10px;background:rgba(255,255,255,.97);box-shadow:0 4px 14px #173c2718;backdrop-filter:blur(8px)}

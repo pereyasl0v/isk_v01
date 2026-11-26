@@ -329,7 +329,7 @@ export default function MarketCalculator({ shipment } = {}) {
     </section>
 
     <section className="mc-panel">
-      <div className="mc-section-heading">
+      <div className="mc-section-heading mc-add-product-sticky">
         <div><h2>Общие параметры</h2></div>
         <button type="button" className="mc-button mc-button-light" onClick={addProduct}><Plus size={16} /> Добавить товар</button>
       </div>
