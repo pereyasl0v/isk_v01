@@ -386,7 +386,6 @@ export default function MarketCalculator({ shipment } = {}) {
               {route && <BatchOutput label="Стоимость товара в рублях без доставки и надбавок" value={money(goodsYuan * n(yuanRate))} />}
             </div>
           </div>}
-          {route && calculatedProduct && <Breakdown product={calculatedProduct} route={route} showProductTotals={true} />}
         </article>;
       })}
     </section>
@@ -446,6 +445,16 @@ export default function MarketCalculator({ shipment } = {}) {
         <strong>{money(result.averageCostPerUnit)} <small>{calculated.products.length > 1 ? "/ шт. в среднем" : "/ шт."}</small></strong>
         <div className="mc-result-total"><span>Полная стоимость партии</span><b>{money(result.totalRub)}</b></div>
       </article>}
+
+      {calculated.products.length > 0 && <div className="mc-cost-products" aria-label="Состав себестоимости по товарам">
+        {calculated.products.map(product => <article className="mc-cost-product" key={product.id}>
+          <div className="mc-cost-product-heading">
+            <div><strong>{product.name.trim() || "Товар"}</strong><span>{quantity(product.quantity)} шт.</span></div>
+            <strong>{money(product[route].costPerUnit)} <small>/ шт.</small></strong>
+          </div>
+          <Breakdown product={product} route={route} showProductTotals={true} />
+        </article>)}
+      </div>}
 
       {calculated.warnings.length > 0 && <div className="mc-alert mc-alert-warning"><AlertCircle size={17} /><div>{calculated.warnings.map((warning, index) => <div key={index}>{warning}</div>)}</div></div>}
 
