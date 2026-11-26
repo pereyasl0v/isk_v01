@@ -107,6 +107,13 @@ class Store:
                 PRIMARY KEY(user_id,id),
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)""")
             c.execute("CREATE INDEX IF NOT EXISTS purchase_shipments_date ON purchase_shipments(user_id,created_at,id)")
+            c.execute("""CREATE TABLE IF NOT EXISTS purchase_shipment_documents (
+                id TEXT PRIMARY KEY, user_id TEXT NOT NULL, shipment_id TEXT NOT NULL,
+                filename TEXT NOT NULL, byte_size INTEGER NOT NULL, added_at TEXT NOT NULL,
+                ciphertext BLOB NOT NULL,
+                FOREIGN KEY(user_id,shipment_id) REFERENCES purchase_shipments(user_id,id)
+                    ON DELETE CASCADE)""")
+            c.execute("CREATE INDEX IF NOT EXISTS purchase_shipment_documents_scope ON purchase_shipment_documents(user_id,shipment_id,added_at)")
             c.execute('''CREATE TABLE IF NOT EXISTS auth_login_attempts (
                 ip TEXT NOT NULL, username TEXT NOT NULL, window_started REAL NOT NULL,
                 failed_count INTEGER NOT NULL, locked_until REAL NOT NULL DEFAULT 0,
@@ -494,17 +501,21 @@ class Store:
     def list_purchase_shipments(self,user_id):
         with self.db() as c:
             rows=c.execute(
-                """SELECT id,name,created_at,payload FROM purchase_shipments
-                   WHERE user_id=? ORDER BY created_at DESC,id DESC""",
+                """SELECT p.id,p.name,p.created_at,p.payload,
+                          (SELECT COUNT(*) FROM purchase_shipment_documents d
+                           WHERE d.user_id=p.user_id AND d.shipment_id=p.id)
+                   FROM purchase_shipments p
+                   WHERE p.user_id=? ORDER BY p.created_at DESC,p.id DESC""",
                 (str(user_id),),
             ).fetchall()
         items=[]
-        for shipment_id,name,created_at,payload in rows:
+        for shipment_id,name,created_at,payload,documents_count in rows:
             snapshot=self._decode_payload(payload)
             route=snapshot["data"]["selectedRoute"]
             summary=snapshot["calculated"]["summary"][route]
             items.append({"id":shipment_id,"name":name,"created_at":created_at,
-                          "route":route,"quantity":summary["totalQuantity"],"total":summary["totalRub"]})
+                          "route":route,"quantity":summary["totalQuantity"],"total":summary["totalRub"],
+                          "documents_count":documents_count})
         return items
 
     def update_purchase_shipment(self,user_id,shipment_id,name,data,calculated):
@@ -517,6 +528,10 @@ class Store:
 
     def delete_purchase_shipment(self,user_id,shipment_id):
         with self.db() as c:
+            c.execute(
+                "DELETE FROM purchase_shipment_documents WHERE user_id=? AND shipment_id=?",
+                (str(user_id),str(shipment_id)),
+            )
             return c.execute(
                 "DELETE FROM purchase_shipments WHERE user_id=? AND id=?",
                 (str(user_id),str(shipment_id)),
