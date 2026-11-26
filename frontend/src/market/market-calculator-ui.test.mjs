@@ -75,3 +75,23 @@ test('Guangzhou delivery has a per-product checkbox and reveals the yuan price o
   assert.ok(styles.includes('.mc .mc-checkbox-field{display:flex;align-items:center;align-self:end;'));
 });
 
+
+
+test('mobile add-product action sticks below the safe-area-aware navigation bar', () => {
+  const mobile = readFileSync(new URL('../mobile.css', import.meta.url), 'utf8');
+  assert.match(mobile, /--mobile-app-bar-height: calc\(61px \+ env\(safe-area-inset-top, 0px\)\)/);
+  assert.match(mobile, /\.mobile-app-bar \{[^}]*position: sticky;[^}]*z-index: 40;[^}]*height: var\(--mobile-app-bar-height\)/);
+  assert.match(mobile, /\.mc \.mc-add-product-sticky \{[^}]*top: calc\(var\(--mobile-app-bar-height\) \+ 6px\);[^}]*z-index: 9/);
+});
+
+test('installed web app has a root scope and standalone display for all internal routes', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const manifest = JSON.parse(readFileSync(new URL('../../public/assets/manifest.webmanifest', import.meta.url), 'utf8'));
+  assert.match(html, /<link rel="manifest" href="\/assets\/manifest.webmanifest"\/>/);
+  assert.match(html, /<meta name="apple-mobile-web-app-capable" content="yes"\/>/);
+  assert.equal(manifest.display, 'standalone');
+  assert.equal(manifest.start_url, '/');
+  assert.equal(manifest.scope, '/');
+  assert.equal(manifest.id, '/');
+  assert.ok(manifest.icons.some(icon => icon.src === '/assets/apple-touch-icon.png'));
+});
