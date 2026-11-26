@@ -302,3 +302,5 @@
   .shipments-page .shipment-documents{padding:14px}
   .shipments-page .shipment-document{gap:8px;padding:9px}
 }
+
+.shipments-page .shipment-document-count{display:inline-flex;align-items:center;gap:6px;margin-top:8px;color:#617568;font-size:12px}
