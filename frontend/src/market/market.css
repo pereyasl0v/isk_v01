@@ -268,3 +268,37 @@
 .mc .mc-checkbox-field{display:flex;align-items:center;align-self:end;gap:8px;min-width:0;min-height:42px;color:#425b4a;font-size:13px;font-weight:650;cursor:pointer}
 .mc .mc-checkbox-field input[type="checkbox"]{width:17px;height:17px;flex:0 0 auto;margin:0;accent-color:#28714d;cursor:pointer}
 .mc .mc-checkbox-field span{line-height:1.35}
+
+
+/* Documents are stored with their shipment and managed from its detail page. */
+.shipments-page .shipment-documents{
+  margin-top:16px;padding:18px;border:1px solid #dce7df;border-radius:12px;background:#fff;
+}
+.shipments-page .shipment-documents-heading{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;
+}
+.shipments-page .shipment-documents-heading h2{margin:0;color:#20382b;font-size:18px}
+.shipments-page .shipment-documents-heading p{margin:4px 0 0;color:#607267;font-size:13px}
+.shipments-page .shipment-documents-count{color:#607267;font-size:13px;font-weight:650}
+.shipments-page .shipment-document-list{display:grid;gap:8px;list-style:none;padding:0;margin:0 0 14px}
+.shipments-page .shipment-document{
+  display:flex;align-items:center;gap:11px;min-width:0;padding:10px 12px;border:1px solid #e4ece6;border-radius:9px;background:#fbfdfb;
+}
+.shipments-page .shipment-document-icon{flex:0 0 auto;color:#347654}
+.shipments-page .shipment-document-info{display:flex;flex:1;flex-direction:column;gap:3px;min-width:0}
+.shipments-page .shipment-document-info strong{overflow:hidden;color:#2d4436;font-size:14px;text-overflow:ellipsis;white-space:nowrap}
+.shipments-page .shipment-document-info small{color:#718176;font-size:12px}
+.shipments-page .shipment-document>a,.shipments-page .shipment-document>button{
+  display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;border:1px solid #dce7df;border-radius:8px;background:#fff;color:#38684e;
+}
+.shipments-page .shipment-document>button{color:#a24b43;cursor:pointer}
+.shipments-page .shipment-document>button:disabled{opacity:.5;cursor:not-allowed}
+.shipments-page .shipment-documents-empty{display:flex;align-items:center;gap:8px;padding:16px;color:#708176;font-size:13px}
+.shipments-page .shipment-hidden-file-input{display:none}
+.shipments-page .shipment-upload-button{margin-top:2px}
+.shipments-page .shipment-document-hint{margin:8px 0 0;color:#718176;font-size:12px}
+.shipments-page .shipment-documents .mc-alert{margin-top:12px}
+@media(max-width:600px){
+  .shipments-page .shipment-documents{padding:14px}
+  .shipments-page .shipment-document{gap:8px;padding:9px}
+}
