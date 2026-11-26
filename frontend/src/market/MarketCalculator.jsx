@@ -376,7 +376,7 @@ export default function MarketCalculator({ shipment } = {}) {
               <NumberField label="Длина одной штуки" value={product.lengthCm || ""} onChange={value => updateProduct(product.id, "lengthCm", value)} unit="см" />
               <NumberField label="Ширина одной штуки" value={product.widthCm || ""} onChange={value => updateProduct(product.id, "widthCm", value)} unit="см" />
               <NumberField label="Высота одной штуки" value={product.heightCm || ""} onChange={value => updateProduct(product.id, "heightCm", value)} unit="см" />
-              <NumberField label="Вес нетто одной штуки" value={product.unitNetWeightG} onChange={value => updateProduct(product.id, "unitNetWeightG", value)} unit="г" help="Для расчёта маршрута через Южные ворота" />}
+              <NumberField label="Вес нетто одной штуки" value={product.unitNetWeightG} onChange={value => updateProduct(product.id, "unitNetWeightG", value)} unit="г" help="Для расчёта маршрута через Южные ворота" />
             </div>
             <div className="mc-field-grid mc-batch-totals" aria-label="Параметры партии">
               <BatchOutput label="Объём партии" value={volume > 0 ? volumeFormat.format(volume) + " м³" : "—"} />
