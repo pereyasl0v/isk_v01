@@ -118,3 +118,20 @@ test("only the selected route contributes results and warnings",()=>{
   draft.selectedRoute="";
   assert.equal(calculatePreliminaryCost(draft).summary,null);
 });
+
+test("Guangzhou delivery is added to the South Gates purchase in yuan only when enabled",()=>{
+  const draft=sample();
+  draft.selectedRoute="route2";
+  draft.products=[{...draft.products[0],deliveryToGuangzhouYuan:340,deliveryToGuangzhouEnabled:true}];
+  const enabled=calculatePreliminaryCost(draft).products[0].route2;
+  assert.equal(enabled.purchaseTotalYuan,800*3.6+340);
+  assert.equal(enabled.deliveryToGuangzhouYuan,340);
+  assert.equal(enabled.purchaseRub,(800*3.6+340)*11.8);
+
+  draft.products[0].deliveryToGuangzhouEnabled=false;
+  const disabled=calculatePreliminaryCost(draft).products[0].route2;
+  assert.equal(disabled.purchaseTotalYuan,800*3.6);
+  assert.equal(disabled.deliveryToGuangzhouYuan,0);
+  assert.equal(disabled.purchaseRub,800*3.6*11.8);
+});
+

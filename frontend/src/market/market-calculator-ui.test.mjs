@@ -57,3 +57,13 @@ test('form typography is comfortably readable without expanding the layout', () 
   assert.match(styles, /\.mc \.mc-product-card\{margin-top:10px;padding:13px\}/);
   assert.match(styles, /@media\(max-width:600px\)\{\s*\.mc \.mc-field input,\.mc \.mc-field select\{font-size:16px\}/);
 });
+
+test('Guangzhou delivery has a per-product checkbox and reveals the yuan price only when enabled', () => {
+  assert.ok(component.includes('className="mc-checkbox-field"'));
+  assert.ok(component.includes('checked={deliveryToGuangzhouEnabled}'));
+  assert.ok(component.includes('updateProduct(product.id, "deliveryToGuangzhouEnabled", event.target.checked)'));
+  assert.ok(component.includes('{deliveryToGuangzhouEnabled && <NumberField label="Цена за доставку в юанях"'));
+  assert.ok(component.includes('deliveryToGuangzhouEnabled ? n(product.deliveryToGuangzhouYuan) : 0') === false);
+  assert.ok(styles.includes('.mc .mc-checkbox-field{display:flex;align-items:center;align-self:end;'));
+});
+

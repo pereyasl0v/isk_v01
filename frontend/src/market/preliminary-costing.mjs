@@ -40,6 +40,7 @@ export const createProduct = () => ({
   unitPriceYuan: 0,
   deliveryToSashaYuan: 0,
   deliveryToGuangzhouYuan: 0,
+  deliveryToGuangzhouEnabled: false,
   dutyPercent: 6.5,
   lengthCm: "",
   widthCm: "",
@@ -200,7 +201,8 @@ export function calculatePreliminaryCost(draft) {
       const netWeightKg = netWeights[index];
       const allocatedPackagingKg = totalNetWeight > 0 ? packagingWeight * netWeightKg / totalNetWeight : 0;
       const allocatedGrossWeightKg = netWeightKg + allocatedPackagingKg;
-      const purchaseTotalYuan = quantity * n(product.unitPriceYuan) + n(product.deliveryToGuangzhouYuan);
+      const deliveryToGuangzhouYuan = product.deliveryToGuangzhouEnabled === false ? 0 : n(product.deliveryToGuangzhouYuan);
+      const purchaseTotalYuan = quantity * n(product.unitPriceYuan) + deliveryToGuangzhouYuan;
       const purchaseRub = purchaseTotalYuan * n(commonRate ?? route2.purchaseYuanToRubRate);
       const allocatedTransportRub = transportRub * route2Shares[index];
       const sharedExpensesRub = route2Shared * route2Shares[index];
@@ -211,6 +213,7 @@ export function calculatePreliminaryCost(draft) {
         allocatedPackagingKg,
         allocatedGrossWeightKg,
         allocationShare: route2Shares[index],
+        deliveryToGuangzhouYuan,
         purchaseTotalYuan,
         purchaseRub,
         transportRub: allocatedTransportRub,

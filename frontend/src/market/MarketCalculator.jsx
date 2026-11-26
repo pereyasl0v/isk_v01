@@ -348,7 +348,9 @@ export default function MarketCalculator({ shipment } = {}) {
       {draft.products.map(product => {
         const volume = batchVolumeM3(product);
         const netWeight = batchNetWeightKg(product);
-        const goodsYuan = n(product.unitPriceYuan) * n(product.quantity);
+        const deliveryToGuangzhouEnabled = product.deliveryToGuangzhouEnabled ?? (n(product.deliveryToGuangzhouYuan) > 0);
+        const baseGoodsYuan = n(product.unitPriceYuan) * n(product.quantity);
+        const goodsYuan = baseGoodsYuan + (route === "route2" && deliveryToGuangzhouEnabled ? n(product.deliveryToGuangzhouYuan) : 0);
         const calculatedProduct = calculated.products.find(item => item.id === product.id);
         const unitCost = calculatedProduct?.[route]?.costPerUnit;
         const expanded = !collapsedProductIds.has(product.id);
@@ -373,6 +375,11 @@ export default function MarketCalculator({ shipment } = {}) {
               <TextField label="Артикул / код" value={product.article} onChange={value => updateProduct(product.id, "article", value)} placeholder="Необязательно" maxLength={80} />
               <NumberField label="Количество" value={product.quantity} onChange={value => updateProduct(product.id, "quantity", value)} unit="шт." step="1" min="1" />
               <NumberField label="Цена за 1 штуку" value={product.unitPriceYuan} onChange={value => updateProduct(product.id, "unitPriceYuan", value)} unit="¥" />
+              <label className="mc-checkbox-field">
+                <input type="checkbox" checked={deliveryToGuangzhouEnabled} onChange={event => updateProduct(product.id, "deliveryToGuangzhouEnabled", event.target.checked)} />
+                <span>Доставка до Гуанчжоу</span>
+              </label>
+              {deliveryToGuangzhouEnabled && <NumberField label="Цена за доставку в юанях" value={product.deliveryToGuangzhouYuan} onChange={value => updateProduct(product.id, "deliveryToGuangzhouYuan", value)} unit="¥" help="За всю партию; прибавляется к стоимости товара." />}
               <NumberField label="Длина одной штуки" value={product.lengthCm || ""} onChange={value => updateProduct(product.id, "lengthCm", value)} unit="см" />
               <NumberField label="Ширина одной штуки" value={product.widthCm || ""} onChange={value => updateProduct(product.id, "widthCm", value)} unit="см" />
               <NumberField label="Высота одной штуки" value={product.heightCm || ""} onChange={value => updateProduct(product.id, "heightCm", value)} unit="см" />
@@ -383,7 +390,7 @@ export default function MarketCalculator({ shipment } = {}) {
               <BatchOutput label="Вес нетто партии" value={netWeight > 0 ? volumeFormat.format(netWeight) + " кг" : "—"} />
               <BatchOutput label="Вес брутто партии" value={netWeight > 0 ? volumeFormat.format(grossWeightWithPackaging(netWeight, draft.packagingWeightPercent)) + " кг" : "—"} />
               <BatchOutput label="Стоимость товара в юанях" value={volumeFormat.format(goodsYuan) + " ¥"} />
-              {route && <BatchOutput label="Стоимость товара в рублях без доставки и надбавок" value={money(goodsYuan * n(yuanRate))} />}
+              {route && <BatchOutput label={route === "route2" && deliveryToGuangzhouEnabled ? "Стоимость товара с доставкой до Гуанчжоу, в рублях" : "Стоимость товара в рублях без доставки и надбавок"} value={money(goodsYuan * n(yuanRate))} />}
             </div>
           </div>}
         </article>;
