@@ -117,7 +117,7 @@ function ShipmentDocuments({ shipmentId }) {
             <strong title={doc.name}>{doc.name}</strong>
             <small>{sizeText(doc.size)} · {documentDate(doc.added_at)}</small>
           </div>
-          <a href={path + "/" + encodeURIComponent(doc.id)} aria-label={"Скачать " + doc.name} title="Скачать">
+          <a href={"/api" + path + "/" + encodeURIComponent(doc.id)} aria-label={"Скачать " + doc.name} title="Скачать">
             <Download size={17} />
           </a>
           <button type="button" disabled={busy} onClick={() => removeFile(doc)}
@@ -234,6 +234,7 @@ export default function PurchaseShipments({ editing = false }) {
           <div><dt>Стоимость партии</dt><dd>{money(item.total)}</dd></div>
         </dl>
         <time className="shipment-date" dateTime={item.created_at}><CalendarDays size={15} />{dateFormat.format(new Date(item.created_at))}</time>
+        <span className="shipment-document-count"><Paperclip size={14} /> {item.documents_count || 0} документов</span>
         <div className="shipment-card-footer">
           <Link className="shipment-open" to={shipmentPath(item.id)}>Открыть <ArrowRight size={15} /></Link>
           <ShipmentActions item={item} deleting={Boolean(deletingId)} onDelete={remove} />
