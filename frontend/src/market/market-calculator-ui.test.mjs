@@ -13,22 +13,22 @@ test('add-product action stays visible while scrolling through the product list'
 
 
 test('each product can collapse to its summary and cost composition lives in the standalone cost section', () => {
-  assert.match(component, /const \\[collapsedProductIds, setCollapsedProductIds\\] = useState\\(\\(\\) => new Set\\(\\)\\)/);
-  assert.match(component, /className=\\{"mc-product-card " \\+ \\(expanded \\? "is-expanded" : "is-collapsed"\\)\\}/);
-  assert.match(component, /aria-expanded=\\{expanded\\} aria-controls=\\{fieldsId\\}/);
-  assert.match(component, /<span className="mc-product-quantity">\\{quantity\\(product\\.quantity\\)\\} шт\\.<\\/span>/);
-  assert.match(component, /<span className="mc-product-unit-cost">\\{unitCost != null \\? money\\(unitCost\\) \\+ " \\/ шт\\."/);
-  assert.match(component, /className="mc-cost-products"/);
-  assert.match(component, /className="mc-cost-product-heading"/);
-  assert.match(component, /<Breakdown product=\\{product\\} route=\\{route\\} showProductTotals=\\{true\\} \\/>/);
-  assert.match(component, /<h2>Себестоимость<\\/h2>/);
-  assert.match(component, /className="mc-results-section"/);
+  assert.ok(component.includes('const [collapsedProductIds, setCollapsedProductIds] = useState(() => new Set())'));
+  assert.ok(component.includes('className={"mc-product-card " + (expanded ? "is-expanded" : "is-collapsed")}'));
+  assert.ok(component.includes('aria-expanded={expanded} aria-controls={fieldsId}'));
+  assert.ok(component.includes('<span className="mc-product-quantity">{quantity(product.quantity)} шт.</span>'));
+  assert.ok(component.includes('<span className="mc-product-unit-cost">{unitCost != null ? money(unitCost) + " / шт."'));
+  assert.ok(component.includes('className="mc-cost-products"'));
+  assert.ok(component.includes('className="mc-cost-product-heading"'));
+  assert.ok(component.includes('<Breakdown product={product} route={route} showProductTotals={true} />'));
+  assert.ok(component.includes('<h2>Себестоимость</h2>'));
+  assert.ok(component.includes('className="mc-results-section"'));
   assert.doesNotMatch(component, /mc-product-result/);
   const productStart = component.indexOf('{draft.products.map(product =>');
   const routeStart = component.indexOf('<section className="mc-panel mc-route-select-panel">');
   assert.doesNotMatch(component.slice(productStart, routeStart), /<Breakdown/);
-  assert.match(styles, /\\.mc \\.mc-product-card\\.is-expanded \\.mc-product-toggle-icon\\{transform:rotate\\(180deg\\)\\}/);
-  assert.match(styles, /\\.mc \\.mc-cost-products\\{display:grid;gap:10px;margin-top:14px\\}/);
+  assert.ok(styles.includes('.mc .mc-product-card.is-expanded .mc-product-toggle-icon{transform:rotate(180deg)}'));
+  assert.ok(styles.includes('.mc .mc-cost-products{display:grid;gap:10px;margin-top:14px}'));
 });
 
 
