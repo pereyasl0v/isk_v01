@@ -119,6 +119,20 @@ test("only the selected route contributes results and warnings",()=>{
   assert.equal(calculatePreliminaryCost(draft).summary,null);
 });
 
+test("Guangzhou delivery is included in the Rostov purchase amount and converted using the route yuan rate",()=>{
+  const draft=sample();
+  draft.selectedRoute="route1";
+  draft.products=[{...draft.products[0],quantity:400,unitPriceYuan:4.6,deliveryToGuangzhouYuan:10000,deliveryToGuangzhouEnabled:true}];
+  const enabled=calculatePreliminaryCost(draft).products[0].route1;
+  assert.equal(enabled.supplierTotalYuan,400*4.6+10000);
+  assert.equal(enabled.goodsRub,(400*4.6+10000)*14.2*1.07);
+
+  draft.products[0].deliveryToGuangzhouEnabled=false;
+  const disabled=calculatePreliminaryCost(draft).products[0].route1;
+  assert.equal(disabled.supplierTotalYuan,400*4.6);
+  assert.equal(disabled.goodsRub,400*4.6*14.2*1.07);
+});
+
 test("Guangzhou delivery is added to the South Gates purchase in yuan only when enabled",()=>{
   const draft=sample();
   draft.selectedRoute="route2";
