@@ -90,7 +90,7 @@ function fontFor(bold, size){
  return (bold ? '700 ' : '400 ') + size + 'px Arial, "DejaVu Sans", sans-serif';
 }
 
-function buildLabelSegments(values, enabled, showEac, showRst){
+function buildLabelSegments(values, enabled){
  const segments = [];
  const add = (key, label, boldValue=false) => {
   const value = String(values[key] || '').trim();
@@ -115,15 +115,59 @@ function buildLabelSegments(values, enabled, showEac, showRst){
  add('manufacturer','Изготовитель');
  add('manufacturerAddress','Адрес изготовителя');
  add('manufacturingDate','Дата изготовления');
- if(showEac || showRst){
-  if(segments.length) segments.push({text:' ',bold:false});
-  segments.push({text:'Маркировка: ',bold:true});
-  segments.push({text:[showEac?'EAC':'',showRst?'РСТ':''].filter(Boolean).join(' / '),bold:true});
- }
  return segments;
 }
 
-function wrapRichText(ctx, segments, fontSize, maxWidth){
+// Vector outlines reproduce the black certification symbols on the supplied
+// reference labels. Draw on the same canvas used for preview and PDF export.
+const CERTIFICATION_MARKS = {
+ eac: {
+  width:50, height:44,
+  path:'M0 0H11V5H5V19H11V24H5V38H11V43H0Z M16 0H34V44H28V24H22V44H16Z M22 4V19H28V4Z M39 0H50V5H45V39H50V44H39Z'
+ },
+ rst: {
+  width:56, height:44,
+  path:'M51 7C37 -2 19 -3 7 7C-3 15 -3 29 7 37C19 47 37 46 51 37V30C41 34 28 29 28 22C28 13 40 9 51 14Z M8 15C8 10 12 8 17 8C23 8 26 12 26 17C26 23 21 26 14 25V20C18 21 21 19 21 16C21 12 14 12 13 16V35L8 31Z M44 18H56V22H53V26H47V22H44Z'
+ }
+};
+
+function certificationLayout(options, widthPx, heightPx, scale){
+ const marks = [];
+ const right = widthPx - 2.5 * scale;
+ const bottom = heightPx - 1.8 * scale;
+ const gap = 1.5 * scale;
+ const height = 5 * scale;
+ const selected = [];
+ if(options.showRst) selected.push('rst');
+ if(options.showEac) selected.push('eac');
+ // Both signs are stacked on 40 mm labels, like the reference. On compact
+ // 30 mm labels they sit side by side so neither sign touches barcode digits.
+ const horizontal = options.size.height <= 30;
+ let x = right;
+ let y = bottom;
+ for(const key of selected.slice().reverse()){
+  const mark = CERTIFICATION_MARKS[key];
+  const h = height;
+  const w = h * mark.width / mark.height;
+  marks.push({mark,x:x-w,y:y-h,w,h});
+  if(horizontal) x -= w + gap;
+  else y -= h + gap;
+ }
+ return marks;
+}
+
+function drawCertificationMarks(ctx, marks){
+ ctx.fillStyle = '#000000';
+ for(const item of marks){
+  ctx.save();
+  ctx.translate(item.x,item.y);
+  ctx.scale(item.w/item.mark.width,item.h/item.mark.height);
+  ctx.fill(new Path2D(item.mark.path),'evenodd');
+  ctx.restore();
+ }
+}
+
+function wrapRichText(ctx, segments, fontSize, widthForLine){
  const lines = [];
  let current = [];
  let currentWidth = 0;
@@ -139,17 +183,17 @@ function wrapRichText(ctx, segments, fontSize, maxWidth){
    ctx.font = fontFor(segment.bold,fontSize);
    if(whitespace && !current.length) continue;
    const width = ctx.measureText(part).width;
-   if(!whitespace && current.length && currentWidth + width > maxWidth){
+   if(!whitespace && current.length && currentWidth + width > widthForLine(lines.length)){
     pushLine();
    }
-   if(whitespace && currentWidth + width > maxWidth){
+   if(whitespace && currentWidth + width > widthForLine(lines.length)){
     pushLine();
     continue;
    }
-   if(!whitespace && width > maxWidth && !current.length){
+   if(!whitespace && width > widthForLine(lines.length) && !current.length){
     let chunk = '';
     for(const char of part){
-     if(chunk && ctx.measureText(chunk+char).width > maxWidth){
+     if(chunk && ctx.measureText(chunk+char).width > widthForLine(lines.length)){
       current.push({text:chunk,bold:segment.bold});
       pushLine();
       chunk = char;
@@ -221,20 +265,31 @@ function renderLabelCanvas(canvas, options){
    ctx.fillText('Введите код EAN-13',widthPx/2,11*scale);
    ctx.restore();
   }
-  textStart = 23.8 * scale;
+  textStart = (options.showEac || options.showRst ? 21 : 23.8) * scale;
  }
- const segments = buildLabelSegments(options.values,options.enabled,options.showEac,options.showRst);
+ const segments = buildLabelSegments(options.values,options.enabled);
+ const marks = certificationLayout(options,widthPx,heightPx,scale);
  const maxWidth = (size.width - 5) * scale;
  const availableHeight = heightPx - textStart - 1.8*scale;
  let effectiveFontMm = options.textSize;
  let fontPx = effectiveFontMm * scale;
- let lines = wrapRichText(ctx,segments,fontPx,maxWidth);
  let lineHeight = fontPx * 1.16;
+ const widthForLine = index => {
+  const top = textStart + index * lineHeight;
+  const bottom = top + lineHeight;
+  return marks.reduce((width,item) => {
+   if(bottom > item.y - 0.5*scale && top < item.y + item.h + 0.5*scale){
+    return Math.min(width,item.x - 2.5*scale - scale);
+   }
+   return width;
+  },maxWidth);
+ };
+ let lines = wrapRichText(ctx,segments,fontPx,widthForLine);
  while(lines.length * lineHeight > availableHeight && effectiveFontMm > 0.85){
   effectiveFontMm = Math.max(0.85,Math.round((effectiveFontMm - 0.05)*100)/100);
   fontPx = effectiveFontMm * scale;
-  lines = wrapRichText(ctx,segments,fontPx,maxWidth);
   lineHeight = fontPx * 1.16;
+  lines = wrapRichText(ctx,segments,fontPx,widthForLine);
  }
  const maxLines = Math.max(0,Math.floor(availableHeight / lineHeight));
  const overflow = lines.length > maxLines;
@@ -251,6 +306,7 @@ function renderLabelCanvas(canvas, options){
   }
   y += lineHeight;
  }
+ drawCertificationMarks(ctx,marks);
  return {effectiveFontMm,overflow,lineCount:lines.length,visibleLines:visibleLines.length};
 }
 
