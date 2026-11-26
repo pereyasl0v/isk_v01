@@ -105,6 +105,7 @@ export default function MarketCalculator({ shipment } = {}) {
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [archiveError, setArchiveError] = useState("");
   const [loadingId, setLoadingId] = useState(null);
+  const [collapsedProductIds, setCollapsedProductIds] = useState(() => new Set());
 
   const validProducts = draft.products.filter(product => product.name.trim() && n(product.quantity) >= 1);
   const route = draft.selectedRoute;
@@ -140,18 +141,32 @@ export default function MarketCalculator({ shipment } = {}) {
     setNotice("");
   };
 
+  const toggleProduct = id => setCollapsedProductIds(current => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+
   const removeProduct = id => {
     if (draft.products.length === 1) {
       setDraft(current => ({ ...current, products: [createProduct()] }));
+      setCollapsedProductIds(new Set());
       setNotice("");
       return;
     }
     setDraft(current => ({ ...current, products: current.products.filter(product => product.id !== id) }));
+    setCollapsedProductIds(current => {
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
     setNotice("");
   };
 
   const reset = () => {
     setDraft(createDraft());
+    setCollapsedProductIds(new Set());
     setRecordId(null);
     setNotice("Создан новый расчёт. Предыдущая сохранённая запись осталась в архиве.");
     setError("");
@@ -267,6 +282,7 @@ export default function MarketCalculator({ shipment } = {}) {
         },
       });
       setRecordId(result.id);
+      setCollapsedProductIds(new Set());
       setArchiveOpen(false);
       const notices = [];
 
@@ -294,7 +310,6 @@ export default function MarketCalculator({ shipment } = {}) {
     }
   };
 
-  const multipleProducts = calculated.products.length > 1;
   const result = calculated.summary?.[route];
 
   return <div className="mc-page">
@@ -338,30 +353,46 @@ export default function MarketCalculator({ shipment } = {}) {
         const volume = batchVolumeM3(product);
         const netWeight = batchNetWeightKg(product);
         const goodsYuan = n(product.unitPriceYuan) * n(product.quantity);
-        return <article className="mc-product-card" key={product.id}>
-        <div className="mc-product-heading">
-          <strong>{product.name.trim() || "Новый товар"}</strong>
-          <button type="button" className="mc-remove-button" onClick={() => removeProduct(product.id)} title="Удалить товар" aria-label="Удалить товар"><Trash2 size={16} /></button>
-        </div>
-        <div className="mc-product-fields">
-          <TextField label="Наименование товара" value={product.name} onChange={value => updateProduct(product.id, "name", value)} placeholder="Например, Щипцы СВП" maxLength={300} />
-          <TextField label="Артикул / код" value={product.article} onChange={value => updateProduct(product.id, "article", value)} placeholder="Необязательно" maxLength={80} />
-          <NumberField label="Количество" value={product.quantity} onChange={value => updateProduct(product.id, "quantity", value)} unit="шт." step="1" min="1" />
-          <NumberField label="Цена за 1 штуку" value={product.unitPriceYuan} onChange={value => updateProduct(product.id, "unitPriceYuan", value)} unit="¥" />
-          <NumberField label="Длина одной штуки" value={product.lengthCm || ""} onChange={value => updateProduct(product.id, "lengthCm", value)} unit="см" />
-          <NumberField label="Ширина одной штуки" value={product.widthCm || ""} onChange={value => updateProduct(product.id, "widthCm", value)} unit="см" />
-          <NumberField label="Высота одной штуки" value={product.heightCm || ""} onChange={value => updateProduct(product.id, "heightCm", value)} unit="см" />
-          <NumberField label="Вес нетто одной штуки" value={product.unitNetWeightG} onChange={value => updateProduct(product.id, "unitNetWeightG", value)} unit="г" help="Для расчёта маршрута через Южные ворота" />
-          {index === 0 && <NumberField label="Вес упаковки от нетто" value={draft.packagingWeightPercent} onChange={value => setDraft(current => ({ ...current, packagingWeightPercent: value }))} unit="%" help="Для всех товаров. Брутто = нетто + вес упаковки." />}
-        </div>
-        <div className="mc-field-grid mc-batch-totals" aria-label="Параметры партии">
-          <BatchOutput label="Объём партии" value={volume > 0 ? volumeFormat.format(volume) + " м³" : "—"} />
-          <BatchOutput label="Вес нетто партии" value={netWeight > 0 ? volumeFormat.format(netWeight) + " кг" : "—"} />
-          <BatchOutput label="Вес брутто партии" value={netWeight > 0 ? volumeFormat.format(grossWeightWithPackaging(netWeight, draft.packagingWeightPercent)) + " кг" : "—"} />
-          <BatchOutput label="Стоимость товара в юанях" value={volumeFormat.format(goodsYuan) + " ¥"} />
-          {route && <BatchOutput label="Стоимость товара в рублях без доставки и надбавок" value={money(goodsYuan * n(yuanRate))} />}
-        </div>
-      </article>;
+        const calculatedProduct = calculated.products.find(item => item.id === product.id);
+        const unitCost = calculatedProduct?.[route]?.costPerUnit;
+        const expanded = !collapsedProductIds.has(product.id);
+        const fieldsId = "mc-product-fields-" + product.id;
+        return <article className={"mc-product-card " + (expanded ? "is-expanded" : "is-collapsed")} key={product.id}>
+          <div className="mc-product-heading">
+            <button type="button" className="mc-product-toggle" onClick={() => toggleProduct(product.id)}
+              aria-expanded={expanded} aria-controls={fieldsId}
+              aria-label={(expanded ? "Свернуть" : "Развернуть") + " параметры товара " + (product.name.trim() || "без названия")}>
+              <span className="mc-product-summary">
+                <strong>{product.name.trim() || "Новый товар"}</strong>
+                <span className="mc-product-quantity">{quantity(product.quantity)} шт.</span>
+                <span className="mc-product-unit-cost">{unitCost != null ? money(unitCost) + " / шт." : route ? "Заполните данные для расчёта" : "Выберите маршрут для расчёта"}</span>
+              </span>
+              <ChevronDown className="mc-product-toggle-icon" size={18} aria-hidden="true" />
+            </button>
+            <button type="button" className="mc-remove-button" onClick={() => removeProduct(product.id)} title="Удалить товар" aria-label="Удалить товар"><Trash2 size={16} /></button>
+          </div>
+          {expanded && <div className="mc-product-edit" id={fieldsId}>
+            <div className="mc-product-fields">
+              <TextField label="Наименование товара" value={product.name} onChange={value => updateProduct(product.id, "name", value)} placeholder="Например, Щипцы СВП" maxLength={300} />
+              <TextField label="Артикул / код" value={product.article} onChange={value => updateProduct(product.id, "article", value)} placeholder="Необязательно" maxLength={80} />
+              <NumberField label="Количество" value={product.quantity} onChange={value => updateProduct(product.id, "quantity", value)} unit="шт." step="1" min="1" />
+              <NumberField label="Цена за 1 штуку" value={product.unitPriceYuan} onChange={value => updateProduct(product.id, "unitPriceYuan", value)} unit="¥" />
+              <NumberField label="Длина одной штуки" value={product.lengthCm || ""} onChange={value => updateProduct(product.id, "lengthCm", value)} unit="см" />
+              <NumberField label="Ширина одной штуки" value={product.widthCm || ""} onChange={value => updateProduct(product.id, "widthCm", value)} unit="см" />
+              <NumberField label="Высота одной штуки" value={product.heightCm || ""} onChange={value => updateProduct(product.id, "heightCm", value)} unit="см" />
+              <NumberField label="Вес нетто одной штуки" value={product.unitNetWeightG} onChange={value => updateProduct(product.id, "unitNetWeightG", value)} unit="г" help="Для расчёта маршрута через Южные ворота" />
+              {index === 0 && <NumberField label="Вес упаковки от нетто" value={draft.packagingWeightPercent} onChange={value => setDraft(current => ({ ...current, packagingWeightPercent: value }))} unit="%" help="Для всех товаров. Брутто = нетто + вес упаковки." />}
+            </div>
+            <div className="mc-field-grid mc-batch-totals" aria-label="Параметры партии">
+              <BatchOutput label="Объём партии" value={volume > 0 ? volumeFormat.format(volume) + " м³" : "—"} />
+              <BatchOutput label="Вес нетто партии" value={netWeight > 0 ? volumeFormat.format(netWeight) + " кг" : "—"} />
+              <BatchOutput label="Вес брутто партии" value={netWeight > 0 ? volumeFormat.format(grossWeightWithPackaging(netWeight, draft.packagingWeightPercent)) + " кг" : "—"} />
+              <BatchOutput label="Стоимость товара в юанях" value={volumeFormat.format(goodsYuan) + " ¥"} />
+              {route && <BatchOutput label="Стоимость товара в рублях без доставки и надбавок" value={money(goodsYuan * n(yuanRate))} />}
+            </div>
+          </div>}
+          {route && calculatedProduct && <Breakdown product={calculatedProduct} route={route} showProductTotals={true} />}
+        </article>;
       })}
     </section>
 
@@ -401,33 +432,13 @@ export default function MarketCalculator({ shipment } = {}) {
         </div>
       </section>}
 
-    {route && <section className="mc-results-section">
-      <div className="mc-results-heading">
-        <div><h2>Себестоимость</h2></div>
-      </div>
-      {result && <article className={"mc-result-card " + (route === "route1" ? "mc-result-rostov" : "mc-result-south")}>
-        <div className="mc-result-top"><span>{routeNames[route]}</span></div>
-        <strong>{money(result.averageCostPerUnit)} <small>{multipleProducts ? "/ шт. в среднем" : "/ шт."}</small></strong>
-        <div className="mc-result-total"><span>Полная стоимость партии</span><b>{money(result.totalRub)}</b></div>
-      </article>}
+    {route && calculated.warnings.length > 0 && <div className="mc-alert mc-alert-warning"><AlertCircle size={17} /><div>{calculated.warnings.map((warning, index) => <div key={index}>{warning}</div>)}</div></div>}
 
-      {calculated.warnings.length > 0 && <div className="mc-alert mc-alert-warning"><AlertCircle size={17} /><div>{calculated.warnings.map((warning, index) => <div key={index}>{warning}</div>)}</div></div>}
-
-      {calculated.products.map(product => <article className="mc-product-result" key={product.id}>
-        <div className="mc-product-result-heading">
-          <h3>{product.name.trim() || "Без названия"}</h3>
-          <p>{product.article && <span>Артикул {product.article}</span>}<span>{quantity(product.quantity)} шт.</span></p>
-        </div>
-        {multipleProducts && <p className="mc-unit-difference">{money(product[route].costPerUnit)} / шт.</p>}
-        <Breakdown product={product} route={route} showProductTotals={multipleProducts} />
-      </article>)}
-      {result && !shipment && <div className="mc-header-actions mt-4">
-        <button type="button" className="mc-button mc-button-primary" disabled={saving || formingShipment} onClick={formShipment}>
-          <Package size={16} /> {formingShipment ? "Формируем…" : "Сформировать поставку"}
-        </button>
-      </div>}
-      {!calculated.products.length && <div className="mc-empty-results"><Package size={27} /><strong>{validContainerVolume ? "Добавь товары, чтобы увидеть себестоимость" : "Укажите полезный объём контейнера больше нуля"}</strong><span>Результаты пересчитываются автоматически при изменении параметров.</span></div>}
-    </section>}
+    {result && !shipment && <div className="mc-header-actions mt-4">
+      <button type="button" className="mc-button mc-button-primary" disabled={saving || formingShipment} onClick={formShipment}>
+        <Package size={16} /> {formingShipment ? "Формируем…" : "Сформировать поставку"}
+      </button>
+    </div>}
 
     {archiveOpen && <div className="mc-archive-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setArchiveOpen(false); }}>
       <section className="mc-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="mc-archive-title">
