@@ -214,20 +214,26 @@ function wrapRichText(ctx, segments, fontSize, widthForLine){
  return lines;
 }
 
+// Shared dimensions keep the barcode, placeholder and text aligned.
+const BARCODE_TOP_MM = 2.8;
+const BARCODE_HEIGHT_MM = 11.2;
+const BARCODE_DIGIT_BASELINE_MM = BARCODE_TOP_MM + BARCODE_HEIGHT_MM + 4.55;
+const BARCODE_TEXT_START_MM = BARCODE_DIGIT_BASELINE_MM + 1.5;
+
 function renderBarcode(ctx, code, widthMm, scale){
  const pattern = encodeEan13(code);
  const barcodeWidth = (widthMm - 8) * scale;
  const moduleWidth = barcodeWidth / 117;
  const x0 = 4 * scale;
- const y0 = 2.8 * scale;
- const barHeight = 12.2 * scale;
+ const y0 = BARCODE_TOP_MM * scale;
+ const barHeight = BARCODE_HEIGHT_MM * scale;
  ctx.fillStyle = '#111111';
  for(let i=0;i<pattern.length;i++){
   if(pattern[i] !== '1') continue;
   const guard = i < 3 || (i >= 45 && i < 50) || i >= 92;
   ctx.fillRect(x0 + (11+i)*moduleWidth, y0, moduleWidth + 0.18, barHeight + (guard ? 1.25*scale : 0));
  }
- const digitY = y0 + barHeight + 4.55*scale;
+ const digitY = BARCODE_DIGIT_BASELINE_MM * scale;
  ctx.fillStyle = '#111111';
  ctx.font = fontFor(false,3.35*scale);
  ctx.textBaseline = 'alphabetic';
@@ -257,15 +263,15 @@ function renderLabelCanvas(canvas, options){
    ctx.save();
    ctx.strokeStyle = '#c7d1ca';
    ctx.setLineDash([5,5]);
-   ctx.strokeRect(4*scale,3*scale,(size.width-8)*scale,15*scale);
+   ctx.strokeRect(4*scale,3*scale,(size.width-8)*scale,14*scale);
    ctx.setLineDash([]);
    ctx.fillStyle = '#829188';
    ctx.font = fontFor(false,2.2*scale);
    ctx.textAlign = 'center';
-   ctx.fillText('Введите код EAN-13',widthPx/2,11*scale);
+   ctx.fillText('Введите код EAN-13',widthPx/2,10.5*scale);
    ctx.restore();
   }
-  textStart = (options.showEac || options.showRst ? 21 : 23.8) * scale;
+  textStart = BARCODE_TEXT_START_MM * scale;
  }
  const segments = buildLabelSegments(options.values,options.enabled);
  const marks = certificationLayout(options,widthPx,heightPx,scale);
@@ -274,7 +280,9 @@ function renderLabelCanvas(canvas, options){
  let effectiveFontMm = options.textSize;
  let fontPx = effectiveFontMm * scale;
  let lineHeight = fontPx * 1.16;
- const widthForLine = index => {
+ // No marks: every line uses the full printable width. Otherwise only
+ // lines intersecting an enabled mark are shortened.
+ const widthForLine = !marks.length ? () => maxWidth : index => {
   const top = textStart + index * lineHeight;
   const bottom = top + lineHeight;
   return marks.reduce((width,item) => {
