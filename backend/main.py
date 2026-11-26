@@ -28,6 +28,7 @@ from .market_search import router as market_router
 from .digitization import summarize as digitization_summarize
 from .digitization_cache import combine_digitization_days, download_digitization_day, requested_days, manual_digitization_latest_day
 from .product_documents import router as product_documents_router
+from .purchase_shipment_documents import router as purchase_shipment_documents_router
 from .barcode_archive import router as barcode_archive_router
 from .costing import clean_workspace, parse_legacy_xlsx, calculate_workspace
 from .preliminary_costing import clean_preliminary_cost, calculate_preliminary_cost
@@ -112,6 +113,7 @@ def authenticated(request:Request):
 
 app.include_router(market_router,dependencies=[Depends(authenticated)])
 app.include_router(product_documents_router)
+app.include_router(purchase_shipment_documents_router)
 app.include_router(barcode_archive_router)
 
 
