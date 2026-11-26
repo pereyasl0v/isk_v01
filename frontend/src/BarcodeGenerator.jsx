@@ -216,7 +216,7 @@ function wrapRichText(ctx, segments, fontSize, widthForLine){
 
 // Shared dimensions keep the barcode, placeholder and text aligned.
 const BARCODE_TOP_MM = 2.8;
-const BARCODE_HEIGHT_MM = 11.2;
+const BARCODE_HEIGHT_MM = 10.3;
 const BARCODE_DIGIT_BASELINE_MM = BARCODE_TOP_MM + BARCODE_HEIGHT_MM + 4.55;
 const BARCODE_TEXT_START_MM = BARCODE_DIGIT_BASELINE_MM + 1.5;
 
@@ -235,7 +235,7 @@ function renderBarcode(ctx, code, widthMm, scale){
  }
  const digitY = BARCODE_DIGIT_BASELINE_MM * scale;
  ctx.fillStyle = '#111111';
- ctx.font = fontFor(false,3.35*scale);
+ ctx.font = fontFor(true,3.35*scale);
  ctx.textBaseline = 'alphabetic';
  ctx.textAlign = 'left';
  ctx.fillText(code[0],x0+0.2*scale,digitY);
