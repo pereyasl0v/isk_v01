@@ -222,3 +222,28 @@
 /* Shared packaging percentage belongs to the general shipment parameters. */
 .mc .mc-general-parameters{max-width:380px;margin:0 0 16px}
 @media(max-width:600px){.mc .mc-general-parameters{max-width:100%}}
+
+
+/* Improve form readability while keeping the existing compact layout. */
+.mc{font-size:15px}
+.mc .mc-panel,.mc .mc-results-section{padding:16px}
+.mc .mc-product-card{margin-top:10px;padding:13px}
+.mc .mc-product-fields{gap:8px 12px}
+.mc .mc-field>span{margin-bottom:5px;font-size:13px;line-height:1.4}
+.mc .mc-field input,.mc .mc-field select{height:42px;font-size:15px}
+.mc .mc-field em{margin-top:3px;color:#607267;font-size:12px;line-height:1.4}
+.mc .mc-input-wrap small{font-size:12px}
+.mc .mc-field output{font-size:15px}
+.mc .mc-button{font-size:13px}
+.mc .mc-section-heading p,.mc .mc-results-heading p{font-size:12px}
+.mc .mc-product-heading strong,.mc .mc-product-summary strong{font-size:14px}
+.mc .mc-product-quantity,.mc .mc-product-unit-cost{font-size:13px}
+.mc .mc-breakdown summary{padding:10px 12px;font-size:13px}
+.mc .mc-breakdown-row,.mc .mc-breakdown-total,.mc .mc-breakdown-row b,.mc .mc-breakdown-total b{font-size:13px}
+.mc .mc-breakdown-grid h4{font-size:14px}
+.mc .mc-result-total{font-size:12px}
+.mc .mc-result-total b{font-size:13px}
+@media(max-width:600px){
+  .mc .mc-field input,.mc .mc-field select{font-size:16px}
+  .mc .mc-section-heading>.mc-button{font-size:12px}
+}

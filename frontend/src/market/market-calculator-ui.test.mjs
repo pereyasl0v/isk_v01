@@ -41,3 +41,13 @@ test('packaging percentage is a shared general parameter, not a field on the fir
   assert.match(component, /className="mc-general-parameters"/);
   assert.doesNotMatch(component, /index === 0 && <NumberField label="Вес упаковки от нетто"/);
 });
+
+
+test('form typography is comfortably readable without expanding the layout', () => {
+  assert.match(styles, /\.mc \.mc-field>span\{[^}]*font-size:13px/);
+  assert.match(styles, /\.mc \.mc-field input,\.mc \.mc-field select\{[^}]*font-size:15px/);
+  assert.match(styles, /\.mc \.mc-field em\{[^}]*font-size:12px/);
+  assert.match(styles, /\.mc \.mc-product-fields\{gap:8px 12px\}/);
+  assert.match(styles, /\.mc \.mc-product-card\{margin-top:10px;padding:13px\}/);
+  assert.match(styles, /@media\(max-width:600px\)\{\s*\.mc \.mc-field input,\.mc \.mc-field select\{font-size:16px\}/);
+});
