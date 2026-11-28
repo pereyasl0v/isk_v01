@@ -18,9 +18,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, FiniteFloat, SecretStr
-from .security import (SESSION_TTL_SECONDS, decrypt_secret, decrypt_wb_token, encrypt_secret,
-                       encrypt_wb_token, hash_password, load_encryption_key, token_digest,
-                       valid_username, verify_password)
+from .security import (SESSION_TTL_SECONDS, decrypt_secret, encrypt_secret, encrypt_wb_token,
+                       hash_password, load_encryption_key, token_digest, valid_username, verify_password)
 from .ozon import Ozon, ApiError, MOSCOW_TZ
 from .wildberries import Wildberries, WildberriesApiError
 from .storage import Store
