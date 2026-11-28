@@ -691,7 +691,7 @@ function Connection(){
     <label className="field">API-токен Wildberries
      <input autoComplete="new-password" type="password" required minLength={20} maxLength={4096} value={key} onChange={event=>setKey(event.target.value)} placeholder="Токен с правами «Поставки»"/>
     </label>
-    <div className="marketplace-wb-hint">Для подключения нужен API-токен WB с категорией «Поставки» (FBW). ИСК проверит доступ и сохранит токен в зашифрованном виде.</div>
+    <div className="marketplace-wb-hint">Client ID используется как идентификатор кабинета в ИСК. Для доступа к API нужен токен WB с категорией «Поставки» (FBW): ИСК проверит права и сохранит токен в зашифрованном виде.</div>
     <div className="marketplace-form-actions">
      <button className="primary" type="submit" disabled={busy}>{busy?'Проверяем токен…':'Проверить и подключить'}<ArrowRight size={16}/></button>
      <button type="button" onClick={closeAdd} disabled={busy}>Отмена</button>
