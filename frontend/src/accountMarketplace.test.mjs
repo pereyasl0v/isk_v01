@@ -17,11 +17,15 @@ test('account directory imports every displayed marketplace menu icon',()=>{
   }
 });
 
-test('WB flow is a non-functional placeholder, Ozon still uses the existing API',()=>{
+test('WB cabinet flow connects through a supplies API token and keeps Ozon unchanged',()=>{
   assert.match(connection,/chooseMarketplace\('ozon'\)/);
   assert.match(connection,/chooseMarketplace\('wb'\)/);
   assert.match(connection,/api\('\/connect'/);
-  assert.match(connection,/кабинет WB не создаётся/);
+  assert.match(connection,/api\('\/wb\/connect',\{client_id:client\.trim\(\),api_token:key\.trim\(\)\}\)/);
+  assert.match(connection,/api\('\/wb\/disconnect',\{account_id:accountId\}\)/);
+  assert.match(connection,/API-токен Wildberries/);
+  assert.match(connection,/категорией «Поставки»/);
+  assert.doesNotMatch(connection,/кабинет WB не создаётся/);
 });
 
 test('only a green upper-right indicator marks the selected account',()=>{
