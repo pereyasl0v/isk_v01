@@ -5,10 +5,7 @@ from .inventory import quantity
 
 MSK=timezone(timedelta(hours=3))
 ACTIVE={'awaiting_packaging','awaiting_deliver','delivering','delivered'}
-WINDOWS=(7,14,30,90)
-ANALYSIS_WINDOWS=(7,14,30,60,90)
-MIN_SAMPLE_ORDERS=3
-MIN_SPARSE_HISTORY_DAYS=30
+WINDOWS=(7,14,30,60,90)
 MAX_ANALYSIS_DAYS=90
 
 
@@ -56,20 +53,6 @@ def _sum_daily(daily,key,end,days):
     return sum(units for day,units in daily.get(key,{}).items() if start<=day<end)
 
 
-def _analysis_period(daily,key,end,candidates,max_days):
-    """Use the shortest reliable window; extend sparse samples to available history."""
-    for days in candidates:
-        units,orders=_measure(daily,key,end,days)
-        if orders>=MIN_SAMPLE_ORDERS:
-            return days,units,orders,True
-    days=max_days
-    units,orders=_measure(daily,key,end,days)
-    # A sparse sample is only extrapolated when there is at least a month of
-    # history. With a shorter sample, suppress the rate rather than inflate it.
-    reliable=days>=MIN_SPARSE_HISTORY_DAYS or orders>=MIN_SAMPLE_ORDERS
-    return days,units,orders,reliable
-
-
 def calculate(snapshot,history,window):
     if window not in WINDOWS:raise ValueError('Unsupported window')
     anchor=parse(snapshot['at'])
@@ -78,12 +61,7 @@ def calculate(snapshot,history,window):
     first=start.date()+timedelta(days=0 if start.time()==time(0) else 1)
     coverage=max(0,(end-first).days)
     enough=coverage>=window
-    max_days=min(MAX_ANALYSIS_DAYS,coverage)
-    candidates=[d for d in ANALYSIS_WINDOWS if window<=d<=max_days]
-    if max_days>=window and max_days not in candidates:
-        candidates.append(max_days)
-    if not candidates and max_days>0:
-        candidates=[max_days]
+    max_days=min(MAX_ANALYSIS_DAYS,window,coverage)
     history_begin=end-timedelta(days=max_days)
 
     warehouses={}
@@ -148,20 +126,18 @@ def calculate(snapshot,history,window):
                 unassigned_daily[k][day]+=units
 
     rows=[]
-    low_sample=False
     for k in sorted(skus):
-        pooled_days,pooled_units,pooled_orders,pooled_ready=_analysis_period(
-            total_daily,k,end,candidates,max_days
-        ) if max_days else (0,0,0,False)
-        pooled_unknown=_sum_daily(unexpected_daily,k,end,pooled_days) if pooled_days else 0
-        pooled_unassigned=_sum_daily(unassigned_daily,k,end,pooled_days) if pooled_days else 0
+        # The selected interval is used unchanged for both sales velocity
+        # and the replenishment horizon (30, 60, or 90 days in the UI).
+        pooled_days=window
+        pooled_units,pooled_orders=_measure(total_daily,k,end,pooled_days)
+        pooled_unknown=_sum_daily(unexpected_daily,k,end,pooled_days)
+        pooled_unassigned=_sum_daily(unassigned_daily,k,end,pooled_days)
         pooled=estimate(
             sum(n for (sku,_),n in pairs.items() if sku==k) if any(sku==k for sku,_ in pairs) else None,
             pooled_units,pooled_days,pooled_orders,
-            enough and pooled_ready and not pooled_unknown,anchor
+            enough and not pooled_unknown,anchor
         )
-        if enough and not pooled_ready:
-            low_sample=True
 
         # Only include warehouses that actually belong to this SKU:
         # stock rows, analytics rows, or attributed FBO sales. The global
@@ -173,13 +149,12 @@ def calculate(snapshot,history,window):
         )
         details=[]
         for w in sorted(sku_warehouses,key=lambda value:(warehouses.get(value,''),value)):
-            days,units,orders,ready=_analysis_period(
-                local_daily,(k,w),end,candidates,max_days
-            ) if max_days else (0,0,0,False)
-            unassigned=_sum_daily(unassigned_daily,k,end,days) if days else 0
-            unexpected=_sum_daily(unexpected_daily,k,end,days) if days else 0
+            days=window
+            units,orders=_measure(local_daily,(k,w),end,days)
+            unassigned=_sum_daily(unassigned_daily,k,end,days)
+            unexpected=_sum_daily(unexpected_daily,k,end,days)
             local_known=(
-                enough and ready and history.get('warehouse_attribution',False)
+                enough and history.get('warehouse_attribution',False)
                 and not unassigned and not unexpected
             )
             details.append({
@@ -187,8 +162,6 @@ def calculate(snapshot,history,window):
                 'warehouse_name':warehouses[w] or 'Склад Ozon',
                 **estimate(pairs.get((k,w)),units,days,orders,local_known,anchor)
             })
-            if enough and not ready:
-                low_sample=True
 
         required=sku_warehouses
         known={w for sku,w in pairs if sku==k}
@@ -214,12 +187,6 @@ def calculate(snapshot,history,window):
             f'Доступно {coverage} полных дней истории, нужно не менее {window}. '
             'Загрузите более длинный период.'
         )
-    if low_sample:
-        warnings.append(
-            'По части товаров мало заказов. Период анализа автоматически расширяется '
-            'до доступной истории (максимум 90 дней); если истории меньше 30 дней, '
-            'расход не рассчитывается, чтобы не завышать пополнение.'
-        )
     if not history.get('warehouse_attribution',False):
         warnings.append(
             'История загружена старой версией без складов отгрузки. '
@@ -231,6 +198,6 @@ def calculate(snapshot,history,window):
     return {
         'at':snapshot['at'],'history_at':history.get('at'),'window':window,
         'period_start':str(period_start),'period_end':str(end-timedelta(days=1)) if coverage else str(end),
-        'coverage_days':coverage,'enough':enough,'minimum_sample_orders':MIN_SAMPLE_ORDERS,
-        'max_analysis_days':max_days,'warnings':warnings,'items':rows
+        'coverage_days':coverage,'enough':enough,
+        'analysis_days':window,'max_analysis_days':window,'warnings':warnings,'items':rows
     }
