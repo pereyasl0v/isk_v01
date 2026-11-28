@@ -14,6 +14,7 @@ _PASSWORD_R = 8
 _PASSWORD_P = 1
 _PASSWORD_BYTES = 64
 _SECRET_AAD = b"isk-ozon-api-key-v1"
+_WB_TOKEN_AAD = b"isk-wb-api-token-v1"
 _PAYLOAD_AAD = b"isk-sqlite-payload-v1"
 
 
@@ -60,6 +61,14 @@ def encrypt_secret(value, key):
 
 def decrypt_secret(value, key):
     return _decrypt(value, key, _SECRET_AAD)
+
+
+def encrypt_wb_token(value, key):
+    return _encrypt(value, key, _WB_TOKEN_AAD)
+
+
+def decrypt_wb_token(value, key):
+    return _decrypt(value, key, _WB_TOKEN_AAD)
 
 
 def encrypt_payload(data, key):
