@@ -625,7 +625,7 @@ function Connection(){
        <span className={'marketplace-symbol '+(isOzon?'marketplace-symbol-ozon':'marketplace-symbol-wb')} aria-hidden="true">{isOzon?<span className="marketplace-symbol-text">oz</span>:'wb'}</span>
        <div className="marketplace-account-info">
         <div className="marketplace-account-title">
-         <strong>Кабинет {account.client_id}</strong>
+         <strong>{account.sid?'SID ':'Кабинет '}{account.client_id}</strong>
          <span className={'marketplace-account-platform '+(isOzon?'platform-ozon':'platform-wb')}>{isOzon?'Ozon':'Wildberries'}</span>
         </div>
         {!account.connected&&<span className="disconnected-label">Ключ удалён</span>}
@@ -905,7 +905,7 @@ function App(){
      </button>
     </div>}
     <div className="header-actions ml-auto">
-     <NavLink to="/connection" className="account"><span className={'status-dot '+(!cabinet?'offline':'')}/>{cabinet?(cabinet.marketplace==='wb'?'WB':'Ozon')+' · Кабинет '+cabinet.client_id:'Выбрать кабинет'}</NavLink>
+     <NavLink to="/connection" className="account"><span className={'status-dot '+(!cabinet?'offline':'')}/>{cabinet?(cabinet.marketplace==='wb'?'WB':'Ozon')+' · Кабинет '+(cabinet.sid?cabinet.sid.slice(0,8)+'…':cabinet.client_id):'Выбрать кабинет'}</NavLink>
      <button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button>
     </div>
    </header>

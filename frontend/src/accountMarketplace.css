@@ -34,7 +34,7 @@
 .account-row.marketplace-account-row>.marketplace-account-identity{display:flex;flex-direction:row;align-items:flex-start;gap:13px;min-width:0;flex:1}
 .marketplace-account-info{min-width:0;display:flex;flex-direction:column;gap:6px;overflow-wrap:anywhere}
 .marketplace-account-title{display:flex;flex-wrap:wrap;align-items:center;gap:7px 9px;min-width:0}
-.marketplace-account-title>strong{font-size:14px;font-weight:700;color:#2b4033}
+.marketplace-account-title>strong{font-size:14px;font-weight:700;color:#2b4033;min-width:0;overflow-wrap:anywhere}
 .marketplace-account-platform{display:inline-flex;align-items:center;padding:3px 7px;border-radius:5px;font-size:10px;font-weight:750;line-height:1.25}
 .marketplace-account-platform.platform-ozon{background:#e9f1ff;color:#1764d8}
 .marketplace-account-platform.platform-wb{background:#f6eafa;color:#9638b2}

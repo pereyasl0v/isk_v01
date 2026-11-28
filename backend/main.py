@@ -209,7 +209,7 @@ def public_account(account):
 
 def public_wb_account(account):
     return {'id':account['id'],'marketplace':'wb',
-            'client_id':account['client_id'],'connected':account['connected'],
+            'client_id':account['seller_sid'] or account['client_id'],'sid':account['seller_sid'],'connected':account['connected'],
             'roles':['Поставки (FBW)'] if account['connected'] else [],
             'expires_at':None,'updated_at':account['updated_at']}
 
@@ -569,14 +569,20 @@ def connect_wb(body:ConnectWB,request:Request):
         raise HTTPException(404,'Кабинет Wildberries не найден.')
     api_token=body.api_token.get_secret_value().strip()
     try:
-        Wildberries(api_token).ping_supplies()
+        wb=Wildberries(api_token)
+        wb.ping_supplies()
+        sid=wb.seller_sid()
     except WildberriesApiError as exc:
         raise HTTPException(400,str(exc)) from None
     ciphertext=encrypt_wb_token(api_token,ENCRYPTION_KEY)
-    account=store.upsert_wb_account(auth['user_id'],body.client_id,ciphertext,account_id=body.account_id)
+    try:
+        account=store.upsert_wb_account(auth['user_id'],body.client_id,ciphertext,
+                                      seller_sid=sid,account_id=body.account_id)
+    except ValueError as exc:
+        raise HTTPException(409,str(exc)) from None
     if not account:
         raise HTTPException(404,'Кабинет Wildberries не найден.')
-    return {'client_id':account['client_id'],'account_id':account['id'],'connected':True,
+    return {'client_id':sid,'sid':sid,'account_id':account['id'],'connected':True,
             'marketplace':'wb','scope':'supplies'}
 
 

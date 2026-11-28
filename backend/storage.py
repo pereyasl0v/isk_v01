@@ -88,6 +88,9 @@ class Store:
                 UNIQUE(user_id,client_id),
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)''')
             c.execute('CREATE INDEX IF NOT EXISTS wb_account_user ON wb_accounts(user_id,connected)')
+            if 'seller_sid' not in {row[1] for row in c.execute('PRAGMA table_info(wb_accounts)')}:
+                c.execute('ALTER TABLE wb_accounts ADD COLUMN seller_sid TEXT')
+            c.execute('CREATE UNIQUE INDEX IF NOT EXISTS wb_account_seller_sid ON wb_accounts(user_id,seller_sid)')
             c.execute("""CREATE TABLE IF NOT EXISTS digitization_product_costs (
                 account_id TEXT NOT NULL, sku TEXT NOT NULL, payload TEXT NOT NULL,
                 PRIMARY KEY(account_id,sku),
@@ -365,44 +368,55 @@ class Store:
                       (datetime.now(timezone.utc).isoformat(),str(account_id),str(user_id)))
             return c.total_changes>0
 
-    def upsert_wb_account(self,user_id,client_id,ciphertext,*,account_id=None):
+    def upsert_wb_account(self,user_id,client_id,ciphertext,*,seller_sid,account_id=None):
         now=datetime.now(timezone.utc).isoformat()
         with self.db() as c:
-            if account_id is None and client_id is not None:
-                row=c.execute('SELECT id FROM wb_accounts WHERE user_id=? AND client_id=?',
-                              (str(user_id),client_id)).fetchone()
-                account_id=row[0] if row else None
+            c.execute('BEGIN IMMEDIATE')
+            existing=c.execute('SELECT id FROM wb_accounts WHERE user_id=? AND seller_sid=?',
+                               (user_id,seller_sid)).fetchone()
+            if account_id is None:
+                if existing:
+                    account_id=existing[0]
+                elif client_id:
+                    legacy=c.execute('SELECT id FROM wb_accounts WHERE user_id=? AND client_id=?',
+                                     (user_id,client_id)).fetchone()
+                    account_id=legacy[0] if legacy else None
             if account_id is not None:
-                updated=c.execute('''UPDATE wb_accounts SET api_token_ciphertext=?,connected=1,updated_at=?
-                                     WHERE id=? AND user_id=?''',
-                                  (ciphertext,now,account_id,str(user_id)))
-                if not updated.rowcount:
+                target=c.execute('SELECT seller_sid FROM wb_accounts WHERE id=? AND user_id=?',
+                                 (account_id,user_id)).fetchone()
+                if target is None:
                     return None
+                if target[0] and target[0]!=seller_sid:
+                    raise ValueError('Токен принадлежит другому продавцу Wildberries.')
+                if existing and existing[0]!=account_id:
+                    raise ValueError('Кабинет с этим SID уже подключён.')
+                c.execute('''UPDATE wb_accounts SET api_token_ciphertext=?,connected=1,updated_at=?,seller_sid=?
+                             WHERE id=? AND user_id=?''',
+                          (ciphertext,now,seller_sid,account_id,user_id))
             else:
                 account_id=uuid.uuid4().hex
-                client_id=client_id or "WB-"+account_id[:12]
-                c.execute('''INSERT INTO wb_accounts(id,user_id,client_id,api_token_ciphertext,connected,created_at,updated_at)
-                             VALUES (?,?,?,?,1,?,?)''',
-                          (account_id,str(user_id),str(client_id),ciphertext,now,now))
+                c.execute('''INSERT INTO wb_accounts(id,user_id,client_id,api_token_ciphertext,connected,
+                             created_at,updated_at,seller_sid) VALUES (?,?,?,?,1,?,?,?)''',
+                          (account_id,user_id,client_id or account_id,ciphertext,now,now,seller_sid))
         return self.get_wb_account(account_id,user_id)
 
     def get_wb_account(self,account_id,user_id):
         with self.db() as c:
-            row=c.execute('''SELECT id,user_id,client_id,api_token_ciphertext,connected,created_at,updated_at
+            row=c.execute('''SELECT id,user_id,client_id,api_token_ciphertext,connected,created_at,updated_at,seller_sid
                              FROM wb_accounts WHERE id=? AND user_id=?''',
                           (str(account_id),str(user_id))).fetchone()
         if not row:return None
         return {'id':row[0],'user_id':row[1],'client_id':row[2],
                 'api_token_ciphertext':row[3],'connected':bool(row[4]),
-                'created_at':row[5],'updated_at':row[6]}
+                'created_at':row[5],'updated_at':row[6],'seller_sid':row[7]}
 
     def list_wb_accounts(self,user_id):
         with self.db() as c:
-            rows=c.execute('''SELECT id,client_id,connected,created_at,updated_at
+            rows=c.execute('''SELECT id,client_id,connected,created_at,updated_at,seller_sid
                              FROM wb_accounts WHERE user_id=? ORDER BY updated_at DESC,id''',
                           (str(user_id),)).fetchall()
         return [{'id':row[0],'client_id':row[1],'connected':bool(row[2]),
-                 'created_at':row[3],'updated_at':row[4]} for row in rows]
+                 'created_at':row[3],'updated_at':row[4],'seller_sid':row[5]} for row in rows]
 
     def disconnect_wb_account(self,account_id,user_id):
         with self.db() as c:

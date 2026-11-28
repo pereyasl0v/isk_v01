@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import secrets
 import sqlite3
 import tempfile
 import time
@@ -11,7 +12,7 @@ from unittest.mock import patch
 
 scratch=tempfile.TemporaryDirectory()
 os.environ['OZON_FBO_DATA_DIR']=scratch.name
-os.environ['ISK_ENCRYPTION_KEY']=base64.urlsafe_b64encode(b'isk-test-key-32-bytes-0123456789').decode('ascii')
+os.environ['ISK_ENCRYPTION_KEY']=base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('ascii')
 
 from fastapi.testclient import TestClient
 from backend import main
@@ -21,7 +22,19 @@ from backend.security import decrypt_wb_token, hash_password, token_digest
 from backend.ozon import ApiError
 
 HEAD={'Origin':'http://127.0.0.1:8000'}
-ADMIN_PASSWORD='Admin-Password-2026!'
+ADMIN_PASSWORD=secrets.token_urlsafe(24)
+SELLER_PASSWORD=secrets.token_urlsafe(24)
+WRONG_PASSWORD=secrets.token_urlsafe(24)
+OZON_TEST_KEY=''+secrets.token_urlsafe(24)
+OTHER_OZON_TEST_KEY=''+secrets.token_urlsafe(24)
+REPLACEMENT_OZON_TEST_KEY=''+secrets.token_urlsafe(24)
+WB_TEST_TOKEN=''+secrets.token_urlsafe(24)
+FIRST_WB_TEST_TOKEN=''+secrets.token_urlsafe(24)
+NEW_WB_TEST_TOKEN=''+secrets.token_urlsafe(24)
+SECOND_WB_TEST_TOKEN=''+secrets.token_urlsafe(24)
+OTHER_SELLER_WB_TEST_TOKEN='other-seller-'+secrets.token_urlsafe(24)
+INVALID_WB_TEST_TOKEN='invalid-'+secrets.token_urlsafe(24)
+SELLER_INFO_TEST_TOKEN=''+secrets.token_urlsafe(24)
 
 
 class FakeOzon:
@@ -49,6 +62,10 @@ class FakeOzon:
         return {'hits':0,'api_requests':0}
 
 
+WB_SID='b9a72d16-79ce-4321-a5ef-a398ba4267d1'
+OTHER_WB_SID='61e04b0a-d9b0-41cd-8099-e4be4a688e36'
+
+
 class FakeWildberries:
     def __init__(self,api_token):
         self.api_token=api_token
@@ -56,6 +73,9 @@ class FakeWildberries:
         if self.api_token.startswith('invalid'):
             raise main.WildberriesApiError('Токен не имеет доступа к API Поставок.')
         return {'status':'OK','checked_at':'2026-11-28T00:00:00Z'}
+
+    def seller_sid(self):
+        return OTHER_WB_SID if 'other-seller' in self.api_token else WB_SID
 
 
 class AuthApiTests(unittest.TestCase):
@@ -82,14 +102,14 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(r.status_code,200,r.text)
         self.assertNotIn(password,r.text)
 
-    def connect(self,client=None,client_id='123',api_key='ozon-secret-key-123456'):
+    def connect(self,client=None,client_id='123',api_key=OZON_TEST_KEY):
         client=client or self.client
         r=client.post('/api/connect',headers=HEAD,json={'client_id':client_id,'api_key':api_key})
         self.assertEqual(r.status_code,200,r.text)
         self.assertNotIn(api_key,r.text)
         return r.json()
 
-    def connect_wb(self,client_id='wb-123',api_token='wb-api-token-secret-value-123456'):
+    def connect_wb(self,client_id='wb-123',api_token=WB_TEST_TOKEN):
         r=self.client.post('/api/wb/connect',headers=HEAD,json={'client_id':client_id,'api_token':api_token})
         self.assertEqual(r.status_code,200,r.text)
         self.assertNotIn(api_token,r.text)
@@ -106,8 +126,22 @@ class AuthApiTests(unittest.TestCase):
             time.sleep(.01)
         self.fail('Background job did not finish')
 
+    def test_wb_seller_info_uses_common_api_and_requires_sid(self):
+        from backend.wildberries import Wildberries
+        import httpx
+
+        api=Wildberries(SELLER_INFO_TEST_TOKEN)
+        with patch('backend.wildberries.httpx.get',return_value=httpx.Response(200,json={'sid':WB_SID})) as get:
+            self.assertEqual(api.seller_sid(),WB_SID)
+            get.assert_called_once_with('https://common-api.wildberries.ru/api/v1/seller-info',
+                                        headers={'Authorization':SELLER_INFO_TEST_TOKEN},
+                                        timeout=10.0,follow_redirects=False)
+        with patch('backend.wildberries.httpx.get',return_value=httpx.Response(200,json={})):
+            with self.assertRaisesRegex(main.WildberriesApiError,'SID'):
+                api.seller_sid()
+
     def test_wb_connection_validates_token_and_stores_only_ciphertext(self):
-        api_token='wb-api-token-secret-value-123456'
+        api_token=WB_TEST_TOKEN
         result=self.connect_wb(client_id='seller-001',api_token=api_token)
         self.assertEqual(result['marketplace'],'wb')
         self.assertEqual(result['scope'],'supplies')
@@ -118,7 +152,8 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(me.status_code,200,me.text)
         wb_rows=[row for row in me.json()['accounts'] if row['marketplace']=='wb']
         self.assertEqual(len(wb_rows),1)
-        self.assertEqual(wb_rows[0]['client_id'],'seller-001')
+        self.assertEqual(wb_rows[0]['client_id'],WB_SID)
+        self.assertEqual(wb_rows[0]['sid'],WB_SID)
         self.assertEqual(wb_rows[0]['roles'],['Поставки (FBW)'])
         self.assertNotIn(api_token,me.text)
 
@@ -149,35 +184,42 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/auth/me').json()['active_account_id'],ozon['account_id'])
         self.assertEqual(self.client.get('/api/state').json()['account_id'],ozon['account_id'])
 
-    def test_wb_connect_without_client_id_and_renew_by_account_id(self):
-        token='wb-first-secret-token-123456'
-        response=self.client.post('/api/wb/connect',headers=HEAD,json={'api_token':token})
+    def test_wb_deduplicates_by_sid_and_rejects_a_different_seller_on_renewal(self):
+        response=self.client.post('/api/wb/connect',headers=HEAD,json={'api_token':FIRST_WB_TEST_TOKEN})
         self.assertEqual(response.status_code,200,response.text)
         account=response.json()
-        self.assertRegex(account['client_id'],r'^WB-[a-f0-9]{12}$')
-        self.assertEqual(self.client.get('/api/auth/me').json()['active_account_id'],account['account_id'])
-
-        legacy=self.connect_wb(client_id='wb-main')
+        self.assertEqual(account['sid'],WB_SID)
+        duplicate=self.connect_wb(client_id='new-label',api_token=NEW_WB_TEST_TOKEN)
+        self.assertEqual(duplicate['account_id'],account['account_id'])
         response=self.client.post('/api/wb/connect',headers=HEAD,json={
-            'account_id':legacy['account_id'],'api_token':'wb-new-secret-token-123456',
+            'account_id':account['account_id'],'api_token':OTHER_SELLER_WB_TEST_TOKEN,
+        })
+        self.assertEqual(response.status_code,409,response.text)
+        directory=self.client.get('/api/accounts').json()['accounts']
+        self.assertEqual(len(directory),1)
+        self.assertEqual(directory[0]['sid'],WB_SID)
+
+    def test_legacy_wb_card_receives_sid_without_changing_its_id(self):
+        legacy=self.connect_wb(client_id='wb-main')
+        with main.store.db() as connection:
+            connection.execute('UPDATE wb_accounts SET seller_sid=NULL WHERE id=?',(legacy['account_id'],))
+        self.assertEqual(self.client.get('/api/auth/me').json()['active_account_id'],legacy['account_id'])
+        response=self.client.post('/api/wb/connect',headers=HEAD,json={
+            'account_id':legacy['account_id'],'api_token':NEW_WB_TEST_TOKEN,
         })
         self.assertEqual(response.status_code,200,response.text)
         self.assertEqual(response.json()['account_id'],legacy['account_id'])
-        self.assertEqual(response.json()['client_id'],'wb-main')
-        self.assertEqual(len(self.client.get('/api/accounts').json()['accounts']),2)
-        response=self.client.post('/api/wb/connect',headers=HEAD,json={
-            'account_id':'0'*32,'api_token':token,
-        })
-        self.assertEqual(response.status_code,404,response.text)
+        self.assertEqual(response.json()['sid'],WB_SID)
+        self.assertEqual(self.client.get('/api/auth/me').json()['active_account_id'],legacy['account_id'])
 
     def test_wb_reconnect_reuses_account_and_disconnect_preserves_record(self):
-        first=self.connect_wb(client_id='seller-002',api_token='wb-first-secret-token-123456')
-        second=self.connect_wb(client_id='seller-002',api_token='wb-second-secret-token-123456')
+        first=self.connect_wb(client_id='seller-002',api_token=FIRST_WB_TEST_TOKEN)
+        second=self.connect_wb(client_id='seller-002',api_token=SECOND_WB_TEST_TOKEN)
         self.assertEqual(first['account_id'],second['account_id'])
         admin_id=main.store.get_user_by_username('admin')['id']
         stored=main.store.get_wb_account(first['account_id'],admin_id)
         self.assertEqual(decrypt_wb_token(stored['api_token_ciphertext'],main.ENCRYPTION_KEY),
-                         'wb-second-secret-token-123456')
+                         SECOND_WB_TEST_TOKEN)
 
         disconnected=self.client.post('/api/wb/disconnect',headers=HEAD,
                                       json={'account_id':first['account_id']})
@@ -197,7 +239,7 @@ class AuthApiTests(unittest.TestCase):
                 self.api_token=api_token
             def ping_supplies(self):
                 raise main.WildberriesApiError('Токен не имеет доступа к API Поставок.')
-        bad_token='invalid-wb-api-token-secret-123456'
+        bad_token=INVALID_WB_TEST_TOKEN
         with patch.object(main,'Wildberries',RejectingWildberries):
             rejected=self.client.post('/api/wb/connect',headers=HEAD,
                                       json={'client_id':'seller-bad','api_token':bad_token})
@@ -209,8 +251,8 @@ class AuthApiTests(unittest.TestCase):
         account=self.connect_wb(client_id='seller-private')
         other=TestClient(main.app)
         try:
-            main.store.create_user('seller2',hash_password('Seller-Password-2026!'),'user')
-            self.login(other,'seller2','Seller-Password-2026!')
+            main.store.create_user('seller2',hash_password(SELLER_PASSWORD),'user')
+            self.login(other,'seller2',SELLER_PASSWORD)
             denied=other.post('/api/wb/disconnect',headers=HEAD,
                               json={'account_id':account['account_id']})
             self.assertEqual(denied.status_code,404,denied.text)
@@ -337,7 +379,7 @@ class AuthApiTests(unittest.TestCase):
         account=self.connect()
         saved=main.store.get_ozon_account(account['account_id'],main.store.get_user_by_username('admin')['id'])
         self.assertTrue(saved['api_key_ciphertext'].startswith('v1:'))
-        self.assertNotIn('ozon-secret-key-123456',saved['api_key_ciphertext'])
+        self.assertNotIn(OZON_TEST_KEY,saved['api_key_ciphertext'])
         scope='account:'+account['account_id']
         main.store.save(scope,'inventory',{'private_metric':123})
         with main.store.db() as c:
@@ -349,11 +391,11 @@ class AuthApiTests(unittest.TestCase):
         first=self.connect()
         scope1='account:'+first['account_id']
         main.store.save(scope1,'inventory',{'products':[{'name':'user one'}]})
-        user=main.store.create_user('seller2',hash_password('Seller-Password-2026!'),'user')
+        user=main.store.create_user('seller2',hash_password(SELLER_PASSWORD),'user')
         second_client=TestClient(main.app)
         try:
-            self.login(second_client,'seller2','Seller-Password-2026!')
-            second=self.connect(second_client,client_id='123',api_key='another-secret-key-123456')
+            self.login(second_client,'seller2',SELLER_PASSWORD)
+            second=self.connect(second_client,client_id='123',api_key=OTHER_OZON_TEST_KEY)
             self.assertNotEqual(first['account_id'],second['account_id'])
             self.assertIsNone(main.store.latest('account:'+second['account_id'],'inventory'))
             self.assertEqual(main.store.latest(scope1,'inventory')['products'][0]['name'],'user one')
@@ -363,15 +405,15 @@ class AuthApiTests(unittest.TestCase):
 
     def test_admin_can_create_users_but_regular_user_cannot(self):
         r=self.client.post('/api/admin/users',headers=HEAD,json={
-            'username':'seller3','password':'Seller-Password-2026!'
+            'username':'seller3','password':SELLER_PASSWORD
         })
         self.assertEqual(r.status_code,200,r.text)
         created=TestClient(main.app)
         try:
-            self.login(created,'seller3','Seller-Password-2026!')
+            self.login(created,'seller3',SELLER_PASSWORD)
             self.assertEqual(created.get('/api/admin/users').status_code,403)
             self.assertEqual(created.post('/api/admin/users',headers=HEAD,json={
-                'username':'seller4','password':'Seller-Password-2026!'
+                'username':'seller4','password':SELLER_PASSWORD
             }).status_code,403)
         finally:
             created.close()
@@ -415,7 +457,7 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/disconnect',headers=HEAD,json={}).status_code,200)
         self.assertEqual(self.client.get('/api/auth/me').json()['accounts'][0]['connected'],False)
         self.assertEqual(self.client.post('/api/connect',headers=HEAD,json={
-            'client_id':'123','api_key':'replacement-secret-key-123'
+            'client_id':'123','api_key':REPLACEMENT_OZON_TEST_KEY
         }).status_code,200)
         self.assertEqual(main.store.latest(scope,'inventory')['products'][0]['name'],'persisted')
 
@@ -818,9 +860,9 @@ class AuthApiTests(unittest.TestCase):
         bad=TestClient(main.app)
         try:
             for _ in range(8):
-                r=bad.post('/api/auth/login',headers=HEAD,json={'username':'missing','password':'wrong-password-123'})
+                r=bad.post('/api/auth/login',headers=HEAD,json={'username':'missing','password':WRONG_PASSWORD})
                 self.assertEqual(r.status_code,401)
-            r=bad.post('/api/auth/login',headers=HEAD,json={'username':'missing','password':'wrong-password-123'})
+            r=bad.post('/api/auth/login',headers=HEAD,json={'username':'missing','password':WRONG_PASSWORD})
             self.assertEqual(r.status_code,429)
         finally:
             bad.close()
