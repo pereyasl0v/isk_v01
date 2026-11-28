@@ -518,6 +518,13 @@ function Connection(){
   setAddMode('ozon');
   setAddMenuOpen(false);
  }
+ function renewWB(clientId){
+  setClient(clientId);
+  setKey('');
+  setFormError('');
+  setAddMode('wb');
+  setAddMenuOpen(false);
+ }
  function closeAdd(){
   setAddMode(null);
   setClient('');
@@ -529,7 +536,11 @@ function Connection(){
   setBusy(true);
   setFormError('');
   try{
-   await api('/connect',{client_id:client.trim(),api_key:key.trim()});
+   if(addMode==='wb'){
+    await api('/wb/connect',{client_id:client.trim(),api_token:key.trim()});
+   }else{
+    await api('/connect',{client_id:client.trim(),api_key:key.trim()});
+   }
    closeAdd();
    await reload();
    navigate('/');
@@ -550,6 +561,13 @@ function Connection(){
   setBusy(true);
   setError('');
   try{await api('/disconnect',{});await reload()}
+  catch(err){setError(err.message)}
+  finally{setBusy(false)}
+ }
+ async function disconnectWB(accountId){
+  setBusy(true);
+  setError('');
+  try{await api('/wb/disconnect',{account_id:accountId});await reload()}
   catch(err){setError(err.message)}
   finally{setBusy(false)}
  }
@@ -576,7 +594,7 @@ function Connection(){
      </button>
      <button type="button" className="marketplace-add-option" onClick={()=>chooseMarketplace('wb')}>
       <span className="marketplace-symbol marketplace-symbol-wb" aria-hidden="true">wb</span>
-      <span className="marketplace-add-option-text"><strong>Добавить кабинет WB</strong><small>Скоро · Wildberries</small></span>
+      <span className="marketplace-add-option-text"><strong>Добавить кабинет WB</strong><small>Подключение через API Поставок</small></span>
       <ArrowRight size={15}/>
      </button>
     </div>}
@@ -610,6 +628,7 @@ function Connection(){
         {!account.connected&&<span className="disconnected-label">Ключ удалён</span>}
         {isOzon&&<small>Права: {account.roles?.join(', ')||'нет данных'}</small>}
         {isOzon&&account.connected&&<small>Срок действия ключа: {date(account.expires_at)}</small>}
+        {!isOzon&&account.connected&&<small>Доступ: API Поставок (FBW)</small>}
        </div>
       </div>
       <div className="account-actions marketplace-account-actions">
@@ -617,6 +636,10 @@ function Connection(){
         disabled={busy} onClick={()=>select(account.id)}>Выбрать</button>}
        {!account.connected&&isOzon&&<button type="button" className="marketplace-select-button" disabled={busy}
         onClick={()=>renewOzon(account.client_id)}>Обновить ключ</button>}
+       {!isOzon&&<button type="button" className="marketplace-select-button" disabled={busy}
+        onClick={()=>renewWB(account.client_id)}>{account.connected?'Обновить токен':'Подключить токен'}</button>}
+       {!isOzon&&account.connected&&<button type="button" className="marketplace-select-button" disabled={busy}
+        onClick={()=>disconnectWB(account.id)}>Отключить</button>}
       </div>
      </div>;
     })}
@@ -632,7 +655,7 @@ function Connection(){
    <div className="marketplace-add-panel-heading">
     <div className="marketplace-add-panel-title">
      <span className="marketplace-symbol marketplace-symbol-ozon" aria-hidden="true"><span className="marketplace-symbol-text">oz</span></span>
-     <div><h3 id="marketplace-ozon-form-title">{accounts.some(a=>a.client_id===client)?'Обновить кабинет Ozon':'Добавить кабинет Ozon'}</h3>
+     <div><h3 id="marketplace-ozon-form-title">{accounts.some(a=>(a.marketplace||'ozon')==='ozon'&&a.client_id===client)?'Обновить кабинет Ozon':'Добавить кабинет Ozon'}</h3>
       <p>Подключите кабинет по Client ID и API-ключу Ozon.</p></div>
     </div>
     <button className="marketplace-close-panel" type="button" onClick={closeAdd} disabled={busy} aria-label="Закрыть форму"><X size={18}/></button>
@@ -652,19 +675,28 @@ function Connection(){
    </form>
   </section>}
 
-  {addMode==='wb'&&<section className="panel marketplace-add-panel marketplace-wb-placeholder" aria-labelledby="marketplace-wb-placeholder-title">
+  {addMode==='wb'&&<section className="panel marketplace-add-panel" aria-labelledby="marketplace-wb-form-title">
    <div className="marketplace-add-panel-heading">
     <div className="marketplace-add-panel-title">
      <span className="marketplace-symbol marketplace-symbol-wb" aria-hidden="true">wb</span>
-     <div><h3 id="marketplace-wb-placeholder-title">Wildberries</h3><p>Подключение кабинета WB</p></div>
+     <div><h3 id="marketplace-wb-form-title">{accounts.some(a=>a.marketplace==='wb'&&a.client_id===client)?'Обновить кабинет Wildberries':'Добавить кабинет Wildberries'}</h3><p>Подключение к API Wildberries для работы с поставками</p></div>
     </div>
-    <button className="marketplace-close-panel" type="button" onClick={closeAdd} aria-label="Закрыть"><X size={18}/></button>
+    <button className="marketplace-close-panel" type="button" onClick={closeAdd} disabled={busy} aria-label="Закрыть"><X size={18}/></button>
    </div>
-   <div className="marketplace-wb-message">
-    <span className="marketplace-wb-coming">Скоро в ИСК</span>
-    <p>Подключение кабинетов Wildberries находится в разработке. Пока эта функция неактивна: кабинет WB не создаётся, данные не загружаются и вводить API-ключ не нужно.</p>
-   </div>
-   <button type="button" onClick={closeAdd}>Понятно</button>
+   {formError&&<div className="notice marketplace-form-error" role="alert">{formError}</div>}
+   <form className="marketplace-ozon-form" onSubmit={connect}>
+    <label className="field">Client ID / ID кабинета WB
+     <input autoComplete="off" required maxLength={80} pattern="[A-Za-z0-9._-]{1,80}" value={client} onChange={event=>setClient(event.target.value)} placeholder="Введите идентификатор кабинета"/>
+    </label>
+    <label className="field">API-токен Wildberries
+     <input autoComplete="new-password" type="password" required minLength={20} maxLength={4096} value={key} onChange={event=>setKey(event.target.value)} placeholder="Токен с правами «Поставки»"/>
+    </label>
+    <div className="marketplace-wb-hint">Для подключения нужен API-токен WB с категорией «Поставки» (FBW). ИСК проверит доступ и сохранит токен в зашифрованном виде.</div>
+    <div className="marketplace-form-actions">
+     <button className="primary" type="submit" disabled={busy}>{busy?'Проверяем токен…':'Проверить и подключить'}<ArrowRight size={16}/></button>
+     <button type="button" onClick={closeAdd} disabled={busy}>Отмена</button>
+    </div>
+   </form>
   </section>}
  </div>;
 }
