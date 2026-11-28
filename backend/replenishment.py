@@ -194,7 +194,7 @@ def calculate(snapshot,history,window):
         )
     if (anchor.date()-end).days>1:
         warnings.append('История отстаёт от остатков. Обновите оба набора данных.')
-    period_start=end-timedelta(days=coverage)
+    period_start=end-timedelta(days=window)
     return {
         'at':snapshot['at'],'history_at':history.get('at'),'window':window,
         'period_start':str(period_start),'period_end':str(end-timedelta(days=1)) if coverage else str(end),
