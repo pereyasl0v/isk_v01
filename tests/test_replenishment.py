@@ -43,25 +43,25 @@ class ReplenishmentTests(unittest.TestCase):
   self.assertIsNone(p['warehouses'][0]['rate'])
   self.assertEqual(p['total']['rate'],4)
   self.assertEqual(p['missing_warehouse_units'],7)
- def test_sparse_sales_expand_to_long_history(self):
+ def test_sparse_sales_use_the_selected_interval_exactly(self):
   i,h=sample()
-  h['since']='2026-08-11T00:00:00+03:00'
   h['postings']=[posting('only-sale',1,1,day='2026-10-05')]
-  p=calculate(i,h,7)['items'][0]
-  w=next(w for w in p['warehouses'] if w['warehouse_id']=='1')
-  self.assertEqual(w['analysis_days'],60)
-  self.assertEqual(w['orders'],1)
-  self.assertAlmostEqual(w['rate'],1/60)
-  self.assertEqual(p['total']['analysis_days'],60)
-  self.assertAlmostEqual(p['total']['rate'],1/60)
+  for days in (30,60,90):
+   p=calculate(i,h,days)['items'][0]
+   w=next(w for w in p['warehouses'] if w['warehouse_id']=='1')
+   self.assertEqual(w['analysis_days'],days)
+   self.assertEqual(w['orders'],1)
+   self.assertAlmostEqual(w['rate'],1/days)
+   self.assertEqual(p['total']['analysis_days'],days)
+   self.assertAlmostEqual(p['total']['rate'],1/days)
 
  def test_short_history_with_one_order_does_not_extrapolate(self):
   i,h=sample()
   h['since']='2026-10-03T00:00:00+03:00'
   h['postings']=[posting('only-sale',1,1,day='2026-10-05')]
-  p=calculate(i,h,7)['items'][0]
+  p=calculate(i,h,30)['items'][0]
   w=next(w for w in p['warehouses'] if w['warehouse_id']=='1')
-  self.assertEqual(w['analysis_days'],7)
+  self.assertEqual(w['analysis_days'],30)
   self.assertEqual(w['orders'],1)
   self.assertIsNone(w['rate'])
   self.assertEqual(w['state'],'unknown_rate')
