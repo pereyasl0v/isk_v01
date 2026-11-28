@@ -16,22 +16,6 @@ function Days({value}){
   return <span className={className}>{label}</span>;
 }
 
-function dateOnly(value){
-  return value?String(value).slice(0,10):'';
-}
-function shiftDate(value,days){
-  if(!value)return '';
-  const [year,month,day]=dateOnly(value).split('-').map(Number);
-  if(!year||!month||!day)return '';
-  return new Date(Date.UTC(year,month-1,day+days)).toISOString().slice(0,10);
-}
-function daysBetween(start,end){
-  if(!start||!end)return 0;
-  const [sy,sm,sd]=start.split('-').map(Number);
-  const [ey,em,ed]=end.split('-').map(Number);
-  if(!sy||!sm||!sd||!ey||!em||!ed)return 0;
-  return Math.max(0,Math.round((Date.UTC(ey,em-1,ed)-Date.UTC(sy,sm-1,sd))/86400000));
-}
 function planWarehouses(warehouses=[],days=0){
   const rows=warehouses.map(w=>{
     const known=Number.isFinite(w.available)&&Number.isFinite(w.rate);
@@ -99,8 +83,7 @@ function WarehouseList({warehouses=[],horizonDays=0}){
 }
 
 export default function Replenishment({inv,hist,api}){
-  const [window,setWindow]=useState(14);
-  const [targetDate,setTargetDate]=useState('');
+  const [window,setWindow]=useState(30);
   const [data,setData]=useState(null);
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
@@ -127,36 +110,14 @@ export default function Replenishment({inv,hist,api}){
     return {...item,name:product?.name||item.name||'Товар',article:product?.id??null};
   }).filter(item=>[item.name,item.article].join(' ').toLowerCase().includes(query));
 
-  const anchorDate=dateOnly(data?.at);
-  const defaultTargetDate=shiftDate(anchorDate,60);
-  const effectiveTargetDate=targetDate&&targetDate>=anchorDate?targetDate:defaultTargetDate;
-  const horizonDays=daysBetween(anchorDate,effectiveTargetDate);
-
   return <section className="panel replenishment-panel">
     <div className="forecast-header">
       <h3>Прогноз пополнения</h3>
       <div className="forecast-period">
-        <span className="forecast-period-label">Анализ продаж</span>
-        <div className="forecast-windows" aria-label="Период анализа продаж">
-          {[[7,'7 дней'],[14,'14 дней'],[30,'30 дней'],[90,'90 дней']].map(([v,label])=>
+        <span className="forecast-period-label">Период расчёта и отгрузки</span>
+        <div className="forecast-windows" aria-label="Период расчёта и отгрузки">
+          {[[30,'30 дней'],[60,'60 дней'],[90,'90 дней']].map(([v,label])=>
             <button type="button" key={v} onClick={()=>setWindow(v)} className={window===v?'selected':''}>{label}</button>
-          )}
-        </div>
-      </div>
-    </div>
-
-    <div className="forecast-planning">
-      <div className="forecast-planning-copy">
-        <strong>Планирование поставки</strong>
-      </div>
-      <div className="forecast-planning-inputs">
-        <label className="forecast-target-date">
-          <span>Обеспечить запас до</span>
-          <input type="date" value={effectiveTargetDate} min={anchorDate||undefined} disabled={!data?.at||busy} onChange={e=>setTargetDate(e.target.value)}/>
-        </label>
-        <div className="forecast-date-presets" aria-label="Срок пополнения">
-          {[[30,'30 дн.'],[60,'60 дн.'],[90,'90 дн.']].map(([days,label])=>
-            <button type="button" key={days} className={horizonDays===days?'selected':''} disabled={!anchorDate||busy} onClick={()=>setTargetDate(shiftDate(anchorDate,days))}>{label}</button>
           )}
         </div>
       </div>
@@ -183,7 +144,7 @@ export default function Replenishment({inv,hist,api}){
       data&&!rows.length?
         <div className="empty">Товары не найдены</div>:
       rows.map(p=>{
-        const plan=planWarehouses(p.warehouses,horizonDays);
+        const plan=planWarehouses(p.warehouses,window);
         const planAvailable=plan.rows.length>0&&plan.rows.some(w=>w.replenishment_quantity!==null);
         const speed=combinedRate(p.warehouses);
         return <details key={p.sku} className="forecast-product-card">
@@ -216,7 +177,7 @@ export default function Replenishment({inv,hist,api}){
 
           <div className="forecast-product-details">
             {mode==='local'?<>
-              <WarehouseList warehouses={p.warehouses} horizonDays={horizonDays}/>
+              <WarehouseList warehouses={p.warehouses} horizonDays={window}/>
             </>:<>
               <div className="pooled-metrics">
                 <div>
@@ -228,7 +189,7 @@ export default function Replenishment({inv,hist,api}){
                   <strong>{speed===null?'—':rateFormat(speed)+' ед./день'}</strong>
                 </div>
                 <div>
-                  <span>К отгрузке до {date(effectiveTargetDate)}</span>
+                  <span>К отгрузке на {window} дней</span>
                   <strong>{planAvailable?n(plan.total)+' ед.':'—'}</strong>
                   {plan.unknown>0&&<small className="pooled-subline">{planAvailable?'Частично · ':''}{n(plan.unknown)} складов без данных</small>}
                 </div>
