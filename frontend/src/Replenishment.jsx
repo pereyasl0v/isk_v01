@@ -200,7 +200,7 @@ export default function Replenishment({inv,hist,api}){
                   <strong>{speed===null?'—':rateFormat(speed)+' ед./день'}</strong>
                 </div>
                 <div>
-                  <span>К отгрузке на {window} дней</span>
+                  <span>К отгрузке на {displayWindow} дней</span>
                   <strong>{planAvailable?n(plan.total)+' ед.':'—'}</strong>
                   {plan.unknown>0&&<small className="pooled-subline">{planAvailable?'Частично · ':''}{n(plan.unknown)} складов без данных</small>}
                 </div>
