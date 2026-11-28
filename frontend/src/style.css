@@ -512,5 +512,26 @@
  .forecast-skeleton-total{width:58%}
 }
 @media(prefers-reduced-motion:reduce){
- .forecast-loading-indicator:before,.forecast-skeleton{animation:none}
+ .forecast-loading-indicator .modern-loader-ring,.forecast-skeleton{animation:none}
 }
+
+
+/* Unified, quiet loading system */
+.modern-loader-ring{display:inline-block;width:16px;height:16px;flex:0 0 auto;border:2px solid #dce9e1;border-top-color:#286b4d;border-right-color:#75a98b;border-radius:50%;animation:modern-loader-spin .78s linear infinite}
+@keyframes modern-loader-spin{to{transform:rotate(360deg)}}
+.app-loading-screen{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 50% 42%,#eaf3ed 0%,#f4f7f5 48%,#f7f9f8 100%)}
+.app-loading-card{width:min(100%,370px);padding:30px 30px 25px;border:1px solid #e0e9e3;border-radius:20px;background:rgba(255,255,255,.92);box-shadow:0 20px 60px rgba(28,68,47,.08)}
+.app-loading-brand{display:flex;align-items:center;gap:13px}
+.app-loading-mark{width:48px;height:48px;display:grid;place-items:center;border-radius:15px;background:linear-gradient(145deg,#1d6248,#164533);color:#d7f2e1;box-shadow:0 7px 18px rgba(25,82,56,.17)}
+.app-loading-brand>div:last-child{display:flex;flex-direction:column;gap:3px}
+.app-loading-brand strong{font-size:21px;letter-spacing:.04em;color:#203b2d}
+.app-loading-brand span{font-size:11px;color:#7a8b80}
+.app-loading-track{height:4px;margin:27px 0 15px;border-radius:99px;overflow:hidden;background:#eaf0ec}
+.app-loading-track>span{display:block;width:34%;height:100%;border-radius:99px;background:linear-gradient(90deg,#276b4c,#82b99a);animation:app-loader-travel 1.45s cubic-bezier(.6,0,.4,1) infinite}
+@keyframes app-loader-travel{0%{transform:translateX(-115%)}100%{transform:translateX(315%)}}
+.app-loading-card>p{display:flex;align-items:center;justify-content:center;gap:9px;color:#718278;font-size:12px}
+.progress.progress-modern{display:grid;grid-template-columns:16px minmax(0,1fr);align-items:center;gap:8px 11px;padding:12px 15px;background:linear-gradient(100deg,#f0f7f2,#e8f3ec);border:1px solid #dfebe2;color:#315c43;overflow:hidden}
+.progress-modern>span:nth-child(2){font-size:12px;line-height:1.4}
+.progress-track{grid-column:2;height:3px;border-radius:99px;overflow:hidden;background:#d7e7dc}
+.progress-track>span{display:block;width:32%;height:100%;border-radius:99px;background:#347b56;animation:app-loader-travel 1.5s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.modern-loader-ring,.app-loading-track>span,.progress-track>span{animation:none}.app-loading-track>span,.progress-track>span{width:100%;transform:none}}
