@@ -81,6 +81,13 @@ class Store:
                 updated_at TEXT NOT NULL, UNIQUE(user_id,client_id),
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)''')
             c.execute('CREATE INDEX IF NOT EXISTS ozon_account_user ON ozon_accounts(user_id,connected)')
+            c.execute('''CREATE TABLE IF NOT EXISTS wb_accounts (
+                id TEXT PRIMARY KEY, user_id TEXT NOT NULL, client_id TEXT NOT NULL,
+                api_token_ciphertext TEXT, connected INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                UNIQUE(user_id,client_id),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)''')
+            c.execute('CREATE INDEX IF NOT EXISTS wb_account_user ON wb_accounts(user_id,connected)')
             c.execute("""CREATE TABLE IF NOT EXISTS digitization_product_costs (
                 account_id TEXT NOT NULL, sku TEXT NOT NULL, payload TEXT NOT NULL,
                 PRIMARY KEY(account_id,sku),
@@ -351,6 +358,48 @@ class Store:
     def disconnect_ozon_account(self,account_id,user_id):
         with self.db() as c:
             c.execute('''UPDATE ozon_accounts SET api_key_ciphertext=NULL,connected=0,updated_at=?
+                         WHERE id=? AND user_id=?''',
+                      (datetime.now(timezone.utc).isoformat(),str(account_id),str(user_id)))
+            return c.total_changes>0
+
+    def upsert_wb_account(self,user_id,client_id,ciphertext):
+        now=datetime.now(timezone.utc).isoformat()
+        with self.db() as c:
+            row=c.execute('SELECT id FROM wb_accounts WHERE user_id=? AND client_id=?',
+                          (str(user_id),str(client_id))).fetchone()
+            if row:
+                account_id=row[0]
+                c.execute('''UPDATE wb_accounts SET api_token_ciphertext=?,connected=1,updated_at=?
+                             WHERE id=? AND user_id=?''',
+                          (ciphertext,now,account_id,str(user_id)))
+            else:
+                account_id=uuid.uuid4().hex
+                c.execute('''INSERT INTO wb_accounts(id,user_id,client_id,api_token_ciphertext,connected,created_at,updated_at)
+                             VALUES (?,?,?,?,1,?,?)''',
+                          (account_id,str(user_id),str(client_id),ciphertext,now,now))
+        return self.get_wb_account(account_id,user_id)
+
+    def get_wb_account(self,account_id,user_id):
+        with self.db() as c:
+            row=c.execute('''SELECT id,user_id,client_id,api_token_ciphertext,connected,created_at,updated_at
+                             FROM wb_accounts WHERE id=? AND user_id=?''',
+                          (str(account_id),str(user_id))).fetchone()
+        if not row:return None
+        return {'id':row[0],'user_id':row[1],'client_id':row[2],
+                'api_token_ciphertext':row[3],'connected':bool(row[4]),
+                'created_at':row[5],'updated_at':row[6]}
+
+    def list_wb_accounts(self,user_id):
+        with self.db() as c:
+            rows=c.execute('''SELECT id,client_id,connected,created_at,updated_at
+                             FROM wb_accounts WHERE user_id=? ORDER BY updated_at DESC,id''',
+                          (str(user_id),)).fetchall()
+        return [{'id':row[0],'client_id':row[1],'connected':bool(row[2]),
+                 'created_at':row[3],'updated_at':row[4]} for row in rows]
+
+    def disconnect_wb_account(self,account_id,user_id):
+        with self.db() as c:
+            c.execute('''UPDATE wb_accounts SET api_token_ciphertext=NULL,connected=0,updated_at=?
                          WHERE id=? AND user_id=?''',
                       (datetime.now(timezone.utc).isoformat(),str(account_id),str(user_id)))
             return c.total_changes>0
