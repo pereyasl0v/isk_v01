@@ -118,7 +118,7 @@ export default function ProductDetails({product,onClose}){
     <span>Артикул: <strong>{product.offer_id||'—'}</strong></span>
     <span>Код Ozon: <strong>{product.id}</strong></span>
    </div>
-   {loading?<div className="product-modal-loading">Загружаем карточку товара…</div>:<>
+   {loading?<div className="product-modal-loading" role="status"><span className="modern-loader-ring" aria-hidden="true"/>Загружаем карточку товара…</div>:<>
     <div className="product-modal-section">
      <div className="product-modal-section-head"><h3>Описание и заметки</h3><span>{description.length}/4000</span></div>
      <textarea
