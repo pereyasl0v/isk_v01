@@ -39,7 +39,7 @@ function Filter({value,set,placeholder='Поиск по названию, арт
 function Card({label,value,note,icon:Icon=Package,to}){
  const contents=<><div className="metric-top"><span>{label}</span><Icon size={19}/></div><strong>{num(value)}</strong><small>{note}</small></>;
  return to
-  ? <NavLink to={to} className="metric metric-link" aria-label={`Открыть каталог товаров (${num(value)} карточек)`}>{contents}</NavLink>
+  ? <NavLink to={to} className="metric metric-link" aria-label={to==='/products'?`Открыть каталог товаров (${num(value)} карточек)`:`Открыть ${label.toLowerCase()} (${num(value)} ед.)`}>{contents}</NavLink>
   : <div className="metric">{contents}</div>;
 }
 function Overview(){
@@ -50,7 +50,7 @@ function Overview(){
  const chartWindow=salesChartWindow(sales?.rows,period);
  const historyWindow=salesSelectionWindow(chartWindow,selectedRange);
  return <><div className="overview-heading"><div><h1>Обзор кабинета</h1><p className="muted mt-2">Продажи и остатки Ozon</p></div></div>
- <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6 overview-metrics"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек" to="/products"/></div>
+ <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6 overview-metrics"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck} to="/in-transit"/><Card label="Товары" value={s?.products} note="Карточек" to="/products"/></div>
  <SalesHistoryChart data={sales} state={state} act={act} inv={inv} period={period} setPeriod={setPeriod} chartWindow={chartWindow}
   sku={sku} setSku={setSku} selectedRange={selectedRange} setSelectedRange={setSelectedRange}/>
  {inv?.warning&&<Notice>{inv.warning}</Notice>}
@@ -264,6 +264,60 @@ function ProductCatalog(){
  </section>
  {selected&&<ProductDetails key={selected.id} product={selected} onClose={()=>setSelected(null)}/>}
  </>;
+}
+function TransitStocks(){
+ const {inv}=useApp();
+ const [q,setQ]=useState('');
+ const query=q.trim().toLowerCase();
+ const catalog=new Map((inv?.products||[]).filter(p=>p.sku!=null).map(p=>[String(p.sku),p]));
+ const grouped=new Map();
+ for(const row of inv?.analytics||[]){
+  const quantity=row.transit_stock_count;
+  if(!Number.isFinite(quantity)||quantity<=0)continue;
+  const product=catalog.get(String(row.sku));
+  const warehouseId=String(row.warehouse_id??'');
+  const clusterId=String(row.cluster_id??row.macrolocal_cluster_id??'');
+  const warehouseName=String(row.warehouse_name??'').trim();
+  const clusterName=String(row.cluster_name??'').trim();
+  const hasWarehouse=warehouseId!==''&&warehouseId!=='0';
+  const key=hasWarehouse?'warehouse:'+warehouseId:clusterId&&clusterId!=='0'?'cluster:'+clusterId:warehouseName?'name:'+warehouseName:clusterName?'cluster-name:'+clusterName:'unknown';
+  const label=hasWarehouse||warehouseName?warehouseName||'Склад не указан':clusterName||'Склад не указан';
+  if(!grouped.has(key))grouped.set(key,{key,label,cluster:hasWarehouse?clusterName:'',products:new Map(),total:0});
+  const group=grouped.get(key);
+  const sku=String(row.sku);
+  const item=group.products.get(sku)||{sku,name:product?.name||row.name||row.offer_id||'Товар Ozon',article:product?.id??product?.product_id??row.product_id??null,offer:product?.offer_id||row.offer_id||'',quantity:0};
+  item.quantity+=quantity;
+  group.products.set(sku,item);
+  group.total+=quantity;
+ }
+ const groups=[...grouped.values()].sort((a,b)=>b.total-a.total||a.label.localeCompare(b.label,'ru'));
+ const total=groups.reduce((sum,g)=>sum+g.total,0);
+ const shown=groups.map(g=>{
+  const matchesWarehouse=[g.label,g.cluster].join(' ').toLowerCase().includes(query);
+  const products=[...g.products.values()].filter(p=>matchesWarehouse||[p.name,p.article,p.offer,p.sku].join(' ').toLowerCase().includes(query)).sort((a,b)=>b.quantity-a.quantity||a.name.localeCompare(b.name,'ru'));
+  return {...g,products,visibleTotal:products.reduce((sum,p)=>sum+p.quantity,0)};
+ }).filter(g=>g.products.length);
+ return <section className="panel stock-panel">
+  <div className="stock-page-heading">
+   <div><NavLink to="/" className="muted" style={{display:'inline-flex',alignItems:'center',gap:5,marginBottom:10,fontSize:13}}><ArrowRight size={14} style={{transform:'rotate(180deg)'}}/> Обзор кабинета</NavLink><h3>В пути на Ozon</h3></div>
+   <div className="stock-product-total"><strong>{inv?.analytics==null?'—':num(total)} <small>ед.</small></strong><span>Всего в пути</span></div>
+  </div>
+  <div className="stock-page-controls"><Filter value={q} set={setQ} placeholder="Название, артикул или склад"/></div>
+  {inv?.analytics==null?<Empty text="Данные о товарах в пути недоступны" help="Обновите данные кабинета."/>:!groups.length?<Empty text="Нет товаров в пути" help="По последним данным Ozon."/>:!shown.length?<Empty text="Ничего не найдено" help="Измените поисковый запрос."/>:
+   <div className="fbo-stock-list">{shown.map(g=><details className="stock-product-card" key={g.key}>
+    <summary className="stock-product-summary">
+     <div className="stock-product-name"><strong>{g.label}</strong>{g.cluster&&g.cluster!==g.label&&<span>{g.cluster}</span>}</div>
+     <div className="stock-product-total"><strong>{num(g.visibleTotal)} <small>ед.</small></strong><span>В пути</span></div>
+     <div className="stock-product-warehouses"><strong>{num(g.products.length)}</strong><span>товаров</span></div>
+     <ChevronDown className="stock-product-chevron" size={17} aria-hidden="true"/>
+    </summary>
+    <div className="stock-product-details"><ScrollTable label={'Товары в пути: '+g.label}>
+     <table className="stock-warehouse-table"><thead><tr><th scope="col">Товар</th><th scope="col">Артикул</th><th scope="col">В пути, ед.</th></tr></thead>
+      <tbody>{g.products.map(p=><tr key={p.sku}><td>{p.name}</td><td>{p.article??'—'}</td><td>{num(p.quantity)}</td></tr>)}</tbody>
+     </table>
+    </ScrollTable></div>
+   </details>)}</div>}
+ </section>;
 }
 const stockAvailableColumns=[["available_stock_count","Доступно, ед."]];
 const stockRawColumns=[["present","На складе, ед."],["reserved","В резерве, ед."]];
@@ -801,6 +855,7 @@ function App(){
      <Route path="/purchase-shipments/:shipmentId" element={<PurchaseShipments/>}/>
      <Route path="/purchase-shipments/:shipmentId/edit" element={<PurchaseShipments editing/>}/>
      <Route path="/products" element={<RequireAccount><ProductCatalog/></RequireAccount>}/>
+     <Route path="/in-transit" element={<RequireAccount><TransitStocks key={me.active_account_id}/></RequireAccount>}/>
      <Route path="/stocks" element={<RequireAccount><Stocks/></RequireAccount>}/>
      <Route path="/history" element={<Navigate to="/" replace/>}/>
      <Route path="/replenishment" element={<RequireAccount><Replenishment inv={inv} hist={hist} api={api}/></RequireAccount>}/>
