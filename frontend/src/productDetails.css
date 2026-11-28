@@ -34,7 +34,7 @@
 .product-attach-button:hover:not(:disabled){background:#e0f0e5}
 .product-hidden-file-input{display:none}
 .product-file-limit{display:block;margin-top:8px;font-size:10px;color:#849588}
-.product-modal-loading{text-align:center;color:#819486;padding:40px 12px}
+.product-modal-loading{min-height:150px;display:flex;align-items:center;justify-content:center;gap:11px;text-align:center;color:#718278;padding:40px 12px;font-size:13px}.product-modal-loading .modern-loader-ring{width:19px;height:19px;border-width:2px}
 .product-modal-error,.product-modal-success{border-radius:8px;padding:11px 13px;font-size:12px;margin-top:16px;line-height:1.5}
 .product-modal-error{color:#a14f40;background:#fff2ef;border:1px solid #f3d4cb}
 .product-modal-success{color:#296947;background:#edf7ef;border:1px solid #cbdfce}
