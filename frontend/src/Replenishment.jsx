@@ -139,11 +139,6 @@ export default function Replenishment({inv,hist,api}){
         </label>
       </div>
 
-      {data&&<div className="forecast-data-meta">
-        <span>Остатки обновлены: {new Date(data.at).toLocaleString('ru-RU',moscow)}</span>
-        <span>История заказов: {n(data.coverage_days)} полных дней</span>
-      </div>}
-
       {error&&<p role="alert" className="forecast-warning">{error}</p>}
       {Boolean(data?.warnings?.length)&&<details className="forecast-data-alert">
         <summary>Замечания к данным <span>{data.warnings.length}</span></summary>
