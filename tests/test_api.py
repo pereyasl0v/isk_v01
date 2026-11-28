@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from backend import main
 from backend.storage import Store
 from backend.import_legacy import import_legacy_database, LegacyImportError
-from backend.security import hash_password, token_digest
+from backend.security import decrypt_wb_token, hash_password, token_digest
 from backend.ozon import ApiError
 
 HEAD={'Origin':'http://127.0.0.1:8000'}
@@ -49,6 +49,15 @@ class FakeOzon:
         return {'hits':0,'api_requests':0}
 
 
+class FakeWildberries:
+    def __init__(self,api_token):
+        self.api_token=api_token
+    def ping_supplies(self):
+        if self.api_token.startswith('invalid'):
+            raise main.WildberriesApiError('Токен не имеет доступа к API Поставок.')
+        return {'status':'OK','checked_at':'2026-11-28T00:00:00Z'}
+
+
 class AuthApiTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
@@ -58,9 +67,12 @@ class AuthApiTests(unittest.TestCase):
         self.client=TestClient(main.app)
         self.mock=patch.object(main,'Ozon',FakeOzon)
         self.mock.start()
+        self.wb_mock=patch.object(main,'Wildberries',FakeWildberries)
+        self.wb_mock.start()
         self.login(self.client,'admin',ADMIN_PASSWORD)
 
     def tearDown(self):
+        self.wb_mock.stop()
         self.mock.stop()
         self.client.close()
         self.tmp.cleanup()
@@ -77,6 +89,12 @@ class AuthApiTests(unittest.TestCase):
         self.assertNotIn(api_key,r.text)
         return r.json()
 
+    def connect_wb(self,client_id='wb-123',api_token='wb-api-token-secret-value-123456'):
+        r=self.client.post('/api/wb/connect',headers=HEAD,json={'client_id':client_id,'api_token':api_token})
+        self.assertEqual(r.status_code,200,r.text)
+        self.assertNotIn(api_token,r.text)
+        return r.json()
+
     def wait(self,client=None):
         client=client or self.client
         for _ in range(100):
@@ -87,6 +105,76 @@ class AuthApiTests(unittest.TestCase):
                 return r.json()
             time.sleep(.01)
         self.fail('Background job did not finish')
+
+    def test_wb_connection_validates_token_and_stores_only_ciphertext(self):
+        api_token='wb-api-token-secret-value-123456'
+        result=self.connect_wb(client_id='seller-001',api_token=api_token)
+        self.assertEqual(result['marketplace'],'wb')
+        self.assertEqual(result['scope'],'supplies')
+        self.assertTrue(result['connected'])
+        self.assertNotIn(api_token,json.dumps(result))
+
+        me=self.client.get('/api/auth/me')
+        self.assertEqual(me.status_code,200,me.text)
+        wb_rows=[row for row in me.json()['accounts'] if row['marketplace']=='wb']
+        self.assertEqual(len(wb_rows),1)
+        self.assertEqual(wb_rows[0]['client_id'],'seller-001')
+        self.assertEqual(wb_rows[0]['roles'],['Поставки (FBW)'])
+        self.assertNotIn(api_token,me.text)
+
+        stored=main.store.get_wb_account(result['account_id'],'1')
+        self.assertIsNotNone(stored)
+        self.assertNotIn(api_token,stored['api_token_ciphertext'])
+        self.assertEqual(decrypt_wb_token(stored['api_token_ciphertext'],main.ENCRYPTION_KEY),api_token)
+        directory=self.client.get('/api/accounts')
+        self.assertEqual(directory.status_code,200,directory.text)
+        self.assertEqual(directory.json()['accounts'][0]['marketplace'],'wb')
+        self.assertNotIn(api_token,directory.text)
+
+    def test_wb_reconnect_reuses_account_and_disconnect_preserves_record(self):
+        first=self.connect_wb(client_id='seller-002',api_token='wb-first-secret-token-123456')
+        second=self.connect_wb(client_id='seller-002',api_token='wb-second-secret-token-123456')
+        self.assertEqual(first['account_id'],second['account_id'])
+        stored=main.store.get_wb_account(first['account_id'],'1')
+        self.assertEqual(decrypt_wb_token(stored['api_token_ciphertext'],main.ENCRYPTION_KEY),
+                         'wb-second-secret-token-123456')
+
+        disconnected=self.client.post('/api/wb/disconnect',headers=HEAD,
+                                      json={'account_id':first['account_id']})
+        self.assertEqual(disconnected.status_code,200,disconnected.text)
+        listed=[row for row in self.client.get('/api/accounts').json()['accounts']
+                if row['id']==first['account_id']]
+        self.assertEqual(len(listed),1)
+        self.assertFalse(listed[0]['connected'])
+        self.assertIsNone(main.store.get_wb_account(first['account_id'],'1')['api_token_ciphertext'])
+
+        reconnected=self.connect_wb(client_id='seller-002',api_token='wb-third-secret-token-123456')
+        self.assertEqual(reconnected['account_id'],first['account_id'])
+
+    def test_wb_invalid_token_is_not_saved_and_other_users_cannot_disconnect(self):
+        class RejectingWildberries:
+            def __init__(self,api_token):
+                self.api_token=api_token
+            def ping_supplies(self):
+                raise main.WildberriesApiError('Токен не имеет доступа к API Поставок.')
+        bad_token='invalid-wb-api-token-secret-123456'
+        with patch.object(main,'Wildberries',RejectingWildberries):
+            rejected=self.client.post('/api/wb/connect',headers=HEAD,
+                                      json={'client_id':'seller-bad','api_token':bad_token})
+        self.assertEqual(rejected.status_code,400,rejected.text)
+        self.assertNotIn(bad_token,rejected.text)
+        self.assertEqual(main.store.list_wb_accounts('1'),[])
+
+        account=self.connect_wb(client_id='seller-private')
+        other=TestClient(main.app)
+        try:
+            main.store.create_user('seller2',hash_password('Seller-Password-2026!'),'user')
+            self.login(other,'seller2','Seller-Password-2026!')
+            denied=other.post('/api/wb/disconnect',headers=HEAD,
+                              json={'account_id':account['account_id']})
+            self.assertEqual(denied.status_code,404,denied.text)
+        finally:
+            other.close()
 
     def test_auto_deploy_marker_tracks_background_jobs_and_gate_blocks_new_jobs(self):
         import threading
