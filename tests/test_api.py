@@ -122,7 +122,8 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(wb_rows[0]['roles'],['Поставки (FBW)'])
         self.assertNotIn(api_token,me.text)
 
-        stored=main.store.get_wb_account(result['account_id'],'1')
+        admin_id=main.store.get_user_by_username('admin')['id']
+        stored=main.store.get_wb_account(result['account_id'],admin_id)
         self.assertIsNotNone(stored)
         self.assertNotIn(api_token,stored['api_token_ciphertext'])
         self.assertEqual(decrypt_wb_token(stored['api_token_ciphertext'],main.ENCRYPTION_KEY),api_token)
@@ -135,7 +136,8 @@ class AuthApiTests(unittest.TestCase):
         first=self.connect_wb(client_id='seller-002',api_token='wb-first-secret-token-123456')
         second=self.connect_wb(client_id='seller-002',api_token='wb-second-secret-token-123456')
         self.assertEqual(first['account_id'],second['account_id'])
-        stored=main.store.get_wb_account(first['account_id'],'1')
+        admin_id=main.store.get_user_by_username('admin')['id']
+        stored=main.store.get_wb_account(first['account_id'],admin_id)
         self.assertEqual(decrypt_wb_token(stored['api_token_ciphertext'],main.ENCRYPTION_KEY),
                          'wb-second-secret-token-123456')
 
@@ -146,7 +148,7 @@ class AuthApiTests(unittest.TestCase):
                 if row['id']==first['account_id']]
         self.assertEqual(len(listed),1)
         self.assertFalse(listed[0]['connected'])
-        self.assertIsNone(main.store.get_wb_account(first['account_id'],'1')['api_token_ciphertext'])
+        self.assertIsNone(main.store.get_wb_account(first['account_id'],admin_id)['api_token_ciphertext'])
 
         reconnected=self.connect_wb(client_id='seller-002',api_token='wb-third-secret-token-123456')
         self.assertEqual(reconnected['account_id'],first['account_id'])
@@ -163,7 +165,8 @@ class AuthApiTests(unittest.TestCase):
                                       json={'client_id':'seller-bad','api_token':bad_token})
         self.assertEqual(rejected.status_code,400,rejected.text)
         self.assertNotIn(bad_token,rejected.text)
-        self.assertEqual(main.store.list_wb_accounts('1'),[])
+        admin_id=main.store.get_user_by_username('admin')['id']
+        self.assertEqual(main.store.list_wb_accounts(admin_id),[])
 
         account=self.connect_wb(client_id='seller-private')
         other=TestClient(main.app)
