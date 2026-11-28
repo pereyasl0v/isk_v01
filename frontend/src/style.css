@@ -181,6 +181,7 @@
 .forecast-period{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .forecast-period-dates{margin:0;text-align:right;font-size:10px}
 .forecast-period-label{font-size:10px;color:#7d8d82;text-align:right}
+.forecast-period-hint{max-width:300px;font-size:9px;line-height:1.4;color:#87948b;text-align:right}
 .forecast-windows{display:flex;gap:3px;flex-wrap:wrap;padding:3px;background:#f3f6f4;border:1px solid #e8eeea;border-radius:9px}
 .forecast-windows button{border:0;background:transparent;border-radius:6px;padding:7px 10px;font-size:11px;color:#617469}
 .forecast-windows button.selected{background:#205a42;color:#fff;box-shadow:0 1px 3px #183c2b1c}
@@ -307,6 +308,7 @@
  .forecast-date-presets{width:100%}
  .forecast-date-presets button{flex:1}
  .forecast-period-label{text-align:left}
+ .forecast-period-hint{text-align:left}
  .warehouse-overview{gap:8px 14px}
  .warehouse-overview>div{flex-direction:column;align-items:flex-start;gap:1px}
  .warehouse-grid-head{display:none}
