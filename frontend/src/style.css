@@ -188,6 +188,7 @@
 .forecast-planning-copy{display:flex;flex-direction:column;gap:5px;min-width:220px}
 .forecast-planning-copy strong{font-size:13px;font-weight:650;color:#294b38}
 .forecast-planning-copy span{font-size:11px;line-height:1.45;color:#78897e}
+.forecast-planning-copy small{font-size:10px;line-height:1.4;color:#8a968e}
 .forecast-planning-inputs{display:flex;align-items:flex-end;justify-content:flex-end;gap:12px;flex-wrap:wrap}
 .forecast-target-date{display:flex;flex-direction:column;gap:5px;min-width:190px}
 .forecast-target-date>span{font-size:10px;color:#687b6e;font-weight:600}
