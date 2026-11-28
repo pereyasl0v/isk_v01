@@ -91,6 +91,13 @@ class Store:
             if 'seller_sid' not in {row[1] for row in c.execute('PRAGMA table_info(wb_accounts)')}:
                 c.execute('ALTER TABLE wb_accounts ADD COLUMN seller_sid TEXT')
             c.execute('CREATE UNIQUE INDEX IF NOT EXISTS wb_account_seller_sid ON wb_accounts(user_id,seller_sid)')
+            c.execute('''CREATE TABLE IF NOT EXISTS wb_slot_watches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, account_id TEXT NOT NULL,
+                target_date TEXT NOT NULL, warehouse_id INTEGER NOT NULL, warehouse_name TEXT NOT NULL,
+                box_type_id INTEGER NOT NULL, box_type_name TEXT NOT NULL,
+                checked_at TEXT, found_at TEXT, coefficient INTEGER, error TEXT,
+                UNIQUE(account_id,target_date,warehouse_id,box_type_id),
+                FOREIGN KEY(account_id) REFERENCES wb_accounts(id) ON DELETE CASCADE)''')
             c.execute("""CREATE TABLE IF NOT EXISTS digitization_product_costs (
                 account_id TEXT NOT NULL, sku TEXT NOT NULL, payload TEXT NOT NULL,
                 PRIMARY KEY(account_id,sku),

@@ -2,7 +2,7 @@ import ScrollTable from "./ScrollTable";
 import React, {useEffect, useState, createContext, useContext, useRef} from 'react';
 import {createRoot} from 'react-dom/client';
 import {BrowserRouter, NavLink, Routes, Route, Navigate, useLocation, useNavigate} from 'react-router-dom';
-import {Boxes, LayoutDashboard, Package, Warehouse, Truck, Calculator, Plug, ListChecks, RefreshCw, ArrowUpRight, Search, Download, CircleCheck, AlertCircle, ArrowRight, LogOut, BarChart3, Plus, Users, ShieldCheck, Barcode, Menu, X, Clock3, ChevronDown} from 'lucide-react';
+import {Boxes, LayoutDashboard, Package, Warehouse, Truck, Calculator, Plug, ListChecks, RefreshCw, ArrowUpRight, Search, Download, CircleCheck, AlertCircle, ArrowRight, LogOut, BarChart3, Plus, Users, ShieldCheck, Barcode, Menu, X, Clock3, ChevronDown, Bell} from 'lucide-react';
 import './style.css';
 import Replenishment from './Replenishment';
 import MarketPage from './market';
@@ -10,6 +10,7 @@ import PurchaseShipments from './market/PurchaseShipments';
 import DigitizationCached from './DigitizationCached';
 import ProductDetails from './ProductDetails';
 import BarcodeGenerator from './BarcodeGenerator';
+import WbSlotAlerts from './WbSlotAlerts';
 import {statusLabel,roleLabel,groupStocks} from './presentation';
 import {salesChartWindow,salesRangeTotals,salesTickIndexes,salesSelectionWindow,postingsForSalesSelection} from './sales-chart-range.mjs';
 import {shipmentStatusSummary} from './shipment-status-summary.mjs';
@@ -909,7 +910,10 @@ function App(){
  if(!authChecked||loading)return <AppLoader/>;
  if(!me)return <LoginScreen onSuccess={reload}/>;
  const generalLinks=me.user.role==='admin'?[...sharedNav,adminNav]:sharedNav;
- const navItems=[...(ozonId?[['Ozon',ozonNav]]:[]),['Общие разделы',generalLinks]];
+ const wbId=cabinet?.marketplace==='wb'?cabinet.id:null;
+ const marketplaceNav=ozonId?[['Ozon',ozonNav]]:wbId?
+  [['Wildberries',[['/wb/slot-alerts','Уведомления о доступных слотах',Bell]]]]:[];
+ const navItems=[...marketplaceNav,['Общие разделы',generalLinks]];
  return <Context.Provider value={{me,state,setState,inv,hist,digi,sales,reload,act,setError}}>
   <div className="shell"><AppNavigation items={navItems} username={me.user.username} onLogout={logout}/>
   <main>
@@ -942,6 +946,7 @@ function App(){
      )}{state?.job.error&&<Notice>{state.job.error}</Notice>}
     <Routes>
      <Route path="/connection" element={<Connection/>}/>
+     <Route path="/wb/slot-alerts" element={wbId?<WbSlotAlerts key={wbId} accountId={wbId} api={api}/>:<Navigate to="/connection" replace/>}/>
      <Route path="/admin/users" element={me.user.role==='admin'?<AdminUsers/>:<Navigate to="/" replace/>}/>
      <Route path="/" element={<RequireOzon><Overview key={me.active_account_id}/></RequireOzon>}/>
      <Route path="/digitization" element={<RequireOzon><DigitizationCached key={me.active_account_id} state={state?.account_id===me.active_account_id?state:null} digi={digi} act={act}/></RequireOzon>}/>

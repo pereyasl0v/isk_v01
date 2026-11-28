@@ -126,6 +126,61 @@ class AuthApiTests(unittest.TestCase):
             time.sleep(.01)
         self.fail('Background job did not finish')
 
+    def test_wb_slot_watch_checks_availability_and_retains_result(self):
+        from datetime import timedelta
+        from backend import wb_slots
+
+        account_id=self.connect_wb()['account_id']
+        path=f'/api/wb/accounts/{account_id}'
+        now=datetime.now(timezone.utc)
+        today=now.astimezone(main.MOSCOW_TZ).date()
+        tariff={'date':today.isoformat()+'T00:00:00Z','warehouseID':12,'warehouseName':'Тестовый склад',
+                'boxTypeID':2,'boxTypeName':'Короба','coefficient':0,'allowUnload':False}
+        watch={'date':today.isoformat(),'warehouse_id':12,'box_type_id':2}
+        with patch.object(wb_slots.Wildberries,'acceptance_coefficients',return_value=[tariff]) as tariffs:
+            options=self.client.get(path+'/slot-options')
+            self.assertEqual(options.status_code,200,options.text)
+            self.assertEqual(options.json()['options'][0]['box_type_name'],'Короба')
+            for _ in range(2):
+                response=self.client.post(path+'/slot-watches',headers=HEAD,json=watch)
+                self.assertEqual(response.status_code,200,response.text)
+            self.assertEqual(len(response.json()['watches']),1)
+            wb_slots.check_watches(main.store,main.ENCRYPTION_KEY,now)
+            self.assertEqual(self.client.get(path+'/slot-watches').json()['watches'][0]['status'],'waiting')
+            tariffs.assert_called_once()
+
+        available={**tariff,'allowUnload':True}
+        with patch.object(wb_slots,'tariff_snapshot',return_value={'rows':[available]}):
+            wb_slots.check_watches(main.store,main.ENCRYPTION_KEY,now+timedelta(minutes=2))
+        watches=self.client.get(path+'/slot-watches').json()['watches']
+        self.assertEqual(watches[0]['status'],'found')
+        self.assertEqual(watches[0]['coefficient'],0)
+        self.assertTrue(watches[0]['found_at'])
+        removed=self.client.post(path+'/slot-watches/remove',headers=HEAD,json={'id':watches[0]['id']})
+        self.assertEqual(removed.json()['watches'],[])
+
+    def test_wb_slot_watch_waits_for_horizon_and_reports_provider_errors(self):
+        from datetime import timedelta
+        from backend import wb_slots
+
+        account_id=self.connect_wb()['account_id']
+        path=f'/api/wb/accounts/{account_id}'
+        now=datetime.now(timezone.utc)
+        today=now.astimezone(main.MOSCOW_TZ).date()
+        options={'rows':[{'warehouseID':12,'boxTypeID':2}]}
+        with patch.object(wb_slots,'tariff_snapshot',return_value=options):
+            for day in (today,today+timedelta(days=30)):
+                response=self.client.post(path+'/slot-watches',headers=HEAD,json={
+                    'date':day.isoformat(),'warehouse_id':12,'box_type_id':2,
+                })
+                self.assertEqual(response.status_code,200,response.text)
+        with patch.object(wb_slots,'tariff_snapshot',return_value={'error':'WB временно недоступен'}):
+            wb_slots.check_watches(main.store,main.ENCRYPTION_KEY,now)
+        watches=self.client.get(path+'/slot-watches').json()['watches']
+        self.assertEqual([watch['status'] for watch in watches],['error','outside_window'])
+        self.assertEqual(watches[0]['error'],'WB временно недоступен')
+        self.assertIsNone(watches[1]['checked_at'])
+
     def test_wb_seller_info_uses_common_api_and_requires_sid(self):
         from backend.wildberries import Wildberries
         import httpx

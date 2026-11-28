@@ -1,0 +1,15 @@
+.wb-slot-page{display:grid;gap:18px}
+.wb-slot-page header p,.wb-slot-panel>p{margin:8px 0 0}
+.wb-slot-panel h2{font-size:17px;margin:0 0 16px}
+.wb-slot-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;align-items:end;gap:12px}
+.wb-slot-form .field,.wb-slot-form select,.wb-slot-form input{min-width:0;width:100%}
+.wb-slot-form button{white-space:nowrap}
+.wb-slot-list{display:grid;gap:10px}
+.wb-slot-watch{padding:14px;border:1px solid #e0e8e2;border-radius:10px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.wb-slot-watch.found{background:#f0f8f2;border-color:#c5dfcc}
+.wb-slot-watch p{margin:4px 0 0}
+.wb-slot-status{display:flex;align-items:center;gap:6px;font-weight:600}
+.wb-slot-watch.found .wb-slot-status{color:#236849}
+.wb-slot-error{color:#a13e38;margin-top:10px}
+@media(max-width:900px){.wb-slot-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.wb-slot-form{grid-template-columns:minmax(0,1fr)}}

@@ -22,6 +22,7 @@ from .security import (SESSION_TTL_SECONDS, decrypt_secret, encrypt_secret, encr
                        hash_password, load_encryption_key, token_digest, valid_username, verify_password)
 from .ozon import Ozon, ApiError, MOSCOW_TZ
 from .wildberries import Wildberries, WildberriesApiError
+from . import wb_slots
 from .storage import Store
 from .inventory import summarize, aggregate
 from .replenishment import calculate as replenishment_calculate
@@ -65,6 +66,7 @@ async def lifespan(app):
     stop=threading.Event()
     worker=threading.Thread(target=run_digitization_schedule,args=(stop,),daemon=True)
     worker.start()
+    threading.Thread(target=wb_slots.run_schedule,args=(lambda:store,ENCRYPTION_KEY,stop),daemon=True).start()
     try:
         yield
     finally:
@@ -601,6 +603,60 @@ def disconnect_wb(body:SelectAccount,request:Request):
     if not store.disconnect_wb_account(body.account_id,auth['user_id']):
         raise HTTPException(404,'Кабинет Wildberries не найден.')
     return {'ok':True,'data_preserved':True}
+
+
+def connected_wb_account(request:Request,account_id:str):
+    auth=authenticated(request)
+    account=store.get_wb_account(account_id,auth['user_id'])
+    if not account:
+        raise HTTPException(404,'Кабинет Wildberries не найден.')
+    if not account['connected'] or not account['api_token_ciphertext']:
+        raise HTTPException(409,'Подключите кабинет Wildberries.')
+    if not ENCRYPTION_KEY:
+        raise HTTPException(503,'На сервере не настроен ключ шифрования.')
+    return account
+
+
+@app.get('/api/wb/accounts/{account_id}/slot-options')
+def wb_slot_options(account_id:str,request:Request):
+    account=connected_wb_account(request,account_id)
+    snapshot=wb_slots.tariff_snapshot(store,account,ENCRYPTION_KEY)
+    if snapshot.get('error'):
+        raise HTTPException(502,snapshot['error'])
+    options=wb_slots.box_options(snapshot).values()
+    return {'options':sorted(options,key=lambda item:(item['warehouse_name'],item['box_type_name']))}
+
+
+@app.get('/api/wb/accounts/{account_id}/slot-watches')
+def wb_slot_watches(account_id:str,request:Request):
+    connected_wb_account(request,account_id)
+    today=datetime.now(MOSCOW_TZ).date()
+    return {'today':today,'watches':wb_slots.list_watches(store,account_id,today)}
+
+
+@app.post('/api/wb/accounts/{account_id}/slot-watches')
+def create_wb_slot_watch(account_id:str,body:wb_slots.SlotWatch,request:Request):
+    account=connected_wb_account(request,account_id)
+    today=datetime.now(MOSCOW_TZ).date()
+    if body.date<today:
+        raise HTTPException(422,'Выберите сегодня или будущую дату.')
+    snapshot=wb_slots.tariff_snapshot(store,account,ENCRYPTION_KEY)
+    if snapshot.get('error'):
+        raise HTTPException(502,snapshot['error'])
+    option=wb_slots.box_options(snapshot).get((body.warehouse_id,body.box_type_id))
+    if option is None:
+        raise HTTPException(422,'Выберите склад и тип упаковки из списка WB.')
+    wb_slots.add_watch(store,account_id,body,option)
+    return {'today':today,'watches':wb_slots.list_watches(store,account_id,today)}
+
+
+@app.post('/api/wb/accounts/{account_id}/slot-watches/remove')
+def delete_wb_slot_watch(account_id:str,body:wb_slots.SlotWatchRemoval,request:Request):
+    connected_wb_account(request,account_id)
+    if not wb_slots.remove_watch(store,account_id,body.id):
+        raise HTTPException(404,'Наблюдение не найдено.')
+    today=datetime.now(MOSCOW_TZ).date()
+    return {'today':today,'watches':wb_slots.list_watches(store,account_id,today)}
 
 
 @app.post('/api/disconnect')

@@ -19,7 +19,7 @@ class Wildberries:
     def __init__(self, api_token: str):
         self.api_token = str(api_token or "").strip()
 
-    def _get(self, url, forbidden_message):
+    def _get(self, url, forbidden_message, response_type=dict):
         if not self.api_token:
             raise WildberriesApiError("Введите API-токен Wildberries.")
         try:
@@ -39,7 +39,7 @@ class Wildberries:
                 payload = response.json()
             except ValueError:
                 raise WildberriesApiError("API Wildberries вернул некорректный ответ.") from None
-            if isinstance(payload, dict):
+            if isinstance(payload, response_type):
                 return payload
             raise WildberriesApiError("API Wildberries вернул некорректный ответ.")
 
@@ -70,3 +70,10 @@ class Wildberries:
             return str(UUID(payload.get("sid", "")))
         except (ValueError, TypeError, AttributeError):
             raise WildberriesApiError("Wildberries не вернул корректный SID продавца.") from None
+
+    def acceptance_coefficients(self):
+        return self._get(
+            f"{COMMON_API}/api/tariffs/v1/acceptance/coefficients",
+            "Токен WB не даёт доступа к коэффициентам приёмки. Проверьте права токена в кабинете WB.",
+            list,
+        )
