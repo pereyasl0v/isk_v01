@@ -472,9 +472,7 @@ function LoginScreen({onSuccess}){
 function Connection(){
  const {state,me,reload,setError}=useApp();
  const navigate=useNavigate();
- const accounts=me?.accounts||[];
- const connectedAccounts=accounts.filter(account=>account.connected);
- const disconnectedAccounts=accounts.filter(account=>!account.connected);
+ const accounts=(me?.accounts||[]).filter(account=>account.connected);
  const [client,setClient]=useState('');
  const [wbAccount,setWbAccount]=useState(null);
  const [renewingOzon,setRenewingOzon]=useState(false);
@@ -600,22 +598,21 @@ function Connection(){
       <strong>{account.sid?'SID ':'Кабинет '}{account.client_id}</strong>
       <span className={'marketplace-account-platform '+(isOzon?'platform-ozon':'platform-wb')}>{isOzon?'Ozon':'Wildberries'}</span>
      </div>
-     {!account.connected&&<span className="disconnected-label">{isOzon?'Без API-ключа':'Без токена'}</span>}
-     {isOzon&&account.connected&&<small>Права: {account.roles?.join(', ')||'нет данных'}</small>}
-     {isOzon&&account.connected&&<small>Срок действия ключа: {date(account.expires_at)}</small>}
-     {!isOzon&&account.connected&&<small>Доступ: API Поставок (FBW)</small>}
+     {isOzon&&<small>Права: {account.roles?.join(', ')||'нет данных'}</small>}
+     {isOzon&&<small>Срок действия ключа: {date(account.expires_at)}</small>}
+     {!isOzon&&<small>Доступ: API Поставок (FBW)</small>}
     </div>
    </div>
    <div className="account-actions marketplace-account-actions">
-    {account.connected&&!selected&&<button type="button" className="marketplace-select-button"
+    {!selected&&<button type="button" className="marketplace-select-button"
      disabled={busy} onClick={()=>select(account)}>Выбрать</button>}
     {isOzon&&<button type="button" className="marketplace-select-button" disabled={busy||ozonSyncRunning}
-     onClick={()=>renewOzon(account.client_id)}>{account.connected?'Обновить ключ':'Подключить ключ'}</button>}
+     onClick={()=>renewOzon(account.client_id)}>Обновить ключ</button>}
     {!isOzon&&<button type="button" className="marketplace-select-button" disabled={busy}
-     onClick={()=>renewWB(account)}>{account.connected?'Обновить токен':'Подключить токен'}</button>}
-    {account.connected&&<button type="button" className="marketplace-select-button marketplace-remove-key"
+     onClick={()=>renewWB(account)}>Обновить токен</button>}
+    <button type="button" className="marketplace-select-button marketplace-remove-key"
      disabled={busy||ozonSyncRunning}
-     onClick={()=>confirmRemoval(account)}>{isOzon?'Удалить ключ':'Удалить токен'}</button>}
+     onClick={()=>confirmRemoval(account)}>{isOzon?'Удалить ключ':'Удалить токен'}</button>
    </div>
   </div>;
  }
@@ -652,21 +649,16 @@ function Connection(){
   <section className="panel marketplace-accounts-panel">
    <div className="marketplace-panel-title">
     <h3>Список кабинетов</h3>
-    <span className="marketplace-account-total">{accounts.length} {accounts.length===1?'кабинет':accounts.length%10>=2&&accounts.length%10<=4&&(accounts.length%100<12||accounts.length%100>14)?'кабинета':'кабинетов'}</span>
+    <span className="marketplace-account-total">{accounts.length} {accounts.length%10===1&&accounts.length%100!==11?'кабинет':accounts.length%10>=2&&accounts.length%10<=4&&(accounts.length%100<12||accounts.length%100>14)?'кабинета':'кабинетов'}</span>
    </div>
    {!accounts.length&&<div className="marketplace-accounts-empty">
     <Plug size={24}/>
-    <strong>Пока нет кабинетов</strong>
+    <strong>Пока нет подключённых кабинетов</strong>
     <p>Нажмите «Добавить кабинет» и выберите Ozon или Wildberries.</p>
    </div>}
-   {connectedAccounts.length>0&&<div className="account-list marketplace-account-list">
-    {connectedAccounts.map(renderAccount)}
+   {accounts.length>0&&<div className="account-list marketplace-account-list">
+    {accounts.map(renderAccount)}
    </div>}
-   {accounts.length>0&&!connectedAccounts.length&&<p className="muted">Нет подключённых кабинетов.</p>}
-   {disconnectedAccounts.length>0&&<details className="marketplace-disconnected">
-    <summary>Отключённые кабинеты <span className="marketplace-account-total">{disconnectedAccounts.length}</span></summary>
-    <div className="account-list marketplace-account-list">{disconnectedAccounts.map(renderAccount)}</div>
-   </details>}
   </section>
 
   <dialog ref={removeDialog} className="marketplace-key-dialog" aria-labelledby="marketplace-key-dialog-title"
@@ -674,7 +666,7 @@ function Connection(){
    {removeAccount&&<>
     <h3 id="marketplace-key-dialog-title">{removeAccount.marketplace==='wb'?'Удалить токен Wildberries?':'Удалить ключ Ozon?'}</h3>
     <p className="marketplace-key-dialog-account">{removeAccount.sid?'SID ':'Кабинет '}{removeAccount.client_id}</p>
-    <p>Кабинет переместится в «Отключённые». Ранее загруженные данные сохранятся.</p>
+    <p>Кабинет исчезнет из списка. Ранее загруженные данные сохранятся.</p>
     {removeError&&<p className="notice marketplace-form-error" role="alert">{removeError}</p>}
     <div className="marketplace-key-dialog-actions">
      <button type="button" autoFocus disabled={busy} onClick={()=>removeDialog.current.close()}>Отмена</button>

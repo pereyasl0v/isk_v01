@@ -81,10 +81,6 @@
 
 .marketplace-wb-token{grid-column:1/-1}
 
-.marketplace-disconnected{margin-top:16px;border-top:1px solid #e0e8e2;padding-top:12px}
-.marketplace-disconnected summary{cursor:pointer;font-size:13px;font-weight:600}
-.marketplace-disconnected summary .marketplace-account-total{margin-left:6px}
-.marketplace-disconnected .marketplace-account-list{margin-top:12px}
 button.marketplace-remove-key{color:#a13e38;border-color:#ead0cc}
 button.marketplace-remove-key:hover:not(:disabled){background:#fbefed;border-color:#daa59f}
 .marketplace-key-dialog{width:min(420px,calc(100% - 32px));padding:24px;border:1px solid #dce5de;border-radius:14px;background:#fff;color:#26352f}

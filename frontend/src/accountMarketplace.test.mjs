@@ -36,7 +36,7 @@ test('only a green upper-right indicator marks the selected account',()=>{
   assert.match(styles,/background:#23a36a/);
   assert.doesNotMatch(connection,/Активный|Подключён|>Выбран</);
   assert.doesNotMatch(connection,/marketplace-account-current|marketplace-selected-button|marketplace-active-connection/);
-  assert.match(connection,/account\.connected&&!selected&&<button/);
+  assert.match(connection,/!selected&&<button/);
 
 });
 
@@ -48,10 +48,10 @@ test('Ozon letters are optically centered in every blue square',()=>{
 });
 
 
-test('credential removal targets the card and moves it into the disconnected list',()=>{
+test('credential removal targets the card and the directory only shows connected accounts',()=>{
   assert.match(connection,/onClick=\{\(\)=>confirmRemoval\(account\)\}/);
   assert.match(connection,/api\(account.marketplace==='wb'\?'\/wb\/disconnect':'\/disconnect',\{account_id:account.id\}\)/);
   assert.match(connection,/<dialog ref=\{removeDialog\}/);
-  assert.match(connection,/<details className="marketplace-disconnected">/);
-  assert.match(connection,/disconnectedAccounts.map\(renderAccount\)/);
+  assert.doesNotMatch(connection,/Отключённые кабинеты/);
+  assert.match(connection,/filter\(account=>account.connected\)/);
 });
