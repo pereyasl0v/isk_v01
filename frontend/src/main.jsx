@@ -317,7 +317,7 @@ function Stocks(){
  }).filter(g=>g.visible.length&&[g.name,g.offer,g.article,...g.skus,...g.visible.map(r=>(r.warehouse_name||'')+' '+r.warehouse_id)].join(' ').toLowerCase().includes(query));
  return <section className="panel stock-panel">
   <div className="stock-page-heading">
-   <div><h3>Остатки FBO</h3><p>Наличие товаров на складах Ozon</p></div>
+   <div><h3>Остатки FBO</h3></div>
    <div className="stock-mode" role="group" aria-label="Вид остатков">
     <button type="button" aria-pressed={!raw} className={!raw?'selected':''} onClick={()=>setRaw(false)}>Доступные остатки</button>
     <button type="button" aria-pressed={raw} className={raw?'selected':''} onClick={()=>setRaw(true)}>Учёт и резервы</button>
@@ -327,7 +327,6 @@ function Stocks(){
    <Filter value={q} set={setQ} placeholder="Название, артикул или склад"/>
    <label className="check"><input type="checkbox" checked={only} onChange={e=>setOnly(e.target.checked)}/> {raw?'Только склады с остатком или резервом':'Только склады с доступным остатком'}</label>
   </div>
-  {inv?.at&&<p className="stock-updated">Остатки обновлены: {date(inv.at)}</p>}
   {!raw&&inv?.analytics===null?<Empty text="Остатки пока недоступны" help="Обновите данные. Если загрузка не удаётся, проверьте разрешение на чтение аналитики у ключа Ozon."/>:!shown.length?<Empty text="Карточки не найдены" help="Проверьте загрузку, поиск и фильтр остатков."/>:
    <div className="fbo-stock-list">{shown.map(g=><details className="stock-product-card" key={g.key}>
     <summary className="stock-product-summary">
