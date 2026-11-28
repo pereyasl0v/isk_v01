@@ -609,7 +609,7 @@ function Connection(){
    {!accounts.length&&<div className="marketplace-accounts-empty">
     <Plug size={24}/>
     <strong>Пока нет кабинетов</strong>
-    <p>Нажмите «Добавить кабинет» и выберите маркетплейс. Ozon уже доступен.</p>
+    <p>Нажмите «Добавить кабинет» и выберите Ozon или Wildberries.</p>
    </div>}
    <div className="account-list marketplace-account-list">
     {accounts.map(account=>{
