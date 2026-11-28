@@ -84,7 +84,7 @@ function WarehouseList({warehouses=[],enough=false,horizonDays=0,targetDate=''})
       <div className="warehouse-grid-head">
         <span>Склад</span>
         <span>Остаток</span>
-        <span>Заказы за период / расход</span>
+        <span>Продажи / расход (фактический период)</span>
         <span>Хватит на</span>
         <span>К отгрузке</span>
       </div>
@@ -96,8 +96,8 @@ function WarehouseList({warehouses=[],enough=false,horizonDays=0,targetDate=''})
           <strong>{n(w.available)} <small>ед.</small></strong>
         </div>
         <div className="warehouse-rate">
-          <strong>{enough?n(w.units)+' ед.':'—'}</strong>
-          <small>{n(w.rate)} ед./день</small>
+          <strong>{enough&&w.rate!==null?n(w.units)+' ед. за '+n(w.analysis_days)+' дн.':'—'}</strong>
+          <small>{w.rate===null?'Недостаточно данных':n(w.rate)+' ед./день · '+n(w.orders)+' заказов'}</small>
         </div>
         <div className="warehouse-cover">
           <Days value={w}/>
@@ -156,14 +156,15 @@ export default function Replenishment({inv,hist,api}){
           <h3>Прогноз пополнения</h3>
         </div>
         <div className="forecast-period">
-          <span className="forecast-period-label">История заказов для расчёта расхода</span>
+          <span className="forecast-period-label">Минимальный период анализа продаж</span>
+          <small className="forecast-period-hint">Если заказов мало, программа автоматически расширит анализ до доступных 90 дней.</small>
           <div className="forecast-windows" aria-label="Период истории заказов">
             {[[7,'7 дней'],[14,'14 дней'],[30,'30 дней'],[90,'90 дней']].map(([v,label])=>
               <button type="button" key={v} onClick={()=>setWindow(v)} className={window===v?'selected':''}>{label}</button>
             )}
           </div>
           {data&&<p className="muted forecast-period-dates">
-            Заказы: {date(data.period_start+'T00:00:00+03:00')} — {date(data.period_end+'T00:00:00+03:00')}
+            История в базе: {date(data.period_start+'T00:00:00+03:00')} — {date(data.period_end+'T00:00:00+03:00')} ({n(data.coverage_days)} дн.)
           </p>}
         </div>
       </div>
@@ -171,7 +172,8 @@ export default function Replenishment({inv,hist,api}){
       <div className="forecast-planning">
         <div className="forecast-planning-copy">
           <strong>Спрогнозировать пополнение до даты</strong>
-          <span>Потребность рассчитывается отдельно для каждого склада по его среднему расходу.</span>
+          <span>Потребность рассчитывается отдельно для каждого склада по его истории продаж.</span>
+          <small>Если меньше 3 заказов, период анализа расширяется до 90 дней. При истории короче 30 дней и редких продажах расход не экстраполируется, чтобы не завышать отгрузку.</small>
           <small>Округление вверх до целой штуки. Пока без страхового запаса, срока доставки и товаров в пути.</small>
         </div>
         <div className="forecast-planning-inputs">
@@ -253,7 +255,11 @@ export default function Replenishment({inv,hist,api}){
               </>:<>
                 <div className="pooled-metrics">
                   <div><span>Доступно на всех складах</span><strong>{n(p.total.available)} <small>ед.</small></strong></div>
-                  <div><span>Общий расход</span><strong>{n(p.total.rate)} <small>ед./день</small></strong></div>
+                  <div>
+                    <span>Общий расход</span>
+                    <strong>{n(p.total.rate)} <small>ед./день</small></strong>
+                    <small className="pooled-subline">Расчёт: {n(p.total.units)} ед. за {n(p.total.analysis_days)} дн. · {n(p.total.orders)} заказов</small>
+                  </div>
                   <div>
                     <span>Хватит без пополнения</span>
                     <strong><Days value={p.total}/></strong>
