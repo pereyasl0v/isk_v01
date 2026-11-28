@@ -1,4 +1,4 @@
-"""Warehouse-level replenishment forecasts with adaptive sales-history windows."""
+"""Warehouse-level replenishment forecasts using one selected period for sales and replenishment."""
 from datetime import datetime, timedelta, timezone, time
 from collections import defaultdict
 from .inventory import quantity
