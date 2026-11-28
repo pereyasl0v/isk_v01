@@ -36,7 +36,7 @@ test('only a green upper-right indicator marks the selected account',()=>{
   assert.match(styles,/background:#23a36a/);
   assert.doesNotMatch(connection,/Активный|Подключён|>Выбран</);
   assert.doesNotMatch(connection,/marketplace-account-current|marketplace-selected-button|marketplace-active-connection/);
-  assert.match(connection,/account\.connected&&isOzon&&!selected&&<button/);
+  assert.match(connection,/account\.connected&&!selected&&<button/);
   assert.match(connection,/!account\.connected&&<span className="disconnected-label">Ключ удалён/);
   assert.match(connection,/onClick=\{disconnect\}/);
 });

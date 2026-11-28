@@ -258,8 +258,11 @@ class Store:
     def set_session_account(self,token_hash,user_id,account_id):
         with self.db() as c:
             if account_id is not None:
-                exists=c.execute('SELECT 1 FROM ozon_accounts WHERE id=? AND user_id=? AND connected=1',
-                                 (str(account_id),str(user_id))).fetchone()
+                owner=(str(account_id),str(user_id))
+                exists=c.execute("""SELECT 1 FROM ozon_accounts WHERE id=? AND user_id=? AND connected=1
+                                    UNION ALL
+                                    SELECT 1 FROM wb_accounts WHERE id=? AND user_id=? AND connected=1""",
+                                 (*owner,*owner)).fetchone()
                 if not exists:return False
             c.execute('UPDATE auth_sessions SET active_account_id=? WHERE token_hash=? AND user_id=?',
                       (account_id,str(token_hash),str(user_id)))
@@ -399,10 +402,14 @@ class Store:
 
     def disconnect_wb_account(self,account_id,user_id):
         with self.db() as c:
-            c.execute('''UPDATE wb_accounts SET api_token_ciphertext=NULL,connected=0,updated_at=?
+            updated=c.execute('''UPDATE wb_accounts SET api_token_ciphertext=NULL,connected=0,updated_at=?
                          WHERE id=? AND user_id=?''',
                       (datetime.now(timezone.utc).isoformat(),str(account_id),str(user_id)))
-            return c.total_changes>0
+            if not updated.rowcount:
+                return False
+            c.execute('UPDATE auth_sessions SET active_account_id=NULL WHERE user_id=? AND active_account_id=?',
+                      (str(user_id),str(account_id)))
+            return True
 
     def get_costing_workspace(self,user_id):
         with self.db() as c:

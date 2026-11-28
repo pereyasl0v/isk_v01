@@ -132,6 +132,23 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(directory.json()['accounts'][0]['marketplace'],'wb')
         self.assertNotIn(api_token,directory.text)
 
+    def test_switching_to_wb_persists_across_requests_and_gates_ozon(self):
+        ozon=self.connect()
+        wb=self.connect_wb()
+        wb_id=wb['account_id']
+        selected=self.client.post('/api/accounts/select',headers=HEAD,json={'account_id':wb_id})
+        self.assertEqual(selected.status_code,200,selected.text)
+        self.assertEqual(self.client.get('/api/auth/me').json()['active_account_id'],wb_id)
+        self.assertEqual(self.client.get('/api/accounts').json()['active_account_id'],wb_id)
+        self.assertEqual(self.client.get('/api/state').status_code,409)
+        self.assertEqual(self.client.get('/api/inventory').status_code,409)
+        self.assertEqual(self.client.post('/api/wb/disconnect',headers=HEAD,
+                                         json={'account_id':wb_id}).status_code,200)
+        self.assertEqual(self.client.post('/api/accounts/select',headers=HEAD,
+                                         json={'account_id':wb_id}).status_code,404)
+        self.assertEqual(self.client.get('/api/auth/me').json()['active_account_id'],ozon['account_id'])
+        self.assertEqual(self.client.get('/api/state').json()['account_id'],ozon['account_id'])
+
     def test_wb_reconnect_reuses_account_and_disconnect_preserves_record(self):
         first=self.connect_wb(client_id='seller-002',api_token='wb-first-secret-token-123456')
         second=self.connect_wb(client_id='seller-002',api_token='wb-second-secret-token-123456')

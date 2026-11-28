@@ -219,6 +219,12 @@ def public_accounts(user_id):
     accounts.extend(public_wb_account(a) for a in store.list_wb_accounts(user_id))
     return sorted(accounts,key=lambda account:account.get('updated_at') or '',reverse=True)
 
+def default_account(accounts):
+    connected=[account for account in accounts if account['connected']]
+    return next((account for account in connected if account['marketplace']=='ozon'),
+                connected[0] if connected else None)
+
+
 class CostingWorkspaceBody(BaseModel):
     revision:int=Field(ge=0)
     products:list[dict]=Field(default_factory=list)
@@ -297,8 +303,8 @@ def auth_login(body:Login,request:Request,response:Response):
     store.clear_login_failures(ip,'*')
     old_token=request.cookies.get('isk_session','')
     if old_token:store.delete_auth_session(token_digest(old_token))
-    accounts=store.list_ozon_accounts(user['id'])
-    active=next((a['id'] for a in accounts if a['connected']),None)
+    account=default_account(public_accounts(user['id']))
+    active=account['id'] if account else None
     token=secrets.token_urlsafe(48)
     store.create_auth_session(token_digest(token),user['id'],active,SESSION_TTL_SECONDS)
     response.set_cookie('isk_session',token,httponly=True,samesite='strict',
@@ -319,14 +325,14 @@ def auth_logout(request:Request,response:Response):
 @app.get('/api/auth/me')
 def auth_me(request:Request):
     auth=authenticated(request)
-    accounts=store.list_ozon_accounts(auth['user_id'])
+    accounts=public_accounts(auth['user_id'])
     active_id=auth.get('active_account_id')
     active=next((a for a in accounts if a['id']==active_id and a['connected']),None)
     if not active:
-        active=next((a for a in accounts if a['connected']),None)
+        active=default_account(accounts)
         active_id=active['id'] if active else None
         store.set_session_account(auth['token_hash'],auth['user_id'],active_id)
-    return {'user':auth['user'],'accounts':public_accounts(auth['user_id']),
+    return {'user':auth['user'],'accounts':accounts,
             'active_account_id':active_id,'session_expires_at':auth['expires_at']}
 
 

@@ -543,17 +543,17 @@ function Connection(){
    }
    closeAdd();
    await reload();
-   navigate('/');
+   if(addMode==='ozon')navigate('/');
   }catch(err){setFormError(err.message)}
   finally{setBusy(false)}
  }
- async function select(id){
+ async function select(account){
   setBusy(true);
   setError('');
   try{
-   await api('/accounts/select',{account_id:id});
+   await api('/accounts/select',{account_id:account.id});
    await reload();
-   navigate('/');
+   if(account.marketplace!=='wb')navigate('/');
   }catch(err){setError(err.message)}
   finally{setBusy(false)}
  }
@@ -632,8 +632,8 @@ function Connection(){
        </div>
       </div>
       <div className="account-actions marketplace-account-actions">
-       {account.connected&&isOzon&&!selected&&<button type="button" className="marketplace-select-button"
-        disabled={busy} onClick={()=>select(account.id)}>Выбрать</button>}
+       {account.connected&&!selected&&<button type="button" className="marketplace-select-button"
+        disabled={busy} onClick={()=>select(account)}>Выбрать</button>}
        {!account.connected&&isOzon&&<button type="button" className="marketplace-select-button" disabled={busy}
         onClick={()=>renewOzon(account.client_id)}>Обновить ключ</button>}
        {!isOzon&&<button type="button" className="marketplace-select-button" disabled={busy}
@@ -721,7 +721,22 @@ function AdminUsers(){
   </section>
  </div>
 }
-const nav=[['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],['/barcodes','Штрихкоды',Barcode],['/market-calculator','Расчёты',Calculator],['/purchase-shipments','Поставки',Truck],['/stocks','Остатки Ozon',Warehouse],['/replenishment','Прогноз пополнения',Calculator],['/connection','Мои кабинеты',Plug]];
+const ozonNav=[
+ ['/','Обзор',LayoutDashboard],['/digitization','Оцифровка',BarChart3],
+ ['/stocks','Остатки Ozon',Warehouse],['/replenishment','Прогноз пополнения',Calculator],
+];
+const sharedNav=[
+ ['/barcodes','Штрихкоды',Barcode],['/market-calculator','Расчёты',Calculator],
+ ['/purchase-shipments','Поставки',Truck],['/connection','Мои кабинеты',Plug],
+];
+const adminNav=['/admin/users','Пользователи',Users];
+function selectedCabinet(auth){
+ return auth?.accounts?.find(account=>account.id===auth.active_account_id&&account.connected);
+}
+function ozonCabinetId(auth){
+ const cabinet=selectedCabinet(auth);
+ return cabinet?.marketplace==='ozon'?cabinet.id:null;
+}
 function AppNavigation({items,username,onLogout}){
  const dialog=useRef(null);
  const trigger=useRef(null);
@@ -734,9 +749,13 @@ function AppNavigation({items,username,onLogout}){
   mobile.addEventListener('change',closeOnDesktop);
   return()=>mobile.removeEventListener('change',closeOnDesktop);
  },[]);
- const renderLinks=onSelect=>items.map(([path,label,Icon])=><NavLink
-  key={path} to={path} end={path==='/'} onClick={onSelect}
-  className={({isActive})=>'nav-item '+(isActive?'active':'')}><Icon size={19} aria-hidden="true"/>{label}</NavLink>);
+ const renderLinks=onSelect=>items.map(([label,links])=>
+  <div key={label} className="app-nav-group" role="group" aria-label={label}>
+   <div className="app-nav-group-title" aria-hidden="true">{label}</div>
+   {links.map(([path,text,Icon])=><NavLink
+    key={path} to={path} end={path==='/'} onClick={onSelect}
+    className={({isActive})=>'nav-item '+(isActive?'active':'')}><Icon size={19} aria-hidden="true"/>{text}</NavLink>)}
+  </div>);
  return <>
   <aside className="sidebar">
    <div className="brand"><div className="brand-icon"><Boxes size={25}/></div><div className="isk-brand">ИСК</div></div>
@@ -765,23 +784,36 @@ function AppNavigation({items,username,onLogout}){
   </dialog>
  </>;
 }
-function RequireAccount({children}){const {me}=useApp();return me?.active_account_id?children:<Navigate to="/connection" replace/>}
+function RequireOzon({children}){const {me}=useApp();return ozonCabinetId(me)?children:<Navigate to="/connection" replace/>}
 function App(){
  const location=useLocation();
  const [me,setMe]=useState(null);const [state,setState]=useState(null);const [inv,setInv]=useState(null);const [hist,setHist]=useState(null);const [digi,setDigi]=useState(null);const [sales,setSales]=useState(null);
  const [error,setError]=useState('');const [loading,setLoading]=useState(true);const [authChecked,setAuthChecked]=useState(false);const runningJob=useRef(null);
- async function loadData(){const [i,h,d,sa]=await Promise.all([api('/inventory'),api('/history'),api('/digitization'),api('/sales')]);setInv(i);setHist(h);setDigi(d);setSales(sa)}
- function clearData(){runningJob.current=null;setState(null);setInv(null);setHist(null);setDigi(null);setSales(null)}
+ const currentOzon=useRef(null);
+ const cabinet=selectedCabinet(me);
+ const ozonId=ozonCabinetId(me);
+ async function loadData(accountId){
+  const [i,h,d,sa]=await Promise.all([api('/inventory'),api('/history'),api('/digitization'),api('/sales')]);
+  if(currentOzon.current===accountId){setInv(i);setHist(h);setDigi(d);setSales(sa)}
+ }
+ function clearData(){currentOzon.current=null;runningJob.current=null;setState(null);setInv(null);setHist(null);setDigi(null);setSales(null)}
  async function reload(){
-  try{const auth=await api('/auth/me');setMe(auth);
-   if(auth.active_account_id){const [s,i,h,d,sa]=await Promise.all([api('/state'),api('/inventory'),api('/history'),api('/digitization'),api('/sales')]);setState(s);setInv(i);setHist(h);setDigi(d);setSales(sa)}
-   else clearData();
+  try{
+   const auth=await api('/auth/me');
+   const accountId=ozonCabinetId(auth);
+   if(currentOzon.current!==accountId)clearData();
+   currentOzon.current=accountId;
+   setMe(auth);
+   if(accountId){
+    const [s]=await Promise.all([api('/state'),loadData(accountId)]);
+    if(currentOzon.current===accountId&&s.account_id===accountId)setState(s);
+   }
   }catch(e){if(e.status===401){setMe(null);clearData()}else if(e.status!==409)setError(e.message)}
   finally{setAuthChecked(true);setLoading(false)}
  }
  useEffect(()=>{reload()},[]);
  useEffect(()=>{
-  if(!me?.active_account_id)return;
+  if(!ozonId)return;
   let active=true;
   let timer=null;
   let inFlight=false;
@@ -795,7 +827,7 @@ function App(){
    inFlight=true;
    try{
     const s=await api('/state');
-    if(!active)return;
+    if(!active||currentOzon.current!==ozonId||s.account_id!==ozonId)return;
     jobRunning=Boolean(s.job.running);
     const finished=!s.job.running&&runningJob.current;
     runningJob.current=s.job.running?s.job:null;
@@ -804,8 +836,8 @@ function App(){
       // Sales and shipment history are refreshed in one backend job.
       // Commit both on screen together so their totals aren't out of sync.
       const [nextSales,nextHistory]=await Promise.all([api('/sales'),api('/history')]);
-      if(active){setSales(nextSales);setHist(nextHistory)}
-    }else if(finished)await loadData();
+      if(active&&currentOzon.current===ozonId){setSales(nextSales);setHist(nextHistory)}
+    }else if(finished)await loadData(ozonId);
    }catch(e){
     if(!active)return;
     if(e.status===401){setMe(null);clearData()}
@@ -826,17 +858,19 @@ function App(){
    clearTimeout(timer);
    document.removeEventListener('visibilitychange',onVisibilityChange);
   };
- },[me?.active_account_id,state?.job?.running]);
+ },[ozonId,state?.job?.running]);
  async function act(path,body){
+  const accountId=currentOzon.current;
+  if(!accountId)return {started:false};
   const chart=path==='/sales/sync';
   if(!chart)setError('');
   try{
    const result=await api(path,body);
+   if(currentOzon.current!==accountId)return result;
    if(result.started===false){
     if(chart){
       const [nextSales,nextHistory]=await Promise.all([api('/sales'),api('/history')]);
-      setSales(nextSales);
-      setHist(nextHistory);
+      if(currentOzon.current===accountId){setSales(nextSales);setHist(nextHistory)};
     }
     return result;
    }
@@ -845,14 +879,15 @@ function App(){
    setState(s=>({...s,job}));
    return result;
   }catch(e){
-   if(!chart||e.status!==409)setError(e.message);
+   if(currentOzon.current===accountId&&(!chart||e.status!==409))setError(e.message);
    return {started:false,status:e.status,error:e.message};
   }
  }
  async function logout(){try{await api('/auth/logout',{})}finally{setMe(null);clearData()}}
  if(!authChecked||loading)return <AppLoader/>;
  if(!me)return <LoginScreen onSuccess={reload}/>;
- const navItems=me.user.role==='admin'?[...nav,['/admin/users','Пользователи',Users]]:nav;
+ const generalLinks=me.user.role==='admin'?[...sharedNav,adminNav]:sharedNav;
+ const navItems=[...(ozonId?[['Ozon',ozonNav]]:[]),['Общие разделы',generalLinks]];
  return <Context.Provider value={{me,state,setState,inv,hist,digi,sales,reload,act,setError}}>
   <div className="shell"><AppNavigation items={navItems} username={me.user.username} onLogout={logout}/>
   <main>
@@ -870,7 +905,7 @@ function App(){
      </button>
     </div>}
     <div className="header-actions ml-auto">
-     <NavLink to="/connection" className="account"><span className={'status-dot '+(!state?'offline':'')}/>{state?('Ozon · Кабинет '+state.client_id):'Выбрать кабинет'}</NavLink>
+     <NavLink to="/connection" className="account"><span className={'status-dot '+(!cabinet?'offline':'')}/>{cabinet?(cabinet.marketplace==='wb'?'WB':'Ozon')+' · Кабинет '+cabinet.client_id:'Выбрать кабинет'}</NavLink>
      <button className="logout-button" onClick={logout}><LogOut size={16}/> Выйти</button>
     </div>
    </header>
@@ -886,20 +921,20 @@ function App(){
     <Routes>
      <Route path="/connection" element={<Connection/>}/>
      <Route path="/admin/users" element={me.user.role==='admin'?<AdminUsers/>:<Navigate to="/" replace/>}/>
-     <Route path="/" element={<RequireAccount><Overview key={me.active_account_id}/></RequireAccount>}/>
-     <Route path="/digitization" element={<RequireAccount><DigitizationCached key={me.active_account_id} state={state?.account_id===me.active_account_id?state:null} digi={digi} act={act}/></RequireAccount>}/>
+     <Route path="/" element={<RequireOzon><Overview key={me.active_account_id}/></RequireOzon>}/>
+     <Route path="/digitization" element={<RequireOzon><DigitizationCached key={me.active_account_id} state={state?.account_id===me.active_account_id?state:null} digi={digi} act={act}/></RequireOzon>}/>
      <Route path="/barcodes" element={<BarcodeGenerator/>}/>
      <Route path="/market-calculator" element={<MarketPage/>}/>
      <Route path="/purchase-shipments" element={<PurchaseShipments/>}/>
      <Route path="/purchase-shipments/:shipmentId" element={<PurchaseShipments/>}/>
      <Route path="/purchase-shipments/:shipmentId/edit" element={<PurchaseShipments editing/>}/>
-     <Route path="/products" element={<RequireAccount><ProductCatalog/></RequireAccount>}/>
-     <Route path="/in-transit" element={<RequireAccount><TransitStocks key={me.active_account_id}/></RequireAccount>}/>
-     <Route path="/stocks" element={<RequireAccount><Stocks/></RequireAccount>}/>
+     <Route path="/products" element={<RequireOzon><ProductCatalog/></RequireOzon>}/>
+     <Route path="/in-transit" element={<RequireOzon><TransitStocks key={me.active_account_id}/></RequireOzon>}/>
+     <Route path="/stocks" element={<RequireOzon><Stocks/></RequireOzon>}/>
      <Route path="/history" element={<Navigate to="/" replace/>}/>
-     <Route path="/replenishment" element={<RequireAccount><Replenishment inv={inv} hist={hist} api={api}/></RequireAccount>}/>
+     <Route path="/replenishment" element={<RequireOzon><Replenishment inv={inv} hist={hist} api={api}/></RequireOzon>}/>
      <Route path="/plan" element={<Navigate to="/replenishment" replace/>}/><Route path="/forecast" element={<Navigate to="/replenishment" replace/>}/>
-     <Route path="/logs" element={<RequireAccount><Logs/></RequireAccount>}/><Route path="*" element={<Navigate to="/" replace/>}/>
+     <Route path="/logs" element={<RequireOzon><Logs/></RequireOzon>}/><Route path="*" element={<Navigate to="/" replace/>}/>
     </Routes>
    </div></main>
   </div>
