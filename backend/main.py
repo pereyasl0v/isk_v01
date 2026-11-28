@@ -242,7 +242,12 @@ class Connect(BaseModel):
 
 
 class ConnectWB(BaseModel):
-    client_id:str=Field(pattern=r'^[A-Za-z0-9._-]{1,80}    username:str=Field(min_length=3,max_length=32)
+    client_id:str=Field(pattern=r'^[A-Za-z0-9._-]{1,80}$',max_length=80)
+    api_token:SecretStr=Field(min_length=20,max_length=4096)
+
+
+class Login(BaseModel):
+    username:str=Field(min_length=3,max_length=32)
     password:SecretStr=Field(min_length=12,max_length=256)
 
 
