@@ -1133,7 +1133,7 @@ def digitization(request:Request,date_from:date|None=None,date_to:date|None=None
         raise HTTPException(422,'Не удалось обработать финансовый снимок Ozon.') from None
 
 class ReplenishmentParams(BaseModel):
-    window:int=Field(default=14)
+    window:int=Field(default=30)
 
 @app.post('/api/replenishment')
 def replenishment(body:ReplenishmentParams,request:Request):
