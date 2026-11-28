@@ -19,7 +19,7 @@ class Wildberries:
     def __init__(self, api_token: str):
         self.api_token = str(api_token or "").strip()
 
-    def _get(self, url, forbidden_message, response_type=dict):
+    def _get(self, url, forbidden_message, response_type=dict, *, operation="проверить токен", missing_message=None):
         if not self.api_token:
             raise WildberriesApiError("Введите API-токен Wildberries.")
         try:
@@ -47,9 +47,11 @@ class Wildberries:
             raise WildberriesApiError("Wildberries отклонил токен. Проверьте, что это действующий API-токен.")
         if response.status_code == 403:
             raise WildberriesApiError(forbidden_message)
+        if response.status_code == 404 and missing_message:
+            raise WildberriesApiError(missing_message)
         if response.status_code == 429:
-            raise WildberriesApiError("Wildberries временно ограничил проверку токена. Повторите позже.")
-        raise WildberriesApiError(f"Не удалось проверить токен Wildberries (HTTP {response.status_code}).")
+            raise WildberriesApiError("Wildberries временно ограничил запросы. Повторите позже.")
+        raise WildberriesApiError(f"Не удалось {operation} Wildberries (HTTP {response.status_code}).")
 
 
     def ping_supplies(self):
@@ -76,4 +78,9 @@ class Wildberries:
             f"{COMMON_API}/api/tariffs/v1/acceptance/coefficients",
             "Токен WB не даёт доступа к коэффициентам приёмки. Проверьте права токена в кабинете WB.",
             list,
+            operation="загрузить тарифы приёмки",
+            missing_message=(
+                "Метод тарифов приёмки Wildberries сейчас недоступен (HTTP 404). "
+                "Пока WB не восстановит доступ, ИСК не сможет загрузить склады и проверить даты через этот метод."
+            ),
         )
