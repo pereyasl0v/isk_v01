@@ -5,16 +5,19 @@ from backend.ozon import Ozon
 def row(sku,w,n):
  return {'sku':sku,'warehouse_id':w,'warehouse_name':f'Склад {w}',
          'available_stock_count':n,'name':f'Товар {sku}','offer_id':str(sku)}
-def posting(number,warehouse,units,status='delivered',sku=10):
+def posting(number,warehouse,units,status='delivered',sku=10,day='2026-10-05'):
  return {'number':number,'warehouse_id':warehouse,'warehouse_name':f'Склад {warehouse}',
-         'created_at':'2026-10-05T12:00:00+03:00','status':status,
+         'created_at':f'{day}T12:00:00+03:00','status':status,
          'products':[{'sku':sku,'quantity':units}]}
 def sample():
  inv={'at':'2026-10-10T12:00:00+03:00','products':[{'sku':10,'name':'Товар','offer_id':'A'}],
  'stocks':[{'sku':10,'warehouse_id':1},{'sku':10,'warehouse_id':2}],
  'analytics':[row(10,1,20),row(10,2,70)]}
  h={'since':'2026-06-01T00:00:00+03:00','to':'2026-10-10T12:00:00+03:00',
- 'warehouse_attribution':True,'postings':[posting('a',1,14),posting('b',2,7)]}
+ 'warehouse_attribution':True,'postings':[
+  posting('a',1,5,day='2026-10-04'),posting('b',1,5,day='2026-10-06'),
+  posting('c',1,4,day='2026-10-08'),posting('d',2,3,day='2026-10-04'),
+  posting('e',2,2,day='2026-10-06'),posting('f',2,2,day='2026-10-08')]}
  return inv,h
 class ReplenishmentTests(unittest.TestCase):
  def test_two_warehouse_rates_and_pooled(self):
@@ -36,11 +39,34 @@ class ReplenishmentTests(unittest.TestCase):
   self.assertEqual(p['warehouses'][2]['state'],'unknown_stock')
   self.assertEqual(p['unmatched_stock_warehouses'],0)
  def test_unassigned_orders_block_local_not_global(self):
-  i,h=sample();h['postings'].append(posting('c',None,7))
+  i,h=sample();h['postings'].append(posting('unassigned',None,7,day='2026-10-09'))
   p=calculate(i,h,7)['items'][0]
   self.assertIsNone(p['warehouses'][0]['rate'])
   self.assertEqual(p['total']['rate'],4)
   self.assertEqual(p['missing_warehouse_units'],7)
+ def test_sparse_sales_expand_to_long_history(self):
+  i,h=sample()
+  h['since']='2026-08-11T00:00:00+03:00'
+  h['postings']=[posting('only-sale',1,1,day='2026-10-05')]
+  p=calculate(i,h,7)['items'][0]
+  w=next(w for w in p['warehouses'] if w['warehouse_id']=='1')
+  self.assertEqual(w['analysis_days'],60)
+  self.assertEqual(w['orders'],1)
+  self.assertAlmostEqual(w['rate'],1/60)
+  self.assertEqual(p['total']['analysis_days'],60)
+  self.assertAlmostEqual(p['total']['rate'],1/60)
+
+ def test_short_history_with_one_order_does_not_extrapolate(self):
+  i,h=sample()
+  h['since']='2026-10-03T00:00:00+03:00'
+  h['postings']=[posting('only-sale',1,1,day='2026-10-05')]
+  p=calculate(i,h,7)['items'][0]
+  w=next(w for w in p['warehouses'] if w['warehouse_id']=='1')
+  self.assertEqual(w['analysis_days'],7)
+  self.assertEqual(w['orders'],1)
+  self.assertIsNone(w['rate'])
+  self.assertEqual(w['state'],'unknown_rate')
+
  def test_legacy_history_requires_reload(self):
   i,h=sample();h.pop('warehouse_attribution')
   r=calculate(i,h,7)
@@ -71,7 +97,10 @@ class ReplenishmentTests(unittest.TestCase):
   self.assertEqual(p['unmatched_stock_warehouses'],1)
  def test_screenshot_regression_226_units_six_per_day(self):
   i,h=sample();i['analytics']=[row(10,1,226)]
-  h['postings']=[posting('x',1,84)]
+  h['postings']=[
+   posting('x1',1,28,day='2026-10-01'),
+   posting('x2',1,28,day='2026-10-05'),
+   posting('x3',1,28,day='2026-10-08')]
   p=calculate(i,h,14)['items'][0]
   self.assertEqual(p['total']['available'],226)
   self.assertEqual(p['total']['rate'],6)
