@@ -113,7 +113,7 @@ export default function Replenishment({inv,hist,api}){
   return <section className="panel replenishment-panel" aria-busy={busy}>
     <div className="forecast-header">
       <h3>Прогноз пополнения</h3>
-      {busy&&<span className="forecast-loading-indicator" role="status">{data?'Обновляем прогноз…':'Загружаем прогноз…'}</span>}
+      {busy&&<span className="forecast-loading-indicator" role="status"><span className="modern-loader-ring" aria-hidden="true"/>{data?'Обновляем прогноз…':'Загружаем прогноз…'}</span>}
       <div className="forecast-period">
         <span className="forecast-period-label">Период расчёта и отгрузки</span>
         <div className="forecast-windows" aria-label="Период расчёта и отгрузки">
