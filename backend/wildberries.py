@@ -36,7 +36,7 @@ class Wildberries:
                 payload = response.json()
             except ValueError:
                 raise WildberriesApiError("API Wildberries вернул некорректный ответ.") from None
-            if str(payload.get("Status", "")).upper() == "OK":
+            if isinstance(payload, dict) and str(payload.get("Status", "")).upper() == "OK":
                 return {"status": "OK", "checked_at": payload.get("TS")}
             raise WildberriesApiError("Wildberries не подтвердил доступ к API Поставок.")
 
