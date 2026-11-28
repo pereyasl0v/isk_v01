@@ -31,6 +31,13 @@ async function api(path,body){
 function useApp(){return useContext(Context)}
 function Notice({children}){return <div className="notice"><AlertCircle size={18}/><span>{children}</span></div>}
 function Empty({text='Пока нет данных',help='Подключите кабинет и выполните загрузку.'}){return <div className="empty"><Boxes size={34}/><h3>{text}</h3><p>{help}</p></div>}
+function AppLoader(){return <div className="app-loading-screen" role="status" aria-live="polite">
+ <div className="app-loading-card">
+  <div className="app-loading-brand"><div className="app-loading-mark"><Boxes size={25}/></div><div><strong>ИСК</strong><span>Интеллектуальная система контроля</span></div></div>
+  <div className="app-loading-track"><span/></div>
+  <p><span className="modern-loader-ring" aria-hidden="true"/>Подготавливаем рабочее пространство</p>
+ </div>
+</div>}
 function Table({columns,rows,empty='Нет строк для отображения',onRowClick,pageSize=30,label="Таблица",showPaginationSummary=true}){
  const [page,setPage]=useState(0);const pages=Math.ceil(rows.length/pageSize);const safe=Math.min(page,Math.max(pages-1,0));
  return <><ScrollTable label={label} stickyColumn={columns.length > 4}><table><thead><tr>{columns.map(c=><th key={c[0]}>{c[1]}</th>)}</tr></thead><tbody>{rows.slice(safe*pageSize,safe*pageSize+pageSize).map((r,i)=><tr key={i} {...(onRowClick?{className:"product-clickable-row",role:"button",tabIndex:0,onClick:()=>onRowClick(r),onKeyDown:e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onRowClick(r)}}}:{})}>{columns.map(c=><td key={c[0]}>{c[2]?c[2](r[c[0]],r):String(r[c[0]]??'—')}</td>)}</tr>)}</tbody></table></ScrollTable>{!rows.length?<Empty text={empty} help="Проверьте загрузку и выбранные фильтры."/>:<div className="pagination">{showPaginationSummary==='pages'?<span aria-live="polite">Страница {safe+1} из {pages}</span>:showPaginationSummary&&<span>{num(rows.length)} строк · страница {safe+1} из {pages}</span>}<div><button disabled={safe===0} onClick={()=>setPage(safe-1)}>Назад</button><button disabled={safe>=pages-1} onClick={()=>setPage(safe+1)}>Далее</button></div></div>}</>
@@ -811,7 +818,7 @@ function App(){
   }
  }
  async function logout(){try{await api('/auth/logout',{})}finally{setMe(null);clearData()}}
- if(!authChecked||loading)return <div className="auth-screen"><div className="auth-card">Загружаем ИСК…</div></div>;
+ if(!authChecked||loading)return <AppLoader/>;
  if(!me)return <LoginScreen onSuccess={reload}/>;
  const navItems=me.user.role==='admin'?[...nav,['/admin/users','Пользователи',Users]]:nav;
  return <Context.Provider value={{me,state,setState,inv,hist,digi,sales,reload,act,setError}}>
@@ -842,7 +849,7 @@ function App(){
        ? location.pathname!=='/digitization'&&<div className="progress ozon-retry-banner" role="status">
           <Clock3 size={18}/><OzonRetryStatus retryAt={state.job.retry_at}/>
          </div>
-       : <div className="progress"><RefreshCw size={17} className="animate-spin"/>{state.job.message}</div>
+       : <div className="progress progress-modern" role="status"><span className="modern-loader-ring" aria-hidden="true"/><span>{state.job.message}</span><span className="progress-track" aria-hidden="true"><span/></span></div>
      )}{state?.job.error&&<Notice>{state.job.error}</Notice>}
     <Routes>
      <Route path="/connection" element={<Connection/>}/>
