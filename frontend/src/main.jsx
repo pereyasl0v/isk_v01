@@ -265,18 +265,80 @@ function ProductCatalog(){
  {selected&&<ProductDetails key={selected.id} product={selected} onClose={()=>setSelected(null)}/>}
  </>;
 }
+const stockAvailableColumns=[
+ ["available_stock_count","Доступно, ед."],
+ ["valid_stock_count","Готовится к продаже, ед."],
+ ["transit_stock_count","В пути на Ozon, ед."],
+ ["requested_stock_count","В заявках, ед."],
+ ["inbound_replenishment","В перемещении, ед."],
+ ["stock_not_being_sold","Снято с продажи, ед."],
+];
+const stockRawColumns=[["present","На складе, ед."],["reserved","В резерве, ед."]];
+
+function StockWarehouseList({rows,raw}){
+ const [showAll,setShowAll]=useState(false);
+ const [showMetrics,setShowMetrics]=useState(false);
+ const columns=raw?stockRawColumns:showMetrics?stockAvailableColumns:stockAvailableColumns.slice(0,1);
+ const ordered=[...rows].sort((a,b)=>
+  (Number(b[columns[0][0]])||0)-(Number(a[columns[0][0]])||0)||
+  (a.warehouse_name||'').localeCompare(b.warehouse_name||'','ru'));
+ const visible=showAll?ordered:ordered.slice(0,6);
+ return <div className="stock-warehouse-list">
+  <div className="stock-warehouse-heading">
+   <strong>Остатки по складам</strong>
+   {!raw&&<button type="button" className="stock-quiet-button" aria-pressed={showMetrics} onClick={()=>setShowMetrics(v=>!v)}>{showMetrics?'Только доступные':'Все показатели'} <ChevronDown size={14} aria-hidden="true"/></button>}
+  </div>
+  {raw&&<p className="stock-raw-note">Учётное количество и резерв показаны отдельно от доступного к продаже остатка.</p>}
+  <ScrollTable label="Остатки по складам" stickyColumn={columns.length>3}>
+   <table className={'stock-warehouse-table'+(columns.length>3?' stock-warehouse-wide':'')}>
+    <thead><tr><th scope="col">Склад</th>{columns.map(([key,label])=><th scope="col" key={key}>{label}</th>)}</tr></thead>
+    <tbody>{visible.map((r,i)=><tr key={String(r.warehouse_id)+':'+String(r.sku)+':'+i}>
+     <td title={'ID '+r.warehouse_id}>{r.warehouse_name||('Склад Ozon · '+r.warehouse_id)}</td>
+     {columns.map(([key])=><td key={key}>{num(r[key])}</td>)}
+    </tr>)}</tbody>
+   </table>
+  </ScrollTable>
+  {ordered.length>6&&<button type="button" className="stock-quiet-button stock-show-all" aria-expanded={showAll} onClick={()=>setShowAll(v=>!v)}>{showAll?'Свернуть список':'Показать все ('+num(ordered.length)+')'} <ChevronDown size={14} aria-hidden="true"/></button>}
+ </div>;
+}
 function Stocks(){
  const {inv}=useApp();const [q,setQ]=useState('');const [raw,setRaw]=useState(false);const [only,setOnly]=useState(true);
+ const products=inv?.products||[];
+ const catalogById=new Map(products.filter(p=>p.id??p.product_id).map(p=>[String(p.id??p.product_id),p]));
  const warehouseNames=new Map((inv?.analytics||[]).map(r=>[String(r.warehouse_id),r.warehouse_name]));
- const source=raw?(inv?.stocks||[]).map(r=>({...r,warehouse_name:warehouseNames.get(String(r.warehouse_id))})):(inv?.analytics||[]);
- const groups=groupStocks(inv?.products||[],source,raw);
- const shown=groups.map(g=>({...g,visible:g.rows.filter(r=>!only||(raw?r.present>0||r.reserved>0:r.available_stock_count>0))}))
-  .filter(g=>g.visible.length&&[g.name,g.offer,...g.skus,...g.visible.map(r=>`${r.warehouse_name||''} ${r.warehouse_id}`)].join(' ').toLowerCase().includes(q.toLowerCase()));
- return <div className="flex flex-col gap-5"><section className="panel"><div className="panel-title"><h3>Остатки FBO</h3><div className="segmented"><button className={!raw?'selected':''} onClick={()=>setRaw(false)}>Доступные остатки</button><button className={raw?'selected':''} onClick={()=>setRaw(true)}>Учёт и резервы</button></div></div>
- <div className="filters"><Filter value={q} set={setQ}/><label className="check"><input type="checkbox" checked={only} onChange={e=>setOnly(e.target.checked)}/> Только склады с остатком</label></div>
- {!raw&&inv?.analytics===null?<Empty text="Остатки пока недоступны" help="Обновите данные. Если загрузка не удаётся, проверьте разрешение на чтение аналитики у ключа Ozon."/>:!shown.length?<Empty text="Карточки не найдены" help="Проверьте загрузку, поиск и фильтр остатков."/>:<div className="fbo-stock-list">{shown.map(g=><details className="stock-card" key={g.key}><summary><div className="stock-title"><strong>{g.name}</strong><span className="sku">SKU {g.skus.join(', ')}</span><small>Артикул: {g.offer}</small></div><div className="stock-total"><strong>{num(g.total)} <small>ед.</small></strong><span>{raw?'На складах':'Доступно к продаже'}</span></div><span className="expand-arrow">⌄</span></summary><div className="stock-details">{raw&&<p className="muted mb-4">Учётное количество и резерв показаны раздельно. Доступное к продаже количество находится на вкладке «Доступные остатки».</p>}<Table label="Остатки по складам" rows={g.visible} columns={raw?[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["present","На складе, ед.",num],["reserved","В резерве, ед.",num]]:[["warehouse_name","Склад",(v,r)=><span>{v||'Склад Ozon'} <small>· ID {r.warehouse_id}</small></span>],["available_stock_count","Доступно, ед.",num],["valid_stock_count","Готовится к продаже, ед.",num],["transit_stock_count","В пути на Ozon, ед.",num],["requested_stock_count","В заявках, ед.",num],["inbound_replenishment","В перемещении, ед.",num],["stock_not_being_sold","Снято с продажи, ед.",num]]}/></div></details>)}</div>}
+ const source=raw?(inv?.stocks||[]).map(r=>({...r,warehouse_name:warehouseNames.get(String(r.warehouse_id))||r.warehouse_name})):(inv?.analytics||[]);
+ const groups=groupStocks(products,source,raw);
+ const query=q.trim().toLowerCase();
+ const shown=groups.map(g=>{
+  const product=catalogById.get(g.key);
+  const rowIds=[...new Set(g.rows.map(r=>r.product_id).filter(v=>v!==null&&v!==undefined&&String(v)!=='0'&&String(v)!=='').map(String))];
+  const article=product?.id??product?.product_id??(rowIds.length===1?rowIds[0]:null);
+  return {...g,article,visible:g.rows.filter(r=>!only||(raw?r.present>0||r.reserved>0:r.available_stock_count>0))};
+ }).filter(g=>g.visible.length&&[g.name,g.offer,g.article,...g.skus,...g.visible.map(r=>(r.warehouse_name||'')+' '+r.warehouse_id)].join(' ').toLowerCase().includes(query));
+ return <section className="panel stock-panel">
+  <div className="stock-page-heading">
+   <div><h3>Остатки FBO</h3><p>Наличие товаров на складах Ozon</p></div>
+   <div className="stock-mode" role="group" aria-label="Вид остатков">
+    <button type="button" aria-pressed={!raw} className={!raw?'selected':''} onClick={()=>setRaw(false)}>Доступные остатки</button>
+    <button type="button" aria-pressed={raw} className={raw?'selected':''} onClick={()=>setRaw(true)}>Учёт и резервы</button>
+   </div>
+  </div>
+  <div className="stock-page-controls">
+   <Filter value={q} set={setQ} placeholder="Название, артикул или склад"/>
+   <label className="check"><input type="checkbox" checked={only} onChange={e=>setOnly(e.target.checked)}/> {raw?'Только склады с остатком или резервом':'Только склады с доступным остатком'}</label>
+  </div>
+  {inv?.at&&<p className="stock-updated">Остатки обновлены: {date(inv.at)}</p>}
+  {!raw&&inv?.analytics===null?<Empty text="Остатки пока недоступны" help="Обновите данные. Если загрузка не удаётся, проверьте разрешение на чтение аналитики у ключа Ozon."/>:!shown.length?<Empty text="Карточки не найдены" help="Проверьте загрузку, поиск и фильтр остатков."/>:
+   <div className="fbo-stock-list">{shown.map(g=><details className="stock-product-card" key={g.key}>
+    <summary className="stock-product-summary">
+     <div className="stock-product-name"><strong>{g.name}</strong><span>Артикул: {g.article??'—'}</span></div>
+     <div className="stock-product-total"><strong>{num(g.total)} <small>ед.</small></strong><span>{raw?'На складах':'Доступно к продаже'}</span></div>
+     <div className="stock-product-warehouses"><strong>{num(new Set(g.visible.map(r=>String(r.warehouse_id))).size)}</strong><span>складов в списке</span></div>
+     <ChevronDown className="stock-product-chevron" size={17} aria-hidden="true"/>
+    </summary>
+    <div className="stock-product-details"><StockWarehouseList key={String(raw)} rows={g.visible} raw={raw}/></div>
+   </details>)}</div>}
  </section>
- </div>
 }
 function History({chartWindow,sku,inv}){
  const {hist}=useApp();

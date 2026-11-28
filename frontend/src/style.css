@@ -281,3 +281,63 @@
  .pooled-metrics>div{padding:10px}
  .forecast-data-meta{flex-direction:column;gap:4px}
 }
+
+
+/* FBO stock: use the same compact card hierarchy as replenishment. */
+.stock-panel{padding:22px 24px}
+.stock-page-heading{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.stock-page-heading p{margin-top:5px;color:#64766b;font-size:13px}
+.stock-mode{display:flex;gap:3px;padding:3px;background:#f3f6f4;border:1px solid #e7ede9;border-radius:9px}
+.stock-mode button{border:1px solid transparent;background:transparent;border-radius:6px;padding:8px 12px;font-size:12px;color:#53695b;white-space:normal}
+.stock-mode button.selected{background:#fff;border-color:#dce8df;color:#20583f;box-shadow:0 1px 3px #173e2b0b}
+.stock-page-controls{display:flex;align-items:center;gap:14px 20px;flex-wrap:wrap;margin-bottom:10px}
+.stock-page-controls .search{margin:0;max-width:400px;min-width:0}
+.stock-page-controls .search input{font-size:13px}
+.stock-page-controls .check{font-size:13px;line-height:1.4}
+.stock-updated{font-size:12px;color:#65766c;margin-bottom:12px}
+.stock-panel .fbo-stock-list{display:grid;gap:10px}
+.stock-product-card{border:1px solid #e3eae5;border-radius:10px;background:#fff;overflow:hidden}
+.stock-product-summary{display:grid;grid-template-columns:minmax(0,1fr) 152px 116px 18px;align-items:center;gap:16px;padding:13px 16px;cursor:pointer;list-style:none}
+.stock-product-summary::-webkit-details-marker{display:none}
+.stock-product-summary:hover{background:#f8fbf9}
+.stock-product-summary:focus-visible{outline:2px solid #367858;outline-offset:-3px;border-radius:9px}
+.stock-product-name{display:flex;flex-direction:column;gap:5px;min-width:0;overflow-wrap:anywhere}
+.stock-product-name strong{font-size:14px;line-height:1.45;font-weight:650;color:#263c30}
+.stock-product-name span,.stock-product-total>span,.stock-product-warehouses>span{font-size:12px;line-height:1.4;color:#65766c}
+.stock-product-total,.stock-product-warehouses{display:flex;flex-direction:column;align-items:flex-end;gap:3px;text-align:right}
+.stock-product-total strong{font-size:19px;color:#213e30;font-weight:650;font-variant-numeric:tabular-nums}
+.stock-product-total strong small{font-size:11px;font-weight:500}
+.stock-product-warehouses strong{font-size:15px;color:#365d46;font-weight:650;font-variant-numeric:tabular-nums}
+.stock-product-chevron{color:#648574;transition:transform .15s}
+.stock-product-card[open] .stock-product-chevron{transform:rotate(180deg)}
+.stock-product-details{padding:12px 16px 15px;border-top:1px solid #edf1ee;background:#fcfdfc}
+.stock-warehouse-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px}
+.stock-warehouse-heading strong{font-size:13px;color:#40574a}
+.stock-quiet-button{padding:6px 10px;border:1px solid #dce7df;border-radius:7px;background:#fff;color:#426950;font-size:12px;gap:5px}
+.stock-quiet-button[aria-pressed=true]{background:#eaf3ed;border-color:#c8dfd0}
+.stock-quiet-button[aria-expanded=true] svg,.stock-quiet-button[aria-pressed=true] svg{transform:rotate(180deg)}
+.stock-raw-note{font-size:12px;line-height:1.5;color:#65766c;margin-bottom:8px}
+.stock-warehouse-table th{font-size:12px;color:#62766a;padding:9px 10px}
+.stock-warehouse-table td{font-size:13px;color:#344b3c;padding:10px;max-width:none}
+.stock-warehouse-table th:not(:first-child),.stock-warehouse-table td:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
+.stock-warehouse-table:not(.stock-warehouse-wide) th:first-child{width:56%}
+.stock-warehouse-wide{min-width:850px}
+.stock-show-all{display:flex;margin:12px auto 0}
+@media(max-width:850px){
+ .stock-product-summary{grid-template-columns:minmax(0,1fr) 130px 96px 16px;gap:10px}
+}
+@media(max-width:620px){
+ .stock-page-heading{align-items:stretch;flex-direction:column}
+ .stock-mode{width:100%}
+ .stock-mode button{flex:1;padding:8px 6px}
+ .stock-page-controls{align-items:flex-start;flex-direction:column;gap:10px}
+ .stock-page-controls .search{width:100%;max-width:none}
+ .stock-product-summary{grid-template-columns:minmax(0,1fr) auto 16px;gap:8px;padding:11px}
+ .stock-product-total{grid-column:2;grid-row:1;align-self:start}
+ .stock-product-warehouses{grid-column:1;grid-row:2;align-items:baseline;flex-direction:row;text-align:left;gap:5px}
+ .stock-product-chevron{grid-column:3;grid-row:1}
+ .stock-product-details{padding:10px}
+ .stock-product-name strong{font-size:13px}
+ .stock-product-name span,.stock-product-total>span,.stock-product-warehouses>span{font-size:11px}
+ .stock-warehouse-table:not(.stock-warehouse-wide) th{white-space:normal}
+}
