@@ -163,8 +163,16 @@ def calculate(snapshot,history,window):
         if enough and not pooled_ready:
             low_sample=True
 
+        # Only include warehouses that actually belong to this SKU:
+        # stock rows, analytics rows, or attributed FBO sales. The global
+        # warehouse dictionary contains warehouses belonging to other SKUs too.
+        sku_warehouses=(
+            {w for sku,w in raw_pairs if sku==k}
+            |{w for sku,w in pairs if sku==k}
+            |{w for sku,w in local_daily if sku==k}
+        )
         details=[]
-        for w in sorted(warehouses,key=lambda value:(warehouses[value],value)):
+        for w in sorted(sku_warehouses,key=lambda value:(warehouses.get(value,''),value)):
             days,units,orders,ready=_analysis_period(
                 local_daily,(k,w),end,candidates,max_days
             ) if max_days else (0,0,0,False)
@@ -182,7 +190,7 @@ def calculate(snapshot,history,window):
             if enough and not ready:
                 low_sample=True
 
-        required={w for sku,w in raw_pairs if sku==k}|{w for sku,w in local_daily if sku==k}
+        required=sku_warehouses
         known={w for sku,w in pairs if sku==k}
         missing=required-known
         order={'estimated':0,'empty':1,'no_orders':2,'unknown_rate':3,'unknown_stock':4}
