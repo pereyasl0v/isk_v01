@@ -109,7 +109,6 @@ export default function Replenishment({inv,hist,api}){
       <div className="forecast-header">
         <div>
           <h3>Прогноз пополнения</h3>
-          <p className="muted forecast-subtitle">Остатки и расход по складам Ozon — отдельно и в сумме по товару.</p>
         </div>
         <div className="forecast-period">
           <div className="forecast-windows" aria-label="Период прогноза">
