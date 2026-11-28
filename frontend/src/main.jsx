@@ -563,7 +563,6 @@ function Connection(){
   try{
    await api('/accounts/select',{account_id:account.id});
    await reload();
-   if(account.marketplace!=='wb')navigate('/');
   }catch(err){setError(err.message)}
   finally{setBusy(false)}
  }
