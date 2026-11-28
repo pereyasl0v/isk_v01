@@ -330,7 +330,7 @@ export default function DigitizationCached({state,digi,act}){
      </div>
     </div>
     <div className={'digitization-cache-status '+(rateLimitWaiting?'ozon-retry-wait':cacheState.loading||automaticBusy?'loading':cacheState.daily?'hit':legacy?'legacy':'miss')}>
-     {rateLimitWaiting?<Clock3 size={16}/>:cacheState.loading||automaticBusy?<RefreshCw size={15} className="animate-spin"/>:cacheState.daily?<CircleCheck size={15}/>:<Database size={15}/>}
+     {rateLimitWaiting?<Clock3 size={16}/>:cacheState.loading||automaticBusy?<span className="modern-loader-ring" aria-hidden="true"/>:cacheState.daily?<CircleCheck size={15}/>:<Database size={15}/>}
      {rateLimitWaiting?<OzonRetryStatus retryAt={state.job.retry_at}/>:<span>{statusText}</span>}
      {!rateLimitWaiting&&cacheState.updatedAt&&<small>обновлено {dateTime(cacheState.updatedAt)}</small>}
     </div>
