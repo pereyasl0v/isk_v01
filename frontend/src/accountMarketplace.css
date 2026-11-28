@@ -40,7 +40,7 @@
 .marketplace-account-platform.platform-wb{background:#f6eafa;color:#9638b2}
 .marketplace-account-info>.connected-label,.marketplace-account-info>.disconnected-label{font-size:11px}
 .marketplace-account-info>small{font-size:11px;line-height:1.4;color:#7c8c80}
-.marketplace-account-actions{flex-shrink:0}
+.marketplace-account-actions{display:flex;align-items:center;gap:7px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}.marketplace-wb-hint{grid-column:1/-1;padding:11px 13px;border:1px solid #eadcf0;border-radius:8px;background:#fbf7fc;color:#795f82;font-size:11px;line-height:1.6}
 .marketplace-select-button{font-size:11px;min-width:91px;padding:8px 12px}
 .marketplace-account-footer{margin-top:16px;display:flex;justify-content:flex-end}
 .marketplace-account-footer button{font-size:11px;padding:8px 11px;color:#6e756e;background:white}
