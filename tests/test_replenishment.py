@@ -32,11 +32,10 @@ class ReplenishmentTests(unittest.TestCase):
   self.assertEqual(len(p['warehouses']),2)
   self.assertEqual(next(w for w in p['warehouses'] if w['warehouse_id']=='1')['state'],'empty')
   self.assertIsNone(next(w for w in p['warehouses'] if w['warehouse_id']=='1')['ends_at'])
- def test_all_known_warehouses_no_invented_zero(self):
+ def test_warehouses_of_other_skus_are_not_added(self):
   i,h=sample();i['analytics'].append(row(20,3,5))
   p=next(p for p in calculate(i,h,7)['items'] if p['sku']=='10')
-  self.assertEqual(len(p['warehouses']),3)
-  self.assertEqual(p['warehouses'][2]['state'],'unknown_stock')
+  self.assertEqual({w['warehouse_id'] for w in p['warehouses']},{'1','2'})
   self.assertEqual(p['unmatched_stock_warehouses'],0)
  def test_unassigned_orders_block_local_not_global(self):
   i,h=sample();h['postings'].append(posting('unassigned',None,7,day='2026-10-09'))
@@ -95,6 +94,8 @@ class ReplenishmentTests(unittest.TestCase):
   p=calculate(i,h,7)['items'][0]
   self.assertEqual(p['total']['available'],20)
   self.assertEqual(p['unmatched_stock_warehouses'],1)
+  missing=next(w for w in p['warehouses'] if w['warehouse_id']=='2')
+  self.assertEqual(missing['state'],'unknown_stock')
  def test_screenshot_regression_226_units_six_per_day(self):
   i,h=sample();i['analytics']=[row(10,1,226)]
   h['postings']=[
