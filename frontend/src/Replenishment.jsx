@@ -47,7 +47,7 @@ function planWarehouses(warehouses=[],days=0){
   return {rows,total:rows.reduce((sum,w)=>sum+(w.replenishment_quantity??0),0),unknown};
 }
 
-function WarehouseList({warehouses=[],enough=false,horizonDays=0,targetDate=''}) {
+function WarehouseList({warehouses=[],enough=false,localHistoryReady=false,horizonDays=0,targetDate=''}) {
   const [showAll,setShowAll]=useState(false);
   const ordered=useMemo(()=>{
     const priority={empty:0,estimated:1,unknown_stock:2,unknown_rate:3,no_orders:4};
@@ -96,7 +96,7 @@ function WarehouseList({warehouses=[],enough=false,horizonDays=0,targetDate=''})
           <strong>{n(w.available)} <small>ед.</small></strong>
         </div>
         <div className="warehouse-rate">
-          <strong>{enough&&w.rate!==null?n(w.units)+' ед. за '+n(w.analysis_days)+' дн.':'—'}</strong>
+          <strong>{enough&&localHistoryReady?n(w.units)+' ед. за '+n(w.analysis_days)+' дн.':'—'}</strong>
           <small>{w.rate===null?'Недостаточно данных':n(w.rate)+' ед./день · '+n(w.orders)+' заказов'}</small>
         </div>
         <div className="warehouse-cover">
@@ -251,7 +251,7 @@ export default function Replenishment({inv,hist,api}){
                 Для {n(p.missing_warehouse_units)} заказанных единиц не указан склад отгрузки. Их нельзя распределить по отдельным складам.
               </p>}
               {mode==='local'?<>
-                <WarehouseList warehouses={p.warehouses} enough={data.enough} horizonDays={horizonDays} targetDate={effectiveTargetDate}/>
+                <WarehouseList warehouses={p.warehouses} enough={data.enough} localHistoryReady={p.local_history_ready} horizonDays={horizonDays} targetDate={effectiveTargetDate}/>
               </>:<>
                 <div className="pooled-metrics">
                   <div><span>Доступно на всех складах</span><strong>{n(p.total.available)} <small>ед.</small></strong></div>
