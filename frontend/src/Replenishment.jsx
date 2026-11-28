@@ -161,7 +161,6 @@ export default function Replenishment({inv,hist,api}){
               <strong>{p.name}</strong>
               <div className="forecast-product-meta">
                 <span>Артикул: {p.article??'—'}</span>
-                <span>SKU {p.sku}</span>
               </div>
             </div>
             <div className="forecast-product-total">
