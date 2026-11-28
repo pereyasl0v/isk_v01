@@ -174,10 +174,6 @@ export default function Replenishment({inv,hist,api}){
           </summary>
 
           <div className="forecast-product-details">
-            {p.unmatched_stock_warehouses>0&&<details className="forecast-inline-note">
-              <summary>Не все склады подтверждены остатками ({n(p.unmatched_stock_warehouses)})</summary>
-              <p>Общий остаток взят из данных раздела «Остатки FBO». Для части складов нет текущей строки аналитики, поэтому полноту запаса на них подтвердить нельзя.</p>
-            </details>}
             {mode==='local'?<>
               {p.missing_warehouse_units>0&&<p className="forecast-inline-warning">
                 Для {n(p.missing_warehouse_units)} заказанных единиц не указан склад отгрузки. Их нельзя распределить по отдельным складам.
