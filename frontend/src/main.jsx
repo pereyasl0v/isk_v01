@@ -50,7 +50,7 @@ function Overview(){
  const chartWindow=salesChartWindow(sales?.rows,period);
  const historyWindow=salesSelectionWindow(chartWindow,selectedRange);
  return <><div className="overview-heading"><div><h1>Обзор кабинета</h1><p className="muted mt-2">Продажи и остатки Ozon</p></div></div>
- <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6 overview-metrics"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек" to="/products"/></div>
+ <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-4 my-6 overview-metrics"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Товары" value={s?.products} note="Карточек" to="/products"/></div>
  <SalesHistoryChart data={sales} state={state} act={act} inv={inv} period={period} setPeriod={setPeriod} chartWindow={chartWindow}
   sku={sku} setSku={setSku} selectedRange={selectedRange} setSelectedRange={setSelectedRange}/>
  {inv?.warning&&<Notice>{inv.warning}</Notice>}
@@ -265,20 +265,12 @@ function ProductCatalog(){
  {selected&&<ProductDetails key={selected.id} product={selected} onClose={()=>setSelected(null)}/>}
  </>;
 }
-const stockAvailableColumns=[
- ["available_stock_count","Доступно, ед."],
- ["valid_stock_count","Готовится к продаже, ед."],
- ["transit_stock_count","В пути на Ozon, ед."],
- ["requested_stock_count","В заявках, ед."],
- ["inbound_replenishment","В перемещении, ед."],
- ["stock_not_being_sold","Снято с продажи, ед."],
-];
+const stockAvailableColumns=[["available_stock_count","Доступно, ед."]];
 const stockRawColumns=[["present","На складе, ед."],["reserved","В резерве, ед."]];
 
 function StockWarehouseList({rows,raw}){
  const [showAll,setShowAll]=useState(false);
- const [showMetrics,setShowMetrics]=useState(false);
- const columns=raw?stockRawColumns:showMetrics?stockAvailableColumns:stockAvailableColumns.slice(0,1);
+ const columns=raw?stockRawColumns:stockAvailableColumns;
  const ordered=[...rows].sort((a,b)=>
   (Number(b[columns[0][0]])||0)-(Number(a[columns[0][0]])||0)||
   (a.warehouse_name||'').localeCompare(b.warehouse_name||'','ru'));
@@ -286,7 +278,6 @@ function StockWarehouseList({rows,raw}){
  return <div className="stock-warehouse-list">
   <div className="stock-warehouse-heading">
    <strong>Остатки по складам</strong>
-   {!raw&&<button type="button" className="stock-quiet-button" aria-pressed={showMetrics} onClick={()=>setShowMetrics(v=>!v)}>{showMetrics?'Только доступные':'Все показатели'} <ChevronDown size={14} aria-hidden="true"/></button>}
   </div>
   {raw&&<p className="stock-raw-note">Учётное количество и резерв показаны отдельно от доступного к продаже остатка.</p>}
   <ScrollTable label="Остатки по складам" stickyColumn={columns.length>3}>
