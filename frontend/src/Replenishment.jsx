@@ -184,7 +184,7 @@ export default function Replenishment({inv,hist,api}){
         <div className="empty">Товары не найдены</div>:
       rows.map(p=>{
         const plan=planWarehouses(p.warehouses,horizonDays);
-        const planComplete=plan.rows.length>0&&plan.unknown===0;
+        const planAvailable=plan.rows.length>0&&plan.rows.some(w=>w.replenishment_quantity!==null);
         const speed=combinedRate(p.warehouses);
         return <details key={p.sku} className="forecast-product-card">
           <summary className="forecast-product-summary">
@@ -207,8 +207,9 @@ export default function Replenishment({inv,hist,api}){
               <span>складов</span>
             </div>
             <div className="forecast-product-plan">
-              <strong>{planComplete?n(plan.total)+' ед.':'—'}</strong>
+              <strong>{planAvailable?n(plan.total)+' ед.':'—'}</strong>
               <span>К отгрузке</span>
+              {plan.unknown>0&&<small>{planAvailable?'Частично · ':''}{n(plan.unknown)} складов без данных</small>}
             </div>
             <span className="forecast-expand-arrow">⌄</span>
           </summary>
@@ -228,7 +229,8 @@ export default function Replenishment({inv,hist,api}){
                 </div>
                 <div>
                   <span>К отгрузке до {date(effectiveTargetDate)}</span>
-                  <strong>{planComplete?n(plan.total)+' ед.':'—'}</strong>
+                  <strong>{planAvailable?n(plan.total)+' ед.':'—'}</strong>
+                  {plan.unknown>0&&<small className="pooled-subline">{planAvailable?'Частично · ':''}{n(plan.unknown)} складов без данных</small>}
                 </div>
               </div>
             </>}
