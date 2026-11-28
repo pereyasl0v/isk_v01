@@ -172,6 +172,7 @@ export default function Replenishment({inv,hist,api}){
         <div className="forecast-planning-copy">
           <strong>Спрогнозировать пополнение до даты</strong>
           <span>Потребность рассчитывается отдельно для каждого склада по его среднему расходу.</span>
+          <small>Округление вверх до целой штуки. Пока без страхового запаса, срока доставки и товаров в пути.</small>
         </div>
         <div className="forecast-planning-inputs">
           <label className="forecast-target-date">
