@@ -149,6 +149,27 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/auth/me').json()['active_account_id'],ozon['account_id'])
         self.assertEqual(self.client.get('/api/state').json()['account_id'],ozon['account_id'])
 
+    def test_wb_connect_without_client_id_and_renew_by_account_id(self):
+        token='wb-first-secret-token-123456'
+        response=self.client.post('/api/wb/connect',headers=HEAD,json={'api_token':token})
+        self.assertEqual(response.status_code,200,response.text)
+        account=response.json()
+        self.assertRegex(account['client_id'],r'^WB-[a-f0-9]{12}$')
+        self.assertEqual(self.client.get('/api/auth/me').json()['active_account_id'],account['account_id'])
+
+        legacy=self.connect_wb(client_id='wb-main')
+        response=self.client.post('/api/wb/connect',headers=HEAD,json={
+            'account_id':legacy['account_id'],'api_token':'wb-new-secret-token-123456',
+        })
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertEqual(response.json()['account_id'],legacy['account_id'])
+        self.assertEqual(response.json()['client_id'],'wb-main')
+        self.assertEqual(len(self.client.get('/api/accounts').json()['accounts']),2)
+        response=self.client.post('/api/wb/connect',headers=HEAD,json={
+            'account_id':'0'*32,'api_token':token,
+        })
+        self.assertEqual(response.status_code,404,response.text)
+
     def test_wb_reconnect_reuses_account_and_disconnect_preserves_record(self):
         first=self.connect_wb(client_id='seller-002',api_token='wb-first-secret-token-123456')
         second=self.connect_wb(client_id='seller-002',api_token='wb-second-secret-token-123456')

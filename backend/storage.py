@@ -365,18 +365,22 @@ class Store:
                       (datetime.now(timezone.utc).isoformat(),str(account_id),str(user_id)))
             return c.total_changes>0
 
-    def upsert_wb_account(self,user_id,client_id,ciphertext):
+    def upsert_wb_account(self,user_id,client_id,ciphertext,*,account_id=None):
         now=datetime.now(timezone.utc).isoformat()
         with self.db() as c:
-            row=c.execute('SELECT id FROM wb_accounts WHERE user_id=? AND client_id=?',
-                          (str(user_id),str(client_id))).fetchone()
-            if row:
-                account_id=row[0]
-                c.execute('''UPDATE wb_accounts SET api_token_ciphertext=?,connected=1,updated_at=?
-                             WHERE id=? AND user_id=?''',
-                          (ciphertext,now,account_id,str(user_id)))
+            if account_id is None and client_id is not None:
+                row=c.execute('SELECT id FROM wb_accounts WHERE user_id=? AND client_id=?',
+                              (str(user_id),client_id)).fetchone()
+                account_id=row[0] if row else None
+            if account_id is not None:
+                updated=c.execute('''UPDATE wb_accounts SET api_token_ciphertext=?,connected=1,updated_at=?
+                                     WHERE id=? AND user_id=?''',
+                                  (ciphertext,now,account_id,str(user_id)))
+                if not updated.rowcount:
+                    return None
             else:
                 account_id=uuid.uuid4().hex
+                client_id=client_id or "WB-"+account_id[:12]
                 c.execute('''INSERT INTO wb_accounts(id,user_id,client_id,api_token_ciphertext,connected,created_at,updated_at)
                              VALUES (?,?,?,?,1,?,?)''',
                           (account_id,str(user_id),str(client_id),ciphertext,now,now))

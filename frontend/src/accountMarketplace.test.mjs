@@ -21,9 +21,10 @@ test('WB cabinet flow connects through a supplies API token and keeps Ozon uncha
   assert.match(connection,/chooseMarketplace\('ozon'\)/);
   assert.match(connection,/chooseMarketplace\('wb'\)/);
   assert.match(connection,/api\('\/connect'/);
-  assert.match(connection,/api\('\/wb\/connect',\{client_id:client\.trim\(\),api_token:key\.trim\(\)\}\)/);
+  assert.match(connection,/api\('\/wb\/connect',\{account_id:wbAccount\?\.id,api_token:key\.trim\(\)\}\)/);
   assert.match(connection,/api\('\/wb\/disconnect',\{account_id:accountId\}\)/);
   assert.match(connection,/API-токен Wildberries/);
+  assert.doesNotMatch(connection,/Client ID \/ ID кабинета WB/);
   assert.match(connection,/категорией «Поставки»/);
   assert.doesNotMatch(connection,/кабинет WB не создаётся/);
 });

@@ -247,7 +247,8 @@ class Connect(BaseModel):
 
 
 class ConnectWB(BaseModel):
-    client_id:str=Field(pattern=r'^[A-Za-z0-9._-]{1,80}$',max_length=80)
+    client_id:str|None=Field(default=None,pattern=r'^[A-Za-z0-9._-]{1,80}$',max_length=80)
+    account_id:str|None=Field(default=None,pattern=r'^[a-f0-9]{32}$')
     api_token:SecretStr=Field(min_length=20,max_length=4096)
 
 class Login(BaseModel):
@@ -564,15 +565,18 @@ def connect_wb(body:ConnectWB,request:Request):
     auth=authenticated(request)
     if not ENCRYPTION_KEY:
         raise HTTPException(503,'Подключение WB недоступно: настройте ISK encryption key Docker secret.')
-    client_id=body.client_id.strip()
+    if body.account_id and not store.get_wb_account(body.account_id,auth['user_id']):
+        raise HTTPException(404,'Кабинет Wildberries не найден.')
     api_token=body.api_token.get_secret_value().strip()
     try:
         Wildberries(api_token).ping_supplies()
     except WildberriesApiError as exc:
         raise HTTPException(400,str(exc)) from None
     ciphertext=encrypt_wb_token(api_token,ENCRYPTION_KEY)
-    account=store.upsert_wb_account(auth['user_id'],client_id,ciphertext)
-    return {'client_id':client_id,'account_id':account['id'],'connected':True,
+    account=store.upsert_wb_account(auth['user_id'],body.client_id,ciphertext,account_id=body.account_id)
+    if not account:
+        raise HTTPException(404,'Кабинет Wildberries не найден.')
+    return {'client_id':account['client_id'],'account_id':account['id'],'connected':True,
             'marketplace':'wb','scope':'supplies'}
 
 

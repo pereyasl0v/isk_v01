@@ -80,3 +80,5 @@
 
 .app-nav-group + .app-nav-group{margin-top:12px}
 .app-nav-group-title{padding:4px 12px;font-size:11px;font-weight:600;color:#66786f}
+
+.marketplace-wb-token{grid-column:1/-1}
