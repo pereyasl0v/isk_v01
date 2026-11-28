@@ -30,7 +30,7 @@ function combinedRate(warehouses=[]){
   return warehouses.reduce((sum,w)=>sum+w.rate,0);
 }
 
-function WarehouseList({warehouses=[],horizonDays=0}){
+function WarehouseList({warehouses=[],periodDays=0}){
   const [showAll,setShowAll]=useState(false);
   const ordered=useMemo(()=>{
     const priority={empty:0,estimated:1,unknown_stock:2,unknown_rate:3,no_orders:4};
@@ -41,7 +41,7 @@ function WarehouseList({warehouses=[],horizonDays=0}){
       return (a.warehouse_name||'').localeCompare(b.warehouse_name||'','ru');
     });
   },[warehouses]);
-  const plan=planWarehouses(ordered,horizonDays);
+  const plan=planWarehouses(ordered,periodDays);
   const visible=showAll?plan.rows:plan.rows.slice(0,6);
 
   if(!ordered.length)return <div className="forecast-empty-warehouses">Нет складов для отображения.</div>;
@@ -169,7 +169,7 @@ export default function Replenishment({inv,hist,api}){
             </div>
             <div className="forecast-product-plan">
               <strong>{planAvailable?n(plan.total)+' ед.':'—'}</strong>
-              <span>К отгрузке</span>
+              <span>К отгрузке на {window} дней</span>
               {plan.unknown>0&&<small>{planAvailable?'Частично · ':''}{n(plan.unknown)} складов без данных</small>}
             </div>
             <span className="forecast-expand-arrow">⌄</span>
@@ -177,7 +177,7 @@ export default function Replenishment({inv,hist,api}){
 
           <div className="forecast-product-details">
             {mode==='local'?<>
-              <WarehouseList warehouses={p.warehouses} horizonDays={window}/>
+              <WarehouseList warehouses={p.warehouses} periodDays={window}/>
             </>:<>
               <div className="pooled-metrics">
                 <div>
