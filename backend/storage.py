@@ -363,10 +363,14 @@ class Store:
 
     def disconnect_ozon_account(self,account_id,user_id):
         with self.db() as c:
-            c.execute('''UPDATE ozon_accounts SET api_key_ciphertext=NULL,connected=0,updated_at=?
+            updated=c.execute('''UPDATE ozon_accounts SET api_key_ciphertext=NULL,connected=0,updated_at=?
                          WHERE id=? AND user_id=?''',
                       (datetime.now(timezone.utc).isoformat(),str(account_id),str(user_id)))
-            return c.total_changes>0
+            if not updated.rowcount:
+                return False
+            c.execute('UPDATE auth_sessions SET active_account_id=NULL WHERE user_id=? AND active_account_id=?',
+                      (str(user_id),str(account_id)))
+            return True
 
     def upsert_wb_account(self,user_id,client_id,ciphertext,*,seller_sid,account_id=None):
         now=datetime.now(timezone.utc).isoformat()

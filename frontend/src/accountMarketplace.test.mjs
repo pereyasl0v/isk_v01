@@ -22,7 +22,6 @@ test('WB cabinet flow connects through a supplies API token and keeps Ozon uncha
   assert.match(connection,/chooseMarketplace\('wb'\)/);
   assert.match(connection,/api\('\/connect'/);
   assert.match(connection,/api\('\/wb\/connect',\{account_id:wbAccount\?\.id,api_token:key\.trim\(\)\}\)/);
-  assert.match(connection,/api\('\/wb\/disconnect',\{account_id:accountId\}\)/);
   assert.match(connection,/API-токен Wildberries/);
   assert.doesNotMatch(connection,/Client ID \/ ID кабинета WB/);
   assert.match(connection,/категорией «Поставки»/);
@@ -38,8 +37,7 @@ test('only a green upper-right indicator marks the selected account',()=>{
   assert.doesNotMatch(connection,/Активный|Подключён|>Выбран</);
   assert.doesNotMatch(connection,/marketplace-account-current|marketplace-selected-button|marketplace-active-connection/);
   assert.match(connection,/account\.connected&&!selected&&<button/);
-  assert.match(connection,/!account\.connected&&<span className="disconnected-label">Ключ удалён/);
-  assert.match(connection,/onClick=\{disconnect\}/);
+
 });
 
 test('Ozon letters are optically centered in every blue square',()=>{
@@ -47,4 +45,13 @@ test('Ozon letters are optically centered in every blue square',()=>{
   assert.match(styles,/\.marketplace-symbol-ozon \.marketplace-symbol-text\{[^}]*letter-spacing:0;transform:translate\(-1px,-2px\)/);
   assert.equal((connection.match(/className="marketplace-symbol-text">oz<\/span>/g)||[]).length,3,
     'Ozon labels in menu, account card, and form share the same alignment');
+});
+
+
+test('credential removal targets the card and moves it into the disconnected list',()=>{
+  assert.match(connection,/onClick=\{\(\)=>confirmRemoval\(account\)\}/);
+  assert.match(connection,/api\(account.marketplace==='wb'\?'\/wb\/disconnect':'\/disconnect',\{account_id:account.id\}\)/);
+  assert.match(connection,/<dialog ref=\{removeDialog\}/);
+  assert.match(connection,/<details className="marketplace-disconnected">/);
+  assert.match(connection,/disconnectedAccounts.map\(renderAccount\)/);
 });

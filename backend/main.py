@@ -244,6 +244,7 @@ class PreliminaryCostBody(BaseModel):
 class Connect(BaseModel):
     client_id:str=Field(pattern=r'^\d+$',max_length=30)
     api_key:SecretStr
+    activate:bool=True
 
 
 class ConnectWB(BaseModel):
@@ -267,6 +268,10 @@ class UserStatus(BaseModel):
 
 class SelectAccount(BaseModel):
     account_id:str=Field(min_length=1,max_length=64)
+
+
+class DisconnectAccount(BaseModel):
+    account_id:str|None=Field(default=None,min_length=1,max_length=64)
 
 
 class History(BaseModel):
@@ -555,7 +560,8 @@ def connect(body:Connect,request:Request):
     account=store.upsert_ozon_account(auth['user_id'],client_id,ciphertext,roles)
     scope='account:'+account['id']
     store.migrate_legacy_client_data(client_id,scope,account['id'])
-    store.set_session_account(auth['token_hash'],auth['user_id'],account['id'])
+    if body.activate:
+        store.set_session_account(auth['token_hash'],auth['user_id'],account['id'])
     with lock:runtime_accounts.pop(account['id'],None)
     return {'client_id':client_id,'account_id':account['id'],'expires_at':roles.get('expires_at')}
 
@@ -598,18 +604,17 @@ def disconnect_wb(body:SelectAccount,request:Request):
 
 
 @app.post('/api/disconnect')
-def disconnect(request:Request):
+def disconnect(request:Request,body:DisconnectAccount|None=None):
     auth=authenticated(request)
-    account_id=auth.get('active_account_id')
+    account_id=(body.account_id if body else None) or auth.get('active_account_id')
     if not account_id:raise HTTPException(409,'Нет выбранного кабинета.')
     account=store.get_ozon_account(account_id,auth['user_id'])
     if not account:raise HTTPException(404,'Кабинет не найден.')
     with lock:
         running=runtime_accounts.get(account_id,{}).get('job',{}).get('running',False)
         if running:raise HTTPException(409,'Дождитесь завершения загрузки.')
+        store.disconnect_ozon_account(account_id,auth['user_id'])
         runtime_accounts.pop(account_id,None)
-    store.disconnect_ozon_account(account_id,auth['user_id'])
-    store.set_session_account(auth['token_hash'],auth['user_id'],None)
     return {'ok':True,'data_preserved':True}
 
 

@@ -473,12 +473,18 @@ function Connection(){
  const {state,me,reload,setError}=useApp();
  const navigate=useNavigate();
  const accounts=me?.accounts||[];
- const active=accounts.find(a=>a.id===me?.active_account_id);
+ const connectedAccounts=accounts.filter(account=>account.connected);
+ const disconnectedAccounts=accounts.filter(account=>!account.connected);
  const [client,setClient]=useState('');
  const [wbAccount,setWbAccount]=useState(null);
+ const [renewingOzon,setRenewingOzon]=useState(false);
  const [key,setKey]=useState('');
  const [busy,setBusy]=useState(false);
  const [formError,setFormError]=useState('');
+ const [removeAccount,setRemoveAccount]=useState(null);
+ const [removeError,setRemoveError]=useState('');
+ const removeDialog=useRef(null);
+ useEffect(()=>{if(removeAccount&&!removeDialog.current.open)removeDialog.current.showModal()},[removeAccount]);
  const [addMenuOpen,setAddMenuOpen]=useState(false);
  const [addMode,setAddMode]=useState(null);
  const addMenuRef=useRef(null);
@@ -508,12 +514,14 @@ function Connection(){
  function chooseMarketplace(marketplace){
   setAddMenuOpen(false);
   setAddMode(marketplace);
+  setRenewingOzon(false);
   setWbAccount(null);
   setClient('');
   setKey('');
   setFormError('');
  }
  function renewOzon(clientId){
+  setRenewingOzon(true);
   setClient(clientId);
   setKey('');
   setFormError('');
@@ -529,6 +537,7 @@ function Connection(){
  }
  function closeAdd(){
   setAddMode(null);
+  setRenewingOzon(false);
   setWbAccount(null);
   setClient('');
   setKey('');
@@ -542,11 +551,11 @@ function Connection(){
    if(addMode==='wb'){
     await api('/wb/connect',{account_id:wbAccount?.id,api_token:key.trim()});
    }else{
-    await api('/connect',{client_id:client.trim(),api_key:key.trim()});
+    await api('/connect',{client_id:client.trim(),api_key:key.trim(),activate:!renewingOzon});
    }
    closeAdd();
    await reload();
-   if(addMode==='ozon')navigate('/');
+   if(addMode==='ozon'&&!renewingOzon)navigate('/');
   }catch(err){setFormError(err.message)}
   finally{setBusy(false)}
  }
@@ -560,19 +569,55 @@ function Connection(){
   }catch(err){setError(err.message)}
   finally{setBusy(false)}
  }
+ function confirmRemoval(account){
+  setRemoveAccount(account);
+  setRemoveError('');
+ }
  async function disconnect(){
+  const account=removeAccount;
+  if(!account)return;
   setBusy(true);
-  setError('');
-  try{await api('/disconnect',{});await reload()}
-  catch(err){setError(err.message)}
+  setRemoveError('');
+  try{
+   await api(account.marketplace==='wb'?'/wb/disconnect':'/disconnect',{account_id:account.id});
+   await reload();
+   removeDialog.current.close();
+  }catch(err){setRemoveError(err.message)}
   finally{setBusy(false)}
  }
- async function disconnectWB(accountId){
-  setBusy(true);
-  setError('');
-  try{await api('/wb/disconnect',{account_id:accountId});await reload()}
-  catch(err){setError(err.message)}
-  finally{setBusy(false)}
+
+ function renderAccount(account){
+  const isOzon=(account.marketplace||'ozon')==='ozon';
+  const selected=me?.active_account_id===account.id;
+  const ozonSyncRunning=isOzon&&state?.account_id===account.id&&state.job.running;
+  return <div className="account-row marketplace-account-row" key={account.id}>
+   {selected&&<span className="marketplace-account-indicator" role="img"
+    aria-label="Выбранный кабинет" title="Выбранный кабинет"/>}
+   <div className="marketplace-account-identity">
+    <span className={'marketplace-symbol '+(isOzon?'marketplace-symbol-ozon':'marketplace-symbol-wb')} aria-hidden="true">{isOzon?<span className="marketplace-symbol-text">oz</span>:'wb'}</span>
+    <div className="marketplace-account-info">
+     <div className="marketplace-account-title">
+      <strong>{account.sid?'SID ':'Кабинет '}{account.client_id}</strong>
+      <span className={'marketplace-account-platform '+(isOzon?'platform-ozon':'platform-wb')}>{isOzon?'Ozon':'Wildberries'}</span>
+     </div>
+     {!account.connected&&<span className="disconnected-label">{isOzon?'Без API-ключа':'Без токена'}</span>}
+     {isOzon&&account.connected&&<small>Права: {account.roles?.join(', ')||'нет данных'}</small>}
+     {isOzon&&account.connected&&<small>Срок действия ключа: {date(account.expires_at)}</small>}
+     {!isOzon&&account.connected&&<small>Доступ: API Поставок (FBW)</small>}
+    </div>
+   </div>
+   <div className="account-actions marketplace-account-actions">
+    {account.connected&&!selected&&<button type="button" className="marketplace-select-button"
+     disabled={busy} onClick={()=>select(account)}>Выбрать</button>}
+    {isOzon&&<button type="button" className="marketplace-select-button" disabled={busy||ozonSyncRunning}
+     onClick={()=>renewOzon(account.client_id)}>{account.connected?'Обновить ключ':'Подключить ключ'}</button>}
+    {!isOzon&&<button type="button" className="marketplace-select-button" disabled={busy}
+     onClick={()=>renewWB(account)}>{account.connected?'Обновить токен':'Подключить токен'}</button>}
+    {account.connected&&<button type="button" className="marketplace-select-button marketplace-remove-key"
+     disabled={busy||ozonSyncRunning}
+     onClick={()=>confirmRemoval(account)}>{isOzon?'Удалить ключ':'Удалить токен'}</button>}
+   </div>
+  </div>;
  }
 
  return <div className="marketplace-accounts-page">
@@ -614,51 +659,37 @@ function Connection(){
     <strong>Пока нет кабинетов</strong>
     <p>Нажмите «Добавить кабинет» и выберите Ozon или Wildberries.</p>
    </div>}
-   <div className="account-list marketplace-account-list">
-    {accounts.map(account=>{
-     const isOzon=(account.marketplace||'ozon')==='ozon';
-     const selected=me?.active_account_id===account.id;
-     return <div className="account-row marketplace-account-row" key={account.id}>
-      {selected&&<span className="marketplace-account-indicator" role="img"
-       aria-label="Выбранный кабинет" title="Выбранный кабинет"/>}
-      <div className="marketplace-account-identity">
-       <span className={'marketplace-symbol '+(isOzon?'marketplace-symbol-ozon':'marketplace-symbol-wb')} aria-hidden="true">{isOzon?<span className="marketplace-symbol-text">oz</span>:'wb'}</span>
-       <div className="marketplace-account-info">
-        <div className="marketplace-account-title">
-         <strong>{account.sid?'SID ':'Кабинет '}{account.client_id}</strong>
-         <span className={'marketplace-account-platform '+(isOzon?'platform-ozon':'platform-wb')}>{isOzon?'Ozon':'Wildberries'}</span>
-        </div>
-        {!account.connected&&<span className="disconnected-label">Ключ удалён</span>}
-        {isOzon&&<small>Права: {account.roles?.join(', ')||'нет данных'}</small>}
-        {isOzon&&account.connected&&<small>Срок действия ключа: {date(account.expires_at)}</small>}
-        {!isOzon&&account.connected&&<small>Доступ: API Поставок (FBW)</small>}
-       </div>
-      </div>
-      <div className="account-actions marketplace-account-actions">
-       {account.connected&&!selected&&<button type="button" className="marketplace-select-button"
-        disabled={busy} onClick={()=>select(account)}>Выбрать</button>}
-       {!account.connected&&isOzon&&<button type="button" className="marketplace-select-button" disabled={busy}
-        onClick={()=>renewOzon(account.client_id)}>Обновить ключ</button>}
-       {!isOzon&&<button type="button" className="marketplace-select-button" disabled={busy}
-        onClick={()=>renewWB(account)}>{account.connected?'Обновить токен':'Подключить токен'}</button>}
-       {!isOzon&&account.connected&&<button type="button" className="marketplace-select-button" disabled={busy}
-        onClick={()=>disconnectWB(account.id)}>Отключить</button>}
-      </div>
-     </div>;
-    })}
-   </div>
-   {active&&state&&<div className="marketplace-account-footer">
-    <button type="button" disabled={busy||state.job.running} onClick={disconnect}>
-     <LogOut size={15}/> Удалить сохранённый ключ
-    </button>
+   {connectedAccounts.length>0&&<div className="account-list marketplace-account-list">
+    {connectedAccounts.map(renderAccount)}
    </div>}
+   {accounts.length>0&&!connectedAccounts.length&&<p className="muted">Нет подключённых кабинетов.</p>}
+   {disconnectedAccounts.length>0&&<details className="marketplace-disconnected">
+    <summary>Отключённые кабинеты <span className="marketplace-account-total">{disconnectedAccounts.length}</span></summary>
+    <div className="account-list marketplace-account-list">{disconnectedAccounts.map(renderAccount)}</div>
+   </details>}
   </section>
+
+  <dialog ref={removeDialog} className="marketplace-key-dialog" aria-labelledby="marketplace-key-dialog-title"
+   onClose={()=>setRemoveAccount(null)} onCancel={event=>{if(busy)event.preventDefault()}}>
+   {removeAccount&&<>
+    <h3 id="marketplace-key-dialog-title">{removeAccount.marketplace==='wb'?'Удалить токен Wildberries?':'Удалить ключ Ozon?'}</h3>
+    <p className="marketplace-key-dialog-account">{removeAccount.sid?'SID ':'Кабинет '}{removeAccount.client_id}</p>
+    <p>Кабинет переместится в «Отключённые». Ранее загруженные данные сохранятся.</p>
+    {removeError&&<p className="notice marketplace-form-error" role="alert">{removeError}</p>}
+    <div className="marketplace-key-dialog-actions">
+     <button type="button" autoFocus disabled={busy} onClick={()=>removeDialog.current.close()}>Отмена</button>
+     <button type="button" className="marketplace-remove-key" disabled={busy} onClick={disconnect}>
+      {busy?'Удаляем…':removeAccount.marketplace==='wb'?'Удалить токен':'Удалить ключ'}
+     </button>
+    </div>
+   </>}
+  </dialog>
 
   {addMode==='ozon'&&<section className="panel marketplace-add-panel" aria-labelledby="marketplace-ozon-form-title">
    <div className="marketplace-add-panel-heading">
     <div className="marketplace-add-panel-title">
      <span className="marketplace-symbol marketplace-symbol-ozon" aria-hidden="true"><span className="marketplace-symbol-text">oz</span></span>
-     <div><h3 id="marketplace-ozon-form-title">{accounts.some(a=>(a.marketplace||'ozon')==='ozon'&&a.client_id===client)?'Обновить кабинет Ozon':'Добавить кабинет Ozon'}</h3>
+     <div><h3 id="marketplace-ozon-form-title">{renewingOzon?'Обновить ключ Ozon':'Добавить кабинет Ozon'}</h3>
       <p>Подключите кабинет по Client ID и API-ключу Ozon.</p></div>
     </div>
     <button className="marketplace-close-panel" type="button" onClick={closeAdd} disabled={busy} aria-label="Закрыть форму"><X size={18}/></button>
@@ -666,7 +697,7 @@ function Connection(){
    {formError&&<div className="notice marketplace-form-error" role="alert">{formError}</div>}
    <form className="marketplace-ozon-form" onSubmit={connect}>
     <label className="field">Client ID кабинета Ozon
-     <input autoComplete="off" inputMode="numeric" pattern="[0-9]+" required value={client} onChange={event=>setClient(event.target.value)} placeholder="Например, 123456"/>
+     <input autoComplete="off" inputMode="numeric" pattern="[0-9]+" required value={client} readOnly={renewingOzon} onChange={event=>setClient(event.target.value)} placeholder="Например, 123456"/>
     </label>
     <label className="field">API-ключ Ozon
      <input autoComplete="new-password" type="password" required minLength={10} value={key} onChange={event=>setKey(event.target.value)} placeholder="Введите ключ с доступом на чтение"/>

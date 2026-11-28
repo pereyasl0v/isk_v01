@@ -418,6 +418,22 @@ class AuthApiTests(unittest.TestCase):
         finally:
             created.close()
 
+    def test_remove_or_renew_ozon_key_without_switching_selected_cabinet(self):
+        target=self.connect(client_id='456')
+        active=self.connect(client_id='123')
+        removed=self.client.post('/api/disconnect',headers=HEAD,
+                                 json={'account_id':target['account_id']})
+        self.assertEqual(removed.status_code,200,removed.text)
+        directory=self.client.get('/api/accounts').json()
+        self.assertEqual(directory['active_account_id'],active['account_id'])
+        self.assertFalse(next(a for a in directory['accounts'] if a['id']==target['account_id'])['connected'])
+
+        restored=self.client.post('/api/connect',headers=HEAD,
+                                  json={'client_id':'456','api_key':REPLACEMENT_OZON_TEST_KEY,'activate':False})
+        self.assertEqual(restored.status_code,200,restored.text)
+        self.assertEqual(restored.json()['account_id'],target['account_id'])
+        self.assertEqual(self.client.get('/api/auth/me').json()['active_account_id'],active['account_id'])
+
     def test_legacy_account_records_are_labeled_ozon_in_api(self):
         # A new marketplace selector must never silently reclassify or rewrite
         # existing Ozon IDs, keys, permissions, snapshots or active sessions.

@@ -42,8 +42,6 @@
 .marketplace-account-info>small{font-size:11px;line-height:1.4;color:#7c8c80}
 .marketplace-account-actions{display:flex;align-items:center;gap:7px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}.marketplace-wb-hint{grid-column:1/-1;padding:11px 13px;border:1px solid #eadcf0;border-radius:8px;background:#fbf7fc;color:#795f82;font-size:11px;line-height:1.6}
 .marketplace-select-button{font-size:11px;min-width:91px;padding:8px 12px}
-.marketplace-account-footer{margin-top:16px;display:flex;justify-content:flex-end}
-.marketplace-account-footer button{font-size:11px;padding:8px 11px;color:#6e756e;background:white}
 .marketplace-add-panel{border:1px solid #dae8df;padding:23px 24px}
 .marketplace-add-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:21px}
 .marketplace-add-panel-title{display:flex;align-items:center;gap:12px}
@@ -82,3 +80,16 @@
 .app-nav-group-title{padding:4px 12px;font-size:11px;font-weight:600;color:#66786f}
 
 .marketplace-wb-token{grid-column:1/-1}
+
+.marketplace-disconnected{margin-top:16px;border-top:1px solid #e0e8e2;padding-top:12px}
+.marketplace-disconnected summary{cursor:pointer;font-size:13px;font-weight:600}
+.marketplace-disconnected summary .marketplace-account-total{margin-left:6px}
+.marketplace-disconnected .marketplace-account-list{margin-top:12px}
+button.marketplace-remove-key{color:#a13e38;border-color:#ead0cc}
+button.marketplace-remove-key:hover:not(:disabled){background:#fbefed;border-color:#daa59f}
+.marketplace-key-dialog{width:min(420px,calc(100% - 32px));padding:24px;border:1px solid #dce5de;border-radius:14px;background:#fff;color:#26352f}
+.marketplace-key-dialog::backdrop{background:rgba(29,48,39,.35)}
+.marketplace-key-dialog h3{margin:0 0 6px}
+.marketplace-key-dialog p{margin:0 0 12px;font-size:13px;overflow-wrap:anywhere}
+.marketplace-key-dialog-account{font-weight:600}
+.marketplace-key-dialog-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:16px}
