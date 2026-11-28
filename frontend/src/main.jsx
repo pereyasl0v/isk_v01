@@ -50,7 +50,7 @@ function Overview(){
  const chartWindow=salesChartWindow(sales?.rows,period);
  const historyWindow=salesSelectionWindow(chartWindow,selectedRange);
  return <><div className="overview-heading"><div><h1>Обзор кабинета</h1><p className="muted mt-2">Продажи и остатки Ozon</p></div></div>
- <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-4 my-6 overview-metrics"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Товары" value={s?.products} note="Карточек" to="/products"/></div>
+ <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6 overview-metrics"><Card label="Доступно к продаже FBO" value={s?.available} note="Единиц" icon={Boxes}/><Card label="Готовится к продаже" value={s?.preparing} note="Единиц"/><Card label="В пути на Ozon" value={s?.transit} note="Единиц" icon={Truck}/><Card label="Товары" value={s?.products} note="Карточек" to="/products"/></div>
  <SalesHistoryChart data={sales} state={state} act={act} inv={inv} period={period} setPeriod={setPeriod} chartWindow={chartWindow}
   sku={sku} setSku={setSku} selectedRange={selectedRange} setSelectedRange={setSelectedRange}/>
  {inv?.warning&&<Notice>{inv.warning}</Notice>}
