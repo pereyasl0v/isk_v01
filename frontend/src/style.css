@@ -385,3 +385,104 @@
  .stock-product-name span,.stock-product-total>span,.stock-product-warehouses>span{font-size:11px}
  .stock-warehouse-table:not(.stock-warehouse-wide) th{white-space:normal}
 }
+
+
+/* Replenishment: cleaner hierarchy, clearer stock and consumption figures. */
+.replenishment-panel{padding:24px 26px}
+.forecast-header{align-items:center;margin-bottom:17px}
+.forecast-header h3{font-size:18px;letter-spacing:-.2px}
+.forecast-period{gap:7px}
+.forecast-period-label{font-size:11px;font-weight:600;color:#62776a}
+.forecast-windows{gap:3px;padding:3px}
+.forecast-windows button{padding:8px 12px;font-size:11px}
+.forecast-planning{padding:12px 15px;margin-bottom:15px;background:#f8faf8}
+.forecast-planning-copy{min-width:150px}
+.forecast-planning-copy strong{font-size:13px}
+.forecast-planning-inputs{gap:10px}
+.forecast-target-date>span{font-size:11px}
+.forecast-target-date input{height:38px;font-size:13px}
+.forecast-date-presets button{padding:8px 12px;font-size:11px}
+.forecast-controls{margin-bottom:13px}
+.forecast-levels{gap:3px;padding:3px}
+.forecast-levels button{min-width:130px;align-items:center;justify-content:center;padding:9px 16px}
+.forecast-levels button strong{font-size:13px}
+.forecast-search{max-width:340px}
+.forecast-search input{width:100%;font-size:13px}
+.forecast-product-card{margin-top:9px;border-radius:11px}
+.forecast-product-summary{grid-template-columns:minmax(0,1fr) 112px 145px 78px 125px 18px;gap:12px;padding:15px 17px}
+.forecast-product-main>strong{font-size:14px;line-height:1.4}
+.forecast-product-meta{font-size:11px}
+.forecast-product-total>strong{font-size:19px}
+.forecast-product-total>span,.forecast-product-secondary>span,.forecast-product-plan>span{font-size:11px}
+.forecast-product-secondary>strong{font-size:15px}
+.forecast-product-rate{display:flex;flex-direction:column;align-items:flex-end;gap:3px;text-align:right}
+.forecast-product-rate>strong{font-size:13px;font-weight:700;color:#245d43;font-variant-numeric:tabular-nums;white-space:nowrap}
+.forecast-product-rate>span{font-size:10px;color:#819087}
+.forecast-product-plan>strong{font-size:16px}
+.forecast-product-details{padding:14px 17px 16px}
+.warehouse-grid{border-top:1px solid #e9eeea}
+.warehouse-grid-head,.warehouse-grid-row{grid-template-columns:minmax(180px,1.35fr) minmax(78px,.55fr) minmax(145px,1fr) minmax(115px,.8fr) minmax(105px,.7fr);gap:12px}
+.warehouse-grid-head{padding:10px 11px;font-size:11px}
+.warehouse-grid-row{min-height:54px;padding:10px 11px}
+.warehouse-place strong{font-size:12px;font-weight:600}
+.warehouse-stock strong{font-size:13px}
+.warehouse-stock strong small{font-size:10px}
+.warehouse-rate strong{font-size:12px;font-weight:700;color:#285e44}
+.warehouse-cover .coverage{font-size:12px}
+.warehouse-cover small{font-size:10px}
+.warehouse-replenishment strong{font-size:14px}
+.warehouse-replenishment strong small{font-size:10px}
+.forecast-plan-unknown{font-size:13px;color:#89958d}
+.warehouse-more{margin-top:13px;padding:8px 14px;font-size:11px}
+.pooled-metrics{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.pooled-metrics>div{gap:7px;padding:14px 15px;border-radius:9px;background:#fff}
+.pooled-metrics span{font-size:11px}
+.pooled-metrics strong{font-size:17px}
+@media(max-width:850px){
+ .replenishment-panel{padding:20px}
+ .forecast-product-summary{grid-template-columns:minmax(0,1fr) 100px 130px 70px 110px 16px;gap:8px}
+ .warehouse-grid-head,.warehouse-grid-row{grid-template-columns:minmax(145px,1.2fr) minmax(65px,.5fr) minmax(130px,1fr) minmax(100px,.8fr) minmax(90px,.7fr);gap:8px}
+}
+@media(max-width:620px){
+ .replenishment-panel{padding:16px 13px}
+ .forecast-header{align-items:flex-start;gap:12px}
+ .forecast-header h3{font-size:17px}
+ .forecast-period{align-items:flex-start;width:100%}
+ .forecast-period-label{text-align:left}
+ .forecast-windows{width:100%;justify-content:space-between}
+ .forecast-windows button{flex:1;padding:8px 5px;font-size:10px}
+ .forecast-planning{align-items:flex-start;flex-direction:column;gap:10px;padding:12px}
+ .forecast-planning-copy{min-width:0}
+ .forecast-planning-inputs{width:100%;align-items:stretch;flex-direction:column;gap:8px}
+ .forecast-target-date,.forecast-target-date input{width:100%;min-width:0}
+ .forecast-date-presets{width:100%}
+ .forecast-date-presets button{flex:1}
+ .forecast-controls{align-items:stretch;flex-direction:column;gap:9px}
+ .forecast-levels{width:100%}
+ .forecast-levels button{min-width:0;flex:1;padding:9px}
+ .forecast-search{width:100%;max-width:none;min-width:0}
+ .forecast-product-summary{grid-template-columns:minmax(0,1fr) auto 16px;padding:12px 11px;gap:8px}
+ .forecast-product-main{grid-column:1;grid-row:1}
+ .forecast-product-total{grid-column:2;grid-row:1;align-self:start}
+ .forecast-expand-arrow{grid-column:3;grid-row:1}
+ .forecast-product-rate{grid-column:1;grid-row:2;align-items:flex-start;text-align:left}
+ .forecast-product-secondary{grid-column:2;grid-row:2;align-items:flex-end}
+ .forecast-product-plan{grid-column:1/-1;grid-row:3;flex-direction:row;align-items:baseline;justify-content:flex-start;gap:8px;text-align:left}
+ .forecast-product-total>span,.forecast-product-secondary>span,.forecast-product-plan>span{font-size:10px}
+ .forecast-product-details{padding:10px}
+ .warehouse-grid-head{display:none}
+ .warehouse-grid{border-top:0}
+ .warehouse-grid-row{grid-template-columns:minmax(0,1fr) auto;gap:7px 12px;padding:11px 7px}
+ .warehouse-place{grid-column:1/-1;padding-bottom:6px;border-bottom:1px solid #eef2ef}
+ .warehouse-place strong{font-size:12px}
+ .warehouse-stock{grid-column:1;grid-row:2}
+ .warehouse-rate{grid-column:1;grid-row:3}
+ .warehouse-cover{grid-column:2;grid-row:2;align-items:flex-end;text-align:right}
+ .warehouse-replenishment{grid-column:2;grid-row:3;align-items:flex-end}
+ .warehouse-replenishment:before{content:'К отгрузке';font-size:10px;color:#87948b}
+ .warehouse-stock strong,.warehouse-rate strong,.warehouse-replenishment strong{font-size:12px}
+ .warehouse-cover .coverage{font-size:11px}
+ .pooled-metrics{grid-template-columns:1fr 1fr;gap:8px}
+ .pooled-metrics>div{padding:11px}
+ .pooled-metrics strong{font-size:15px}
+}
