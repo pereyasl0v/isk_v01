@@ -79,7 +79,7 @@ class ReplenishmentTests(unittest.TestCase):
   self.assertEqual(p['total']['rate'],3)
   self.assertEqual([w['rate'] for w in p['warehouses']],[2,1])
  def test_cancelled_and_duplicates_not_counted(self):
-  i,h=sample();h['postings']+=[posting('c',1,100,'cancelled'),posting('a',1,14)]
+  i,h=sample();h['postings']+=[posting('cancelled',1,100,'cancelled'),posting('a',1,14)]
   self.assertEqual(calculate(i,h,7)['items'][0]['total']['rate'],3)
  def test_no_orders_not_infinite_or_zero_days(self):
   i,h=sample();h['postings']=[]
