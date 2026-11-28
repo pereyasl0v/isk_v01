@@ -92,7 +92,6 @@ export default function Replenishment({inv,hist,api}){
 
   useEffect(()=>{
     let current=true;
-    setData(null);
     setError('');
     if(!inv?.at||!hist?.at)return()=>{current=false};
     setBusy(true);
@@ -105,14 +104,16 @@ export default function Replenishment({inv,hist,api}){
 
   const catalogBySku=useMemo(()=>new Map((inv?.products||[]).map(product=>[String(product.sku),product])),[inv?.products]);
   const query=q.trim().toLowerCase();
+  const displayWindow=data?.window??window;
   const rows=(data?.items||[]).map(item=>{
     const product=catalogBySku.get(String(item.sku));
     return {...item,name:product?.name||item.name||'Товар',article:product?.id??null};
   }).filter(item=>[item.name,item.article].join(' ').toLowerCase().includes(query));
 
-  return <section className="panel replenishment-panel">
+  return <section className="panel replenishment-panel" aria-busy={busy}>
     <div className="forecast-header">
       <h3>Прогноз пополнения</h3>
+      {busy&&<span className="forecast-loading-indicator" role="status">{data?'Обновляем прогноз…':'Загружаем прогноз…'}</span>}
       <div className="forecast-period">
         <span className="forecast-period-label">Период расчёта и отгрузки</span>
         <div className="forecast-windows" aria-label="Период расчёта и отгрузки">
@@ -138,13 +139,23 @@ export default function Replenishment({inv,hist,api}){
     </div>
 
     {error&&<p role="alert" className="forecast-warning">{error}</p>}
-    {busy?<div className="empty">Рассчитываем прогноз…</div>:
-      !inv?.at||!hist?.at?
-        <div className="empty"><h3>Загрузите остатки и историю отправлений</h3><p>Нажмите «Обновить» рядом с номером кабинета.</p></div>:
-      data&&!rows.length?
-        <div className="empty">Товары не найдены</div>:
+    {!inv?.at||!hist?.at?
+      <div className="empty"><h3>Загрузите остатки и историю отправлений</h3><p>Нажмите «Обновить» рядом с номером кабинета.</p></div>:
+    !data&&busy?
+      <div className="forecast-loading-list" aria-hidden="true">
+        {[0,1,2,3].map(index=><div className="forecast-skeleton-card" key={index}>
+          <span className="forecast-skeleton forecast-skeleton-name"/>
+          <span className="forecast-skeleton forecast-skeleton-total"/>
+          <span className="forecast-skeleton forecast-skeleton-rate"/>
+          <span className="forecast-skeleton forecast-skeleton-secondary"/>
+          <span className="forecast-skeleton forecast-skeleton-plan"/>
+        </div>)}
+      </div>:
+    data&&!rows.length?
+      <div className="empty">Товары не найдены</div>:
+    data?
       rows.map(p=>{
-        const plan=planWarehouses(p.warehouses,window);
+        const plan=planWarehouses(p.warehouses,displayWindow);
         const planAvailable=plan.rows.length>0&&plan.rows.some(w=>w.replenishment_quantity!==null);
         const speed=combinedRate(p.warehouses);
         return <details key={p.sku} className="forecast-product-card">
@@ -169,7 +180,7 @@ export default function Replenishment({inv,hist,api}){
             </div>
             <div className="forecast-product-plan">
               <strong>{planAvailable?n(plan.total)+' ед.':'—'}</strong>
-              <span>К отгрузке на {window} дней</span>
+              <span>К отгрузке на {displayWindow} дней</span>
               {plan.unknown>0&&<small>{planAvailable?'Частично · ':''}{n(plan.unknown)} складов без данных</small>}
             </div>
             <span className="forecast-expand-arrow">⌄</span>
@@ -177,7 +188,7 @@ export default function Replenishment({inv,hist,api}){
 
           <div className="forecast-product-details">
             {mode==='local'?<>
-              <WarehouseList warehouses={p.warehouses} periodDays={window}/>
+              <WarehouseList warehouses={p.warehouses} periodDays={displayWindow}/>
             </>:<>
               <div className="pooled-metrics">
                 <div>
@@ -197,7 +208,8 @@ export default function Replenishment({inv,hist,api}){
             </>}
           </div>
         </details>;
-      })
+      }) :
+      <div className="empty">Не удалось загрузить прогноз. Попробуйте обновить данные.</div>
     }
   </section>;
 }
